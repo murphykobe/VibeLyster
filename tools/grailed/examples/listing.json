@@ -1,0 +1,22 @@
+{
+  "listing": {
+    "title": "Vintage Nike Air Max 97 Silver Bullet",
+    "description": "Classic Nike Air Max 97 in the iconic Silver Bullet colorway. Size 10 US. Good condition with minor creasing on toe box. Comes with original box.",
+    "price": 120,
+    "category_path": "sneakers",
+    "designer_names": ["Nike"],
+    "condition": "is_gently_used",
+    "color": "silver",
+    "size": "10",
+    "department": "menswear",
+    "location": "US",
+    "photos": [
+      "https://grailed-media.s3.amazonaws.com/your-uploaded-image-url.jpg"
+    ],
+    "shipping": {
+      "us": { "price": 15 },
+      "ca": { "price": 25 },
+      "intl": { "price": 40 }
+    }
+  }
+}
