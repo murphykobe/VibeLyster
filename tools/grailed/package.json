@@ -1,0 +1,13 @@
+{
+  "name": "@vibelyster/grailed-cli",
+  "version": "0.1.0",
+  "description": "CLI tool for Grailed marketplace API — proof of concept",
+  "type": "module",
+  "bin": {
+    "grailed": "./cli.js"
+  },
+  "scripts": {
+    "start": "node cli.js"
+  },
+  "dependencies": {}
+}
