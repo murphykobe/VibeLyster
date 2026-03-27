@@ -9,9 +9,12 @@
  *   grailed brand <query> [department]    Search for a brand (public, no auth)
  *   grailed listing <id>                  Get listing details (public)
  *   grailed wardrobe                      List your active listings
+ *   grailed drafts                        List your drafts
  *   grailed addresses                     List your shipping addresses
  *   grailed upload <image-path>           Upload an image, returns URL
- *   grailed create <json-file>            Create a listing from JSON
+ *   grailed create <json-file>            Create a draft listing
+ *   grailed publish <draft-id> [json-file] Publish draft (update + submit)
+ *   grailed publish <json-file>            Publish directly (no draft)
  *   grailed delete <listing-id>           Delete a listing
  *
  * Auth: Set GRAILED_CSRF_TOKEN and GRAILED_COOKIES env vars,
@@ -55,12 +58,20 @@ function getFlagValue(args, flag) {
   return idx !== -1 && idx + 1 < args.length ? args[idx + 1] : null;
 }
 
+function hasFlag(args, flag) {
+  return args.includes(flag);
+}
+
 function cleanArgs(args) {
   const cleaned = [];
+  const valueFlags = ["--csrf-token", "--cookies"];
+  const boolFlags = ["--draft"];
   let i = 0;
   while (i < args.length) {
-    if (args[i] === "--csrf-token" || args[i] === "--cookies") {
+    if (valueFlags.includes(args[i])) {
       i += 2;
+    } else if (boolFlags.includes(args[i])) {
+      i++;
     } else {
       cleaned.push(args[i]);
       i++;
@@ -83,10 +94,13 @@ Commands:
   brand <query> [department]    Search for a brand (public, no auth needed)
   listing <id>                  Get listing details (public)
   wardrobe                      List your active listings
+  drafts                        List your drafts
   addresses                     List your shipping addresses
   upload <image-path>           Upload an image, get back URL
-  create <json-file>            Create a listing from a JSON file
-  delete <listing-id>           Delete a listing
+  create <json-file>            Create a draft listing
+  publish <draft-id> [json-file] Publish a draft (update + submit). Omit json to submit as-is
+  publish <json-file>            Publish directly via POST /api/listings (no draft)
+  delete <listing-id>           Delete a listing or draft
 
 Auth:
   Set GRAILED_CSRF_TOKEN and GRAILED_COOKIES env vars
@@ -201,34 +215,110 @@ Auth:
         break;
       }
 
+      case "drafts": {
+        const { csrfToken, cookies } = getAuth(rawArgs);
+        let page = 1;
+        let total = 0;
+        while (true) {
+          const result = await api.getDrafts(page, csrfToken, cookies);
+          for (const item of result.data) {
+            total++;
+            const pct = item.percentage_complete || 0;
+            const name = item.draft_name || item.title || "(untitled)";
+            console.log(
+              `[${item.id}] ${name} — $${item.price || "?"} (${pct}% complete)`
+            );
+          }
+          if (result.metadata?.is_last_page || result.data.length < 20) break;
+          page++;
+        }
+        console.log(`\nTotal: ${total} drafts`);
+        break;
+      }
+
       case "create": {
         const jsonFile = args[1];
         if (!jsonFile) {
           console.error("Usage: grailed create <json-file>");
           console.error(
-            "\nJSON file should contain the listing data object."
+            "\nCreates a draft listing. Use 'grailed publish' to make it live."
           );
-          console.error("See example: grailed listing <id> to see the format.");
           process.exit(1);
         }
         const { csrfToken, cookies } = getAuth(rawArgs);
-        const listingData = JSON.parse(await readFile(jsonFile, "utf-8"));
-        const result = await api.createListing(listingData, csrfToken, cookies);
-        console.log("Created listing:");
+        const draftData = JSON.parse(await readFile(jsonFile, "utf-8"));
+        const result = await api.createDraft(draftData, csrfToken, cookies);
+        console.log("Created draft:");
         console.log("  ID:", result.data.id);
-        console.log("  URL:", `${GRAILED_BASE}${result.data.pretty_path}`);
+        console.log("  Title:", result.data.title);
+        console.log("  Complete:", `${result.data.percentage_complete}%`);
+        console.log(`  View: ${GRAILED_BASE}/sell/drafts`);
+        break;
+      }
+
+      case "publish": {
+        const draftIdOrFile = args[1];
+        if (!draftIdOrFile) {
+          console.error("Usage: grailed publish <draft-id> [json-file]");
+          console.error("       grailed publish <json-file>        (direct publish, no draft)");
+          console.error(
+            "\nPublish a draft (2-step: update draft → submit), or publish directly."
+          );
+          console.error("See examples/publish.json for the format.");
+          process.exit(1);
+        }
+        const { csrfToken, cookies } = getAuth(rawArgs);
+
+        // If first arg is a number, it's a draft ID (2-step flow)
+        if (/^\d+$/.test(draftIdOrFile)) {
+          const draftId = draftIdOrFile;
+          const jsonFile = args[2];
+          if (jsonFile) {
+            const publishData = JSON.parse(await readFile(jsonFile, "utf-8"));
+            console.log(`Updating draft ${draftId}...`);
+            await api.updateDraft(draftId, publishData, csrfToken, cookies);
+          }
+          console.log(`Submitting draft ${draftId}...`);
+          const result = await api.submitDraft(draftId, csrfToken, cookies);
+          console.log("Published listing:");
+          console.log("  ID:", result.data.id);
+          console.log(
+            "  URL:",
+            `${GRAILED_BASE}${result.data.pretty_path || `/listings/${result.data.id}`}`
+          );
+        } else {
+          // First arg is a JSON file — direct publish via POST /api/listings
+          const publishData = JSON.parse(await readFile(draftIdOrFile, "utf-8"));
+          const result = await api.publishListing(
+            publishData,
+            csrfToken,
+            cookies
+          );
+          console.log("Published listing:");
+          console.log("  ID:", result.data.id);
+          console.log(
+            "  URL:",
+            `${GRAILED_BASE}${result.data.pretty_path || `/listings/${result.data.id}`}`
+          );
+        }
         break;
       }
 
       case "delete": {
         const listingId = args[1];
         if (!listingId) {
-          console.error("Usage: grailed delete <listing-id>");
+          console.error("Usage: grailed delete <listing-or-draft-id>");
           process.exit(1);
         }
         const { csrfToken, cookies } = getAuth(rawArgs);
-        await api.deleteListing(listingId, csrfToken, cookies);
-        console.log(`Deleted listing ${listingId}`);
+        // Try deleting as listing first, fall back to draft
+        try {
+          await api.deleteListing(listingId, csrfToken, cookies);
+          console.log(`Deleted listing ${listingId}`);
+        } catch {
+          await api.deleteDraft(listingId, csrfToken, cookies);
+          console.log(`Deleted draft ${listingId}`);
+        }
         break;
       }
 

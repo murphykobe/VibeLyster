@@ -69,14 +69,41 @@ Returns: `{ id, name, slug, departments, logo_url }`
    - Append `Content-Type: image/jpeg` and `file: <image blob>`
    - The `image_url` from step 1 is the final URL to use in listings
 
-#### Listing CRUD
+#### Drafts (verified live 2026-03-27)
 
 | Method | Endpoint | Auth | Notes |
 |--------|----------|------|-------|
-| POST | `/api/listings` | Yes | Create listing. Returns `{ data: { id, pretty_path } }` |
-| PUT | `/api/listings/{id}` | Yes | Update listing |
+| POST | `/api/listing_drafts` | Yes | Create draft. Flat payload (no wrapper). Returns `{ data: { id, percentage_complete } }` |
+| PUT | `/api/listing_drafts/{id}` | Yes | Update draft. Uses `accept-version: v1` header. Publish-format fields (`makeoffer`/`buynow`, `price` as string). |
+| POST | `/api/listing_drafts/{id}/submit` | Yes | Submit (publish) a draft. Empty body (`content-length: 0`). Uses `accept-version: v1` header. Returns the published listing. |
+| GET | `/api/listing_drafts?page=1` | Yes | List user's drafts |
+| DELETE | `/api/listing_drafts/{id}` | Yes | Delete a draft |
+
+**Draft create payload**: flat object with `designers` as `[{id, name, slug}]`, `photos` as `[{url, width, height, rotate, position}]`, `traits` as `[{name, value}]`. Uses `make_offer`/`buy_now` (with underscores). Size must be `"one size"` (with space).
+
+**Draft update payload (pre-submit)**: same as publish payload — `makeoffer`/`buynow` (NO underscores), `price` as string, `return_address_id` required, `id` as string.
+
+#### Publish Listing (verified live 2026-03-27)
+
+| Method | Endpoint | Auth | Notes |
+|--------|----------|------|-------|
+| POST | `/api/listings` | Yes | Publish listing. Requires `accept-version: v1` header. Flat payload. |
 | DELETE | `/api/listings/{id}` | Yes | Delete listing |
 | GET | `/api/listings/{id}` | No | Get listing details (public) |
+
+**Publish payload**: flat object, same as draft but with key differences:
+- `makeoffer`/`buynow` (NO underscores — different from drafts!)
+- `price` as **string** (not number)
+- `return_address_id` required (get from `/api/users/{id}/postal_addresses`)
+- `duplicate_listing`, `hidden_from_algolia`, `shipping_label`, `styles`, `measurements`, `exact_size` fields
+- Header: `accept-version: v1` (not `x-api-version`)
+
+**Two-step flow (verified live 2026-03-27)**:
+1. `POST /api/listing_drafts` — create draft (draft-format payload)
+2. `PUT /api/listing_drafts/{id}` — update with publish-format data (makeoffer/buynow, price as string, return_address_id)
+3. `POST /api/listing_drafts/{id}/submit` — empty body, triggers publish → returns published listing
+
+**Alternative**: Publish directly via `POST /api/listings` (skips draft entirely)
 
 #### User Listings & Sales
 

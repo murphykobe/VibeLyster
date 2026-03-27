@@ -17,11 +17,11 @@ const ALGOLIA_URL =
 const ALGOLIA_PARAMS =
   "x-algolia-agent=Algolia&x-algolia-application-id=MNRWEFSS2Q&x-algolia-api-key=bc9ee1c014521ccf312525a4ef324a16";
 
-function makeHeaders(csrfToken) {
+function makeHeaders(csrfToken, version = "application/grailed.api.v1") {
   return {
     Accept: "application/json",
     "Content-Type": "application/json",
-    "x-api-version": "application/grailed.api.v1",
+    "x-api-version": version,
     "x-csrf-token": csrfToken,
   };
 }
@@ -135,29 +135,80 @@ export async function uploadImage(imagePath, csrfToken, cookies) {
   return presign.data.image_url;
 }
 
-// ─── Listings CRUD ───────────────────────────────────────────────────────────
+// ─── Drafts ─────────────────────────────────────────────────────────────────
 
-export async function createListing(listingData, csrfToken, cookies) {
-  return apiFetch(`${GRAILED_API}/listings`, {
+export async function createDraft(draftData, csrfToken, cookies) {
+  return apiFetch(`${GRAILED_API}/listing_drafts`, {
     method: "POST",
     headers: {
       ...makeHeaders(csrfToken),
       Cookie: cookies,
     },
-    body: JSON.stringify(listingData),
+    body: JSON.stringify(draftData),
   });
 }
 
-export async function updateListing(listingId, listingData, csrfToken, cookies) {
-  return apiFetch(`${GRAILED_API}/listings/${listingId}`, {
+export async function updateDraft(draftId, draftData, csrfToken, cookies) {
+  return apiFetch(`${GRAILED_API}/listing_drafts/${draftId}`, {
     method: "PUT",
     headers: {
-      ...makeHeaders(csrfToken),
+      Accept: "application/json",
+      "Content-Type": "application/json",
+      "accept-version": "v1",
+      "x-csrf-token": csrfToken,
+      Cookie: cookies,
+    },
+    body: JSON.stringify(draftData),
+  });
+}
+
+export async function submitDraft(draftId, csrfToken, cookies) {
+  return apiFetch(`${GRAILED_API}/listing_drafts/${draftId}/submit`, {
+    method: "POST",
+    headers: {
+      Accept: "application/json",
+      "Content-Type": "application/json",
+      "accept-version": "v1",
+      "x-csrf-token": csrfToken,
+      Cookie: cookies,
+    },
+  });
+}
+
+export async function publishListing(listingData, csrfToken, cookies) {
+  return apiFetch(`${GRAILED_API}/listings`, {
+    method: "POST",
+    headers: {
+      Accept: "application/json",
+      "Content-Type": "application/json",
+      "accept-version": "v1",
+      "x-csrf-token": csrfToken,
       Cookie: cookies,
     },
     body: JSON.stringify(listingData),
   });
 }
+
+export async function getDrafts(page, csrfToken, cookies) {
+  return apiFetch(`${GRAILED_API}/listing_drafts?page=${page}`, {
+    headers: {
+      ...makeHeaders(csrfToken),
+      Cookie: cookies,
+    },
+  });
+}
+
+export async function deleteDraft(draftId, csrfToken, cookies) {
+  return apiFetch(`${GRAILED_API}/listing_drafts/${draftId}`, {
+    method: "DELETE",
+    headers: {
+      ...makeHeaders(csrfToken),
+      Cookie: cookies,
+    },
+  });
+}
+
+// ─── Listings ───────────────────────────────────────────────────────────────
 
 export async function deleteListing(listingId, csrfToken, cookies) {
   return apiFetch(`${GRAILED_API}/listings/${listingId}`, {
