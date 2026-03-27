@@ -210,6 +210,20 @@ export async function deleteDraft(draftId, csrfToken, cookies) {
 
 // ─── Listings ───────────────────────────────────────────────────────────────
 
+export async function editListing(listingId, listingData, csrfToken, cookies) {
+  return apiFetch(`${GRAILED_API}/listings/${listingId}`, {
+    method: "PUT",
+    headers: {
+      Accept: "application/json",
+      "Content-Type": "application/json",
+      "accept-version": "v1",
+      "x-csrf-token": csrfToken,
+      Cookie: cookies,
+    },
+    body: JSON.stringify(listingData),
+  });
+}
+
 export async function deleteListing(listingId, csrfToken, cookies) {
   return apiFetch(`${GRAILED_API}/listings/${listingId}`, {
     method: "DELETE",
