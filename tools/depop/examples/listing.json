@@ -1,0 +1,30 @@
+{
+  "description": "Nike Air Max 97 Silver Bullet Size 10 US. Good condition with minor creasing on toe box. Comes with original box.",
+  "price": {
+    "currencyName": "USD",
+    "priceAmount": 12000
+  },
+  "quantity": 1,
+  "pictures": [
+    {
+      "id": "REPLACE_WITH_UPLOAD_ID"
+    }
+  ],
+  "category": {
+    "id": 64
+  },
+  "brand": "Nike",
+  "size": {
+    "type": "shoes",
+    "value": "10"
+  },
+  "condition": "refurbished",
+  "address": {
+    "id": "REPLACE_WITH_ADDRESS_ID"
+  },
+  "shipping": {
+    "isShippingEnabled": true,
+    "isFreeShipping": false
+  },
+  "variants": []
+}
