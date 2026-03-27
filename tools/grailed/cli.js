@@ -15,6 +15,7 @@
  *   grailed create <json-file>            Create a draft listing
  *   grailed publish <draft-id> [json-file] Publish draft (update + submit)
  *   grailed publish <json-file>            Publish directly (no draft)
+ *   grailed edit <listing-id> <json-file>  Edit a live listing in-place
  *   grailed delete <listing-id>           Delete a listing
  *
  * Auth: Set GRAILED_CSRF_TOKEN and GRAILED_COOKIES env vars,
@@ -100,6 +101,7 @@ Commands:
   create <json-file>            Create a draft listing
   publish <draft-id> [json-file] Publish a draft (update + submit). Omit json to submit as-is
   publish <json-file>            Publish directly via POST /api/listings (no draft)
+  edit <listing-id> <json-file> Edit a live listing (price, description, photos, etc.)
   delete <listing-id>           Delete a listing or draft
 
 Auth:
@@ -301,6 +303,35 @@ Auth:
             `${GRAILED_BASE}${result.data.pretty_path || `/listings/${result.data.id}`}`
           );
         }
+        break;
+      }
+
+      case "edit": {
+        const listingId = args[1];
+        const jsonFile = args[2];
+        if (!listingId || !jsonFile) {
+          console.error("Usage: grailed edit <listing-id> <json-file>");
+          console.error(
+            "\nEdit a live listing in-place. Uses publish-format JSON (price as string, makeoffer/buynow)."
+          );
+          process.exit(1);
+        }
+        const { csrfToken, cookies } = getAuth(rawArgs);
+        const editData = JSON.parse(await readFile(jsonFile, "utf-8"));
+        const editResult = await api.editListing(
+          listingId,
+          editData,
+          csrfToken,
+          cookies
+        );
+        console.log("Updated listing:");
+        console.log("  ID:", editResult.data.id);
+        console.log("  Title:", editResult.data.title);
+        console.log("  Price:", `$${editResult.data.price}`);
+        console.log(
+          "  URL:",
+          `${GRAILED_BASE}${editResult.data.pretty_path || `/listings/${editResult.data.id}`}`
+        );
         break;
       }
 
