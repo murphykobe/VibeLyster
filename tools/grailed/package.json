@@ -1,13 +1,30 @@
 {
   "name": "@vibelyster/grailed-cli",
   "version": "0.1.0",
-  "description": "CLI tool for Grailed marketplace API — proof of concept",
+  "description": "CLI for Grailed's internal API — list, draft, publish, and manage listings",
   "type": "module",
   "bin": {
-    "grailed": "./cli.js"
+    "grailed": "./dist/cli.js"
   },
+  "files": [
+    "dist/"
+  ],
   "scripts": {
-    "start": "node cli.js"
+    "build": "esbuild cli.js --bundle --platform=node --format=esm --minify --outfile=dist/cli.js",
+    "prepublishOnly": "npm run build"
   },
-  "dependencies": {}
+  "engines": {
+    "node": ">=18"
+  },
+  "devDependencies": {
+    "esbuild": "^0.25.0"
+  },
+  "keywords": [
+    "grailed",
+    "reselling",
+    "cli",
+    "listing"
+  ],
+  "license": "MIT",
+  "private": false
 }
