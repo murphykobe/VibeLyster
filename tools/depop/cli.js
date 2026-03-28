@@ -4,20 +4,20 @@
  * Depop CLI — VibeLyster
  *
  * Usage:
- *   depop login                          Log in via magic link (recommended)
+ *   depop login                          Save your access token
  *   depop auth                           Check login status
  *   depop logout                         Remove saved credentials
- *   depop listings [--status <filter>]   List your products (default: selling)
- *   depop listing <id>                   Get product details
+ *   depop listings                       List your products
+ *   depop listing <slug>                 Get product details
  *   depop addresses                      List shipping addresses
  *   depop upload <image-path>            Upload a square image, returns {id, url}
  *   depop create <json-file>             Create a product listing
  *   depop edit <product-id> <json-file>  Edit a live product in-place
  *   depop delete <product-id>            Delete a product
  *
- * Auth: Run `depop login` to authenticate via Depop's magic link email.
- *       Tokens are saved to ~/.vibelyster/depop.json.
- *       Alternatively, set DEPOP_ACCESS_TOKEN and DEPOP_USER_ID env vars.
+ * Auth: Run `depop login` and paste your access_token from browser cookies.
+ *       Token is saved to ~/.vibelyster/depop.json.
+ *       Alternatively, set DEPOP_ACCESS_TOKEN env var.
  *
  * Image note: Depop requires SQUARE images. Crop before uploading.
  */
@@ -45,7 +45,7 @@ function prompt(question) {
 async function loadSavedAuth() {
   try {
     const data = JSON.parse(await readFile(CONFIG_FILE, "utf-8"));
-    if (data.accessToken && data.userId) return data;
+    if (data.accessToken) return data;
   } catch {
     // No saved auth
   }
@@ -65,43 +65,37 @@ async function clearAuth() {
   }
 }
 
-function getAuth(args) {
-  // Will be called after tryGetAuth resolves
-  throw new Error("Use tryGetAuth instead");
-}
-
-async function tryGetAuth(args) {
-  // Priority: flags > env vars > saved file
-  const accessToken =
+async function getAccessToken(args) {
+  const token =
     getFlagValue(args, "--access-token") ||
     process.env.DEPOP_ACCESS_TOKEN;
-  const userId =
-    getFlagValue(args, "--user-id") ||
-    process.env.DEPOP_USER_ID;
-  const cookies =
-    getFlagValue(args, "--cookies") ||
-    process.env.DEPOP_COOKIES ||
-    "";
+  if (token) return token;
 
-  if (accessToken && userId) {
-    return { accessToken, userId, cookies };
-  }
-
-  // Try saved auth
   const saved = await loadSavedAuth();
-  if (saved) {
-    return {
-      accessToken: saved.accessToken,
-      userId: saved.userId,
-      cookies: saved.cookies || "",
-    };
-  }
+  if (saved) return saved.accessToken;
 
   console.error(
-    'Error: Not logged in. Run "depop login" to authenticate via magic link.\n\n' +
-      "Or set DEPOP_ACCESS_TOKEN and DEPOP_USER_ID env vars."
+    "Error: Not logged in. Run `depop login` or set DEPOP_ACCESS_TOKEN env var."
   );
   process.exit(1);
+}
+
+async function getUserId(args) {
+  // Check saved auth first (cached userId avoids extra API call)
+  const saved = await loadSavedAuth();
+  if (saved?.userId) return saved.userId;
+
+  // Resolve from API
+  const token = await getAccessToken(args);
+  const userId = await api.resolveUserId(token);
+
+  // Cache it for next time
+  if (saved) {
+    saved.userId = userId;
+    await saveAuth(saved);
+  }
+
+  return userId;
 }
 
 function getFlagValue(args, flag) {
@@ -111,7 +105,7 @@ function getFlagValue(args, flag) {
 
 function cleanArgs(args) {
   const cleaned = [];
-  const valueFlags = ["--access-token", "--user-id", "--cookies", "--status"];
+  const valueFlags = ["--access-token", "--status"];
   let i = 0;
   while (i < args.length) {
     if (valueFlags.includes(args[i])) {
@@ -133,11 +127,11 @@ async function main() {
     console.log(`Depop CLI — VibeLyster
 
 Commands:
-  login                           Log in via Depop magic link email
+  login                           Save your access token
   auth                            Check login status
   logout                          Remove saved credentials
-  listings [--status <filter>]    List your products (selling, sold, all)
-  listing <id>                    Get product details
+  listings                        List your products
+  listing <slug>                  Get product details
   addresses                       List shipping addresses
   upload <image-path>             Upload a square image, returns {id, url}
   create <json-file>              Create a product listing
@@ -145,9 +139,9 @@ Commands:
   delete <product-id>             Delete a product
 
 Auth:
-  Run "depop login" to authenticate (recommended).
-  Tokens are saved to ~/.vibelyster/depop.json.
-  Or set DEPOP_ACCESS_TOKEN and DEPOP_USER_ID env vars.
+  Run "depop login" and paste your access_token from browser cookies.
+  Token saved to ~/.vibelyster/depop.json. userId auto-resolved.
+  Or set DEPOP_ACCESS_TOKEN env var.
 
 Note: Images must be square. Crop before uploading.
 `);
@@ -157,80 +151,41 @@ Note: Images must be square. Crop before uploading.
   try {
     switch (command) {
       case "login": {
-        console.log("Depop Magic Link Login\n");
+        console.log("Depop Login\n");
+        console.log("To get your access token:");
+        console.log("  1. Log in to depop.com in your browser");
+        console.log("  2. Open DevTools → Application → Cookies → depop.com");
+        console.log("  3. Copy the 'access_token' cookie value\n");
 
-        const email = await prompt("Enter your Depop email: ");
-        if (!email) {
-          console.error("Email is required.");
-          process.exit(1);
-        }
+        const accessToken = await prompt("access_token: ");
+        if (!accessToken) { console.error("access_token is required."); process.exit(1); }
 
-        console.log(`\nRequesting magic link for ${email}...`);
-        try {
-          await api.requestMagicLink(email);
-        } catch (e) {
-          // If the endpoint doesn't work, fall back to manual instructions
-          console.log(
-            "\nCould not request magic link automatically.",
-            "\nPlease request it manually:"
-          );
-          console.log("  1. Go to https://www.depop.com/login/");
-          console.log(`  2. Enter ${email} and click "Send magic link"`);
-        }
-
-        console.log("\nCheck your email for the magic link from Depop.");
-        console.log(
-          'IMPORTANT: Do NOT click the link. Instead, copy the URL from the "Log in to Depop" button.'
-        );
-        console.log(
-          "  (Right-click or long-press the button → Copy Link)\n"
-        );
-
-        const magicLink = await prompt("Paste the magic link URL here: ");
-        if (!magicLink) {
-          console.error("Magic link URL is required.");
-          process.exit(1);
-        }
-
-        console.log("\nRedeeming magic link...");
-        const authData = await api.redeemMagicLink(magicLink);
-
-        // Verify the token works
-        const check = await api.checkLogin(
-          authData.accessToken,
-          authData.userId,
-          authData.cookies
-        );
+        console.log("\nVerifying...");
+        const check = await api.checkLogin(accessToken);
 
         if (!check.loggedIn) {
-          console.error("Login failed — token did not work:", check.error);
+          console.error("Login failed:", check.error);
           process.exit(1);
         }
 
-        // Save to config file
-        await saveAuth({
-          accessToken: authData.accessToken,
-          userId: authData.userId,
-          cookies: authData.cookies,
-          email,
-          savedAt: new Date().toISOString(),
-        });
+        console.log("Resolving user ID...");
+        const userId = await api.resolveUserId(accessToken);
 
-        const u = check.user;
-        console.log(`\nLogged in as: ${u.username || u.name || "(unknown)"}`);
-        console.log(`User ID: ${authData.userId}`);
+        await saveAuth({ accessToken, userId, savedAt: new Date().toISOString() });
+        console.log(`\nLogged in! canSell: ${check.user.canSell}`);
+        console.log(`User ID: ${userId}`);
         console.log(`Credentials saved to ${CONFIG_FILE}`);
         break;
       }
 
       case "auth": {
-        const { accessToken, userId, cookies } = await tryGetAuth(rawArgs);
-        const result = await api.checkLogin(accessToken, userId, cookies);
+        const accessToken = await getAccessToken(rawArgs);
+        const result = await api.checkLogin(accessToken);
         if (result.loggedIn) {
-          const u = result.user;
-          console.log("Logged in as:", u.username || u.name || "(unknown)");
-          console.log("User ID:", userId);
-          if (u.email) console.log("Email:", u.email);
+          const userId = await getUserId(rawArgs);
+          console.log("Logged in. User ID:", userId);
+          console.log("canSell:", result.user.canSell);
+          console.log("stripe:", result.user.stripe?.isConnected ? "connected" : "not connected");
 
           const saved = await loadSavedAuth();
           if (saved) {
@@ -253,38 +208,39 @@ Note: Images must be square. Crop before uploading.
       }
 
       case "listings": {
-        const { accessToken, userId, cookies } = await tryGetAuth(rawArgs);
-        const statusFilter = getFlagValue(rawArgs, "--status") || "selling";
-        const result = await api.getListings(accessToken, userId, cookies, statusFilter);
-        const items = result.objects || result.products || result || [];
+        const accessToken = await getAccessToken(rawArgs);
+        const userId = await getUserId(rawArgs);
+        const result = await api.getListings(accessToken, userId);
+        const items = result.products || result.objects || [];
         if (!items.length) {
-          console.log(`No ${statusFilter} listings found.`);
+          console.log("No listings found.");
           break;
         }
         for (const item of items) {
-          const price = item.price ? `$${(item.price.priceAmount / 100).toFixed(2)}` : "?";
-          console.log(`[${item.id}] ${item.description?.slice(0, 60) || "(no title)"} — ${price}`);
-          console.log(`  ${DEPOP_BASE}/products/${item.slug || item.id}/`);
+          const desc = (item.description || "(no title)").split("\n")[0].slice(0, 60);
+          const slug = item.slug || item.id;
+          console.log(`[${slug}] ${desc} — ${item.status}`);
+          console.log(`  ${DEPOP_BASE}/products/${slug}/`);
         }
         console.log(`\nTotal: ${items.length} listings`);
         break;
       }
 
       case "listing": {
-        const productId = args[1];
-        if (!productId) {
-          console.error("Usage: depop listing <id>");
+        const slug = args[1];
+        if (!slug) {
+          console.error("Usage: depop listing <slug>");
           process.exit(1);
         }
-        const { accessToken, userId, cookies } = await tryGetAuth(rawArgs);
-        const result = await api.getProduct(productId, accessToken, userId, cookies);
+        const accessToken = await getAccessToken(rawArgs);
+        const result = await api.getProduct(slug, accessToken);
         console.log(JSON.stringify(result, null, 2));
         break;
       }
 
       case "addresses": {
-        const { accessToken, userId, cookies } = await tryGetAuth(rawArgs);
-        const result = await api.getAddresses(accessToken, userId, cookies);
+        const accessToken = await getAccessToken(rawArgs);
+        const result = await api.getAddresses(accessToken);
         console.log(JSON.stringify(result, null, 2));
         break;
       }
@@ -296,8 +252,8 @@ Note: Images must be square. Crop before uploading.
           console.error("\nImage must be square. Depop will reject non-square images.");
           process.exit(1);
         }
-        const { accessToken, userId, cookies } = await tryGetAuth(rawArgs);
-        const result = await api.uploadImage(imagePath, accessToken, userId, cookies);
+        const accessToken = await getAccessToken(rawArgs);
+        const result = await api.uploadImage(imagePath, accessToken);
         console.log("Uploaded:");
         console.log("  ID:", result.id);
         console.log("  URL:", result.url || result.imageUrl || JSON.stringify(result));
@@ -311,9 +267,9 @@ Note: Images must be square. Crop before uploading.
           console.error("\nSee examples/listing.json for the payload format.");
           process.exit(1);
         }
-        const { accessToken, userId, cookies } = await tryGetAuth(rawArgs);
+        const accessToken = await getAccessToken(rawArgs);
         const productData = JSON.parse(await readFile(jsonFile, "utf-8"));
-        const result = await api.createProduct(productData, accessToken, userId, cookies);
+        const result = await api.createProduct(productData, accessToken);
         console.log("Created listing:");
         console.log("  ID:", result.id);
         console.log("  URL:", `${DEPOP_BASE}/products/${result.slug || result.id}/`);
@@ -327,9 +283,9 @@ Note: Images must be square. Crop before uploading.
           console.error("Usage: depop edit <product-id> <json-file>");
           process.exit(1);
         }
-        const { accessToken, userId, cookies } = await tryGetAuth(rawArgs);
+        const accessToken = await getAccessToken(rawArgs);
         const editData = JSON.parse(await readFile(jsonFile, "utf-8"));
-        const result = await api.editProduct(productId, editData, accessToken, userId, cookies);
+        const result = await api.editProduct(productId, editData, accessToken);
         console.log("Updated listing:");
         console.log("  ID:", result.id);
         console.log("  URL:", `${DEPOP_BASE}/products/${result.slug || result.id}/`);
@@ -342,8 +298,8 @@ Note: Images must be square. Crop before uploading.
           console.error("Usage: depop delete <product-id>");
           process.exit(1);
         }
-        const { accessToken, userId, cookies } = await tryGetAuth(rawArgs);
-        await api.deleteProduct(productId, accessToken, userId, cookies);
+        const accessToken = await getAccessToken(rawArgs);
+        await api.deleteProduct(productId, accessToken);
         console.log(`Deleted product ${productId}`);
         break;
       }
