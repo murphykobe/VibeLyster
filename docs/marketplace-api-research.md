@@ -280,11 +280,31 @@ Content-Type: application/json
 
 ---
 
+## Competitor Auth Strategies (SellRaze, confirmed 2026-03-27)
+
+SellRaze (YC F25, 200K+ users) is the closest competitor. Analysis of their mobile app reveals how they handle auth for each platform:
+
+| Platform | SellRaze Auth Method | Notes |
+|----------|---------------------|-------|
+| **eBay** | Real OAuth (`auth2.ebay.com` consent screen) | Only platform with legitimate 3rd-party API. Long-lived token via developer program. |
+| **Poshmark** | In-app WebView login (username/password) | Captures session cookies from login response. SellRaze stores user's Poshmark credentials. |
+| **Mercari** | In-app WebView login (email/password + reCAPTCHA) | Same as Poshmark. Must handle reCAPTCHA Enterprise server-side. |
+| **Depop** | Magic link interception | Triggers Depop's email-based login. User copy-pastes the magic link URL back into SellRaze. App intercepts the redirect → captures `access_token`. Bypasses PerimeterX `_px2` issue entirely. |
+| **Facebook MP** | Unknown (likely WebView + `fb_dtsg` capture) | Most complex platform to automate. |
+
+**Key insight**: Only eBay uses real OAuth. Every other platform uses session token capture — the same approach as Chrome extensions and our CLI, but wrapped in better UX via in-app WebView login flows.
+
+**Depop magic link approach** is particularly clever: the `access_token` obtained via the magic link redirect is a clean JWT — no browser fingerprint, no `_px2` cookie needed. This is a viable auth strategy for our Depop CLI (`depop auth` → enter email → paste magic link → token captured).
+
+**SellRaze does NOT support Grailed** — a significant gap for fashion/streetwear resellers.
+
+---
+
 ## Key Takeaways for VibeLyster
 
 1. **Grailed has a clean REST API** — simplest of all non-eBay platforms to integrate
 2. **eBay has official OAuth API** — fully server-side, no extension needed
-3. **Depop is API-based but has PerimeterX anti-bot** — higher risk for server-side replay
-4. **Chrome extension is the proven pattern** — all successful tools use it
+3. **Depop magic link flow** — can bypass PerimeterX by capturing `access_token` from magic link redirect instead of replaying browser cookies
+4. **In-app WebView login is the industry pattern** — SellRaze, Crosslist, and Flyp all capture tokens this way for platforms without public APIs
 5. **The extension's role is minimal** — just auth + API calls, no DOM manipulation for Grailed/Depop
-6. **Future migration path**: Extension → token sync → fully server-side (not a one-way door)
+6. **Future migration path**: CLI (manual tokens) → magic link / browser tool (automated tokens) → companion app (seamless)
