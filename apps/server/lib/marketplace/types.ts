@@ -30,6 +30,11 @@ export type DepopTokens = {
   access_token: string;
 };
 
+/** Result returned by a marketplace connection verification probe */
+export type ConnectionProbeResult =
+  | { ok: true; platformUsername?: string; expiresAt?: string }
+  | { ok: false; error: string };
+
 /** Result returned by a publish call */
 export type PublishResult =
   | { ok: true; platformListingId: string; platformData: Record<string, unknown> }

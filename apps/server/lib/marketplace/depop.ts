@@ -10,7 +10,14 @@
  * (Direct POST to /api/v2/products/ returns 400 — draft-first is required)
  */
 
-import type { CanonicalListing, DepopTokens, PublishResult, DelistResult, StatusResult } from "./types";
+import type {
+  CanonicalListing,
+  DepopTokens,
+  PublishResult,
+  DelistResult,
+  StatusResult,
+  ConnectionProbeResult,
+} from "./types";
 
 const DEPOP_API = "https://webapi.depop.com";
 
@@ -115,6 +122,10 @@ async function apiFetch(url: string, options: RequestInit = {}) {
   return res.json() as Promise<Record<string, unknown>>;
 }
 
+function pickString(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
 // ─── Image upload ─────────────────────────────────────────────────────────────
 
 /**
@@ -162,6 +173,13 @@ async function resolveUserId(accessToken: string): Promise<string> {
   throw new Error("Could not resolve Depop userId — no addresses found on account");
 }
 
+async function identify(accessToken: string): Promise<Record<string, unknown> | null> {
+  const result = await apiFetch(`${DEPOP_API}/api/v1/auth/identify/`, {
+    headers: makeHeaders(accessToken),
+  });
+  return result as Record<string, unknown> | null;
+}
+
 async function getShipFromAddress(accessToken: string): Promise<number> {
   const addrs = await apiFetch(`${DEPOP_API}/api/v1/addresses/`, {
     headers: makeHeaders(accessToken),
@@ -171,6 +189,37 @@ async function getShipFromAddress(accessToken: string): Promise<number> {
 }
 
 // ─── Public API ───────────────────────────────────────────────────────────────
+
+export async function verifyDepopConnection(tokens: DepopTokens): Promise<ConnectionProbeResult> {
+  const accessToken = pickString(tokens.access_token);
+  if (!accessToken) {
+    return { ok: false, error: "Invalid Depop tokens: access_token is required" };
+  }
+
+  try {
+    const auth = await identify(accessToken);
+    const authUser =
+      auth && typeof auth.user === "object" && auth.user !== null
+        ? (auth.user as Record<string, unknown>)
+        : null;
+
+    const platformUsername =
+      pickString(auth?.username) ??
+      pickString(auth?.handle) ??
+      pickString(auth?.name) ??
+      pickString(authUser?.username) ??
+      pickString(authUser?.handle) ??
+      pickString(authUser?.name);
+
+    return { ok: true, platformUsername };
+  } catch (err) {
+    if (err instanceof DepopError && (err.statusCode === 401 || err.statusCode === 403)) {
+      return { ok: false, error: "Depop authentication failed. Please reconnect your account." };
+    }
+    const error = err instanceof Error ? err.message : String(err);
+    return { ok: false, error: `Depop verification failed: ${error}` };
+  }
+}
 
 export async function publishToDepop(
   listing: CanonicalListing,

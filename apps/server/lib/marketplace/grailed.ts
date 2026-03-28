@@ -6,7 +6,14 @@
  * Photos: Blob URLs are uploaded to Grailed S3 via presign flow
  */
 
-import type { CanonicalListing, GrailedTokens, PublishResult, DelistResult, StatusResult } from "./types";
+import type {
+  CanonicalListing,
+  GrailedTokens,
+  PublishResult,
+  DelistResult,
+  StatusResult,
+  ConnectionProbeResult,
+} from "./types";
 
 const GRAILED_API = "https://www.grailed.com/api";
 const GRAILED_S3 = "https://grailed-media.s3.amazonaws.com/";
@@ -101,6 +108,10 @@ class GrailedError extends Error {
   }
 }
 
+function pickString(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
 // ─── Image upload ─────────────────────────────────────────────────────────────
 
 /**
@@ -163,6 +174,27 @@ async function getAddresses(userId: number | string, csrfToken: string, cookies:
 }
 
 // ─── Public API ───────────────────────────────────────────────────────────────
+
+export async function verifyGrailedConnection(tokens: GrailedTokens): Promise<ConnectionProbeResult> {
+  const csrfToken = pickString(tokens.csrf_token);
+  const cookies = pickString(tokens.cookies);
+  if (!csrfToken || !cookies) {
+    return { ok: false, error: "Invalid Grailed tokens: csrf_token and cookies are required" };
+  }
+
+  try {
+    const me = await getMe(csrfToken, cookies);
+    const user = (me as { data?: Record<string, unknown> }).data ?? {};
+    const platformUsername = pickString(user.username) ?? pickString(user.name);
+    return { ok: true, platformUsername };
+  } catch (err) {
+    if (err instanceof GrailedError && (err.statusCode === 401 || err.statusCode === 403)) {
+      return { ok: false, error: "Grailed authentication failed. Please reconnect your account." };
+    }
+    const error = err instanceof Error ? err.message : String(err);
+    return { ok: false, error: `Grailed verification failed: ${error}` };
+  }
+}
 
 export async function publishToGrailed(
   listing: CanonicalListing,
