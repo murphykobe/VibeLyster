@@ -135,7 +135,8 @@ This is the central management screen for any listing. Shows:
 
 - **Dashboard view:** reads from local database (fast, no API calls)
 - **Listing detail view:** on open, fires live status check against marketplace APIs for that specific listing. Updates DB with fresh status.
-- **"Last synced"** indicator on listing detail with manual refresh button
+- **"Last synced"** indicator on listing detail — shows timestamp of last marketplace check (e.g., "Last synced: 2:34 PM")
+- **Manual refresh button** (refresh icon) next to the "Last synced" text — tapping it re-fires the status check
 - No background cron sync for MVP. User sees fresh data when they look at a specific listing.
 
 ### 10. Settings
@@ -144,6 +145,7 @@ This is the central management screen for any listing. Shows:
 - **Marketplaces:** list of platforms with connection status
   - Connected: shows username, "Disconnect" button
   - Not connected: "Connect" button → opens WebView login flow
+  - **Disconnect flow:** tap "Disconnect" → confirmation dialog → deletes marketplace connection from database → platform row updates to "Connect" state
 - Marketplace connections can also be triggered inline from the draft detail screen when trying to publish
 
 ## Marketplace Auth Flows (WebView)
@@ -168,6 +170,46 @@ This is the central management screen for any listing. Shows:
 4. Exchange for access_token + refresh_token (18-month lifetime)
 5. Store encrypted in database
 
+## Auth Contract
+
+**Mobile → Server:** The iOS app authenticates to the Next.js backend using Clerk JWT bearer tokens, not cookie-based sessions. Every API request includes an `Authorization: Bearer <clerk_jwt>` header. The server verifies the token using `clerkClient.verifyToken()` and extracts the user ID.
+
+**Why not cookies:** React Native is not a browser — it doesn't have a cookie jar. Cookie-based `auth()` from `@clerk/nextjs` only works for web requests with session cookies. Mobile apps must use explicit token verification.
+
+**Token flow:**
+1. Mobile app calls `getToken()` from `@clerk/clerk-expo` (returns a short-lived JWT)
+2. Sends JWT in `Authorization: Bearer` header on every API call
+3. Server verifies JWT, extracts `sub` (Clerk user ID), looks up/creates DB user
+4. Clerk JWTs are short-lived (~60s) and auto-refreshed by the Clerk SDK
+
+## Upload Contract
+
+**Photo upload:** Client uploads photos to Vercel Blob via a server-side upload route (`POST /api/upload`) before calling `/api/generate`. The generate endpoint receives Vercel Blob URLs, not raw image data.
+
+**Audio upload:** Audio is sent as a multipart form field directly to `/api/generate` (small files, <1MB for 30-second voice notes). No separate upload step needed.
+
+**Why blob-first for photos:** Photos are large (2-5MB each, up to 10 per listing). Uploading them separately to Blob means: (a) the generate request is fast (just URLs), (b) photos are persisted even if generation fails, (c) the same Blob URLs are passed to marketplace APIs at publish time.
+
+## Publish Contract
+
+**Single publish:** Synchronous — `POST /api/publish` blocks until the marketplace API responds. Acceptable for 1 listing to 1-2 platforms (2-5 seconds). Returns success/failure per platform.
+
+**Bulk publish:** Asynchronous — `POST /api/publish/bulk` accepts multiple listing IDs + platforms, creates `platform_listings` records with `status: 'publishing'`, and processes them. Returns immediately with acknowledgment. The mobile app polls the listings endpoint to see updated statuses.
+
+**Retry policy:** On marketplace API failure, the server retries once with 2-second exponential backoff before marking as `failed`. The user can manually retry failed publishes from the listing detail screen.
+
+**Idempotency:** Each publish attempt uses a deterministic idempotency key (`${listing_id}-${platform}`) stored in `platform_listings`. This prevents duplicate listings when retrying a failed publish.
+
+## AI Contract
+
+**One canonical listing, platform transforms at publish time.** The AI pipeline generates a single structured listing object (title, description, price, size, condition, brand, category, traits). This canonical object is stored in the `listings` table.
+
+Platform-specific transforms happen at publish time in the marketplace posting modules:
+- **Grailed:** `make_offer` → `makeoffer`, price number → string, `designer_names` from brand, category mapping to Grailed's tree
+- **Depop:** `priceAmount` as string, `productType` from category, images must be square, description combines title + description
+
+The user edits the canonical listing. They never see platform-specific fields (those are derived).
+
 ## Architecture
 
 ```
@@ -176,54 +218,56 @@ This is the central management screen for any listing. Shows:
 │                         │
 │  • Capture (camera +    │
 │    voice recording)     │
+│  • Upload photos → Blob │
 │  • Draft review/edit    │
 │  • Publish controls     │
 │  • WebView auth         │
-│  • Clerk auth           │
+│  • Clerk JWT auth       │
 │  • (Fallback: direct    │
 │    marketplace API      │
 │    calls if server-     │
 │    side relay fails)    │
 └───────────┬─────────────┘
-            │ HTTPS
+            │ HTTPS (Bearer JWT)
             ▼
 ┌─────────────────────────┐
 │   Next.js on Vercel     │
 │                         │
 │  API Routes:            │
+│  POST /api/upload       │  Photo → Vercel Blob
 │  POST /api/generate     │  AI pipeline (Whisper + vision)
 │  GET/POST/PUT/DELETE    │
 │    /api/listings/*      │  Draft/listing CRUD
-│  POST /api/publish      │  Post to marketplace APIs
+│  POST /api/publish      │  Single publish (sync)
+│  POST /api/publish/bulk │  Bulk publish (async)
 │  POST /api/delist       │  Remove from marketplace APIs
 │  GET  /api/status/:id   │  Live status check
 │  POST /api/connect      │  Store marketplace tokens
+│  DELETE /api/connect    │  Disconnect marketplace
 │  GET  /api/connections  │  List connected platforms
 │                         │
-│  AI Gateway:            │
+│  AI Gateway (OIDC):     │
 │  • Whisper (voice→text) │
 │  • Vision model         │
 │    (structured output)  │
 └───────────┬─────────────┘
             │
-       ┌────┴────┐
-       ▼         ▼
-┌──────────┐ ┌────────────────┐
-│   Neon   │ │  Marketplace   │
-│ Postgres │ │  APIs          │
-│          │ │                │
-│ • users  │ │ • Grailed REST │
-│ • market │ │ • Depop REST   │
-│   place_ │ │ (eBay: post-   │
-│   connect│ │                │
-│   ions   │ └────────────────┘
-│ • list-  │
-│   ings   │
-│ • plat-  │
-│   form_  │
-│   list-  │
-│   ings   │
-└──────────┘
+    ┌───────┼───────┐
+    ▼       ▼       ▼
+┌────────┐ ┌─────┐ ┌────────────────┐
+│  Neon  │ │Blob │ │  Marketplace   │
+│Postgres│ │     │ │  APIs          │
+│        │ │Photo│ │                │
+│• users │ │store│ │• Grailed REST  │
+│• market│ │     │ │• Depop REST    │
+│  conns │ └─────┘ │(eBay: post-MVP)│
+│• list- │         └────────────────┘
+│  ings  │
+│• plat- │
+│  form_ │
+│  list- │
+│  ings  │
+└────────┘
 ```
 
 ## Database Schema
@@ -334,3 +378,49 @@ Unique constraint on (listing_id, platform). Unique constraint on (idempotency_k
 | AI misidentifies item attributes | Medium | Always show draft for human review before posting. Voice completeness check reduces reliance on vision. |
 | Platform TOS violation | Medium | App operates with user's own credentials, same approach as SellRaze (YC-backed), Crosslist, Flyp, Vendoo. Industry standard. |
 | React Native WebView token extraction complexity | Medium | Proven pattern — SellRaze does exactly this. react-native-webview supports cookie/redirect interception. |
+
+## Operational Guardrails
+
+### Retry + Backoff
+
+Marketplace API calls (publish, delist) use a simple retry policy:
+- **Max retries:** 1 (total 2 attempts)
+- **Backoff:** 2 seconds between attempts
+- **On final failure:** mark `platform_listings.status = 'failed'`, store error in `last_error`, increment `attempt_count`
+- **Manual retry:** user taps "Retry" on the listing detail screen, which resets status to `publishing` and tries again
+
+### Idempotency
+
+- Publish uses deterministic idempotency key: `${listing_id}-${platform}`
+- Stored in `platform_listings.idempotency_key` with unique constraint
+- Prevents duplicate marketplace listings when retrying failed publishes
+- On retry, the existing `platform_listings` row is updated (not inserted)
+
+### Rate Limits
+
+- **AI Gateway:** inherits provider rate limits (Whisper, Claude, etc.) — no custom limits needed for MVP
+- **Marketplace APIs:** Grailed and Depop don't publish rate limit headers. For safety: max 1 publish per platform per 2 seconds during bulk publish (sequential per platform, parallel across platforms)
+- **App API:** no auth rate limiting for MVP (Clerk handles abuse via bot detection). Add per-user limits post-MVP if needed.
+
+### Observability
+
+Track these metrics from day one to understand system health:
+
+**Publish pipeline:**
+- `publish.success_rate` — per platform (Grailed, Depop). Target: >95%
+- `publish.latency_p50` / `publish.latency_p95` — per platform. Baseline TBD after first deploys
+- `publish.failure_taxonomy` — categorized errors: auth_expired, rate_limited, api_error, timeout, tls_blocked
+- `publish.retry_rate` — how often retries are needed
+- `publish.attempt_count` — distribution (1 vs 2 attempts)
+
+**AI pipeline:**
+- `ai.generate_latency` — end-to-end time from voice+photos to draft
+- `ai.transcription_latency` — Whisper call time
+- `ai.vision_skip_rate` — how often voice is "complete enough" to skip vision (cost optimization signal)
+- `ai.model_cost` — per-listing AI cost via AI Gateway cost tracking
+
+**Auth + connections:**
+- `auth.token_expired_rate` — per platform (signals when re-auth prompts are too frequent)
+- `connection.active_count` — connected marketplaces per user
+
+**Implementation:** Use Vercel's built-in function logs + AI Gateway's built-in cost tracking for MVP. Structured `console.log` with JSON payloads (e.g., `{ event: "publish.success", platform: "grailed", latency_ms: 2340, listing_id: "..." }`). Query via Vercel Logs dashboard. Add Vercel Analytics for web dashboard if built later. No third-party observability tool needed for MVP.
