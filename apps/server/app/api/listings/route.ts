@@ -1,6 +1,7 @@
 import { NextRequest } from "next/server";
 import { requireAuth, AuthError, authErrorResponse } from "@/lib/auth";
 import { getListings, createListing } from "@/lib/db";
+import { CreateListingBody, parseBody } from "@/lib/validation";
 
 export async function GET(req: NextRequest) {
   try {
@@ -17,26 +18,23 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   try {
     const user = await requireAuth(req);
-    const body = await req.json();
-
-    const { title, description, price, size, condition, brand, category, traits, photos, voiceTranscript, aiRawResponse } = body;
-    if (!title || !description || price == null || !Array.isArray(photos)) {
-      return Response.json({ error: "title, description, price, and photos are required" }, { status: 400 });
-    }
+    const parsed = parseBody(CreateListingBody, await req.json());
+    if ("error" in parsed) return parsed.error;
+    const { title, description, price, size, condition, brand, category, traits, photos, voiceTranscript, aiRawResponse } = parsed.data;
 
     const listing = await createListing({
       userId: user.id,
       title,
       description,
-      price: Number(price),
-      size,
-      condition,
-      brand,
-      category,
-      traits,
+      price,
+      size: size ?? undefined,
+      condition: condition ?? undefined,
+      brand: brand ?? undefined,
+      category: category ?? undefined,
+      traits: traits as Record<string, unknown> | undefined,
       photos,
-      voiceTranscript,
-      aiRawResponse,
+      voiceTranscript: voiceTranscript ?? undefined,
+      aiRawResponse: aiRawResponse ?? undefined,
     });
 
     return Response.json(listing, { status: 201 });

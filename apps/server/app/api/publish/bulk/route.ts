@@ -4,6 +4,7 @@ import { getListingById, getConnection, upsertPlatformListing, updatePlatformLis
 import { decryptTokens } from "@/lib/crypto";
 import { publishToGrailed } from "@/lib/marketplace/grailed";
 import { publishToDepop } from "@/lib/marketplace/depop";
+import { BulkPublishBody, parseBody } from "@/lib/validation";
 import type { GrailedTokens, DepopTokens, Platform, CanonicalListing } from "@/lib/marketplace/types";
 
 const RATE_LIMIT_DELAY_MS = 2000; // 1 publish per platform per 2 seconds
@@ -17,14 +18,9 @@ const RATE_LIMIT_DELAY_MS = 2000; // 1 publish per platform per 2 seconds
 export async function POST(req: NextRequest) {
   try {
     const user = await requireAuth(req);
-    const { listingIds, platforms } = await req.json() as { listingIds: string[]; platforms: string[] };
-
-    if (!Array.isArray(listingIds) || listingIds.length === 0) {
-      return Response.json({ error: "listingIds[] is required" }, { status: 400 });
-    }
-    if (!Array.isArray(platforms) || platforms.length === 0) {
-      return Response.json({ error: "platforms[] is required" }, { status: 400 });
-    }
+    const parsed = parseBody(BulkPublishBody, await req.json());
+    if ("error" in parsed) return parsed.error;
+    const { listingIds, platforms } = parsed.data;
 
     // Verify all listings belong to user and mark as publishing
     for (const listingId of listingIds) {

@@ -4,6 +4,7 @@ import { getListingById, getConnection, upsertPlatformListing, updatePlatformLis
 import { decryptTokens } from "@/lib/crypto";
 import { publishToGrailed } from "@/lib/marketplace/grailed";
 import { publishToDepop } from "@/lib/marketplace/depop";
+import { PublishBody, parseBody } from "@/lib/validation";
 import type { GrailedTokens, DepopTokens, Platform, CanonicalListing } from "@/lib/marketplace/types";
 
 const RETRY_DELAY_MS = 2000;
@@ -42,11 +43,9 @@ async function publishWithRetry(
 export async function POST(req: NextRequest) {
   try {
     const user = await requireAuth(req);
-    const { listingId, platforms } = await req.json() as { listingId: string; platforms: string[] };
-
-    if (!listingId || !Array.isArray(platforms) || platforms.length === 0) {
-      return Response.json({ error: "listingId and platforms[] are required" }, { status: 400 });
-    }
+    const parsed = parseBody(PublishBody, await req.json());
+    if ("error" in parsed) return parsed.error;
+    const { listingId, platforms } = parsed.data;
 
     const dbListing = await getListingById(user.id, listingId);
     if (!dbListing) return Response.json({ error: "Listing not found" }, { status: 404 });

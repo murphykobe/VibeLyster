@@ -1,6 +1,7 @@
 import { NextRequest } from "next/server";
 import { requireAuth, AuthError, authErrorResponse } from "@/lib/auth";
-import { getListingById, updateListing, softDeleteListing, getListings } from "@/lib/db";
+import { getListingById, updateListing, softDeleteListing } from "@/lib/db";
+import { UpdateListingBody, parseBody } from "@/lib/validation";
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -22,19 +23,16 @@ export async function PUT(req: NextRequest, { params }: Params) {
   try {
     const user = await requireAuth(req);
     const { id } = await params;
-    const body = await req.json();
+    const parsed = parseBody(UpdateListingBody, await req.json());
+    if ("error" in parsed) return parsed.error;
 
-    const { title, description, price, size, condition, brand, category, traits, photos } = body;
     const updated = await updateListing(user.id, id, {
-      title,
-      description,
-      price: price !== undefined ? Number(price) : undefined,
-      size,
-      condition,
-      brand,
-      category,
-      traits,
-      photos,
+      ...parsed.data,
+      size: parsed.data.size ?? undefined,
+      condition: parsed.data.condition ?? undefined,
+      brand: parsed.data.brand ?? undefined,
+      category: parsed.data.category ?? undefined,
+      traits: parsed.data.traits as Record<string, unknown> | undefined,
     });
 
     if (!updated) return Response.json({ error: "Not found" }, { status: 404 });

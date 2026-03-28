@@ -4,6 +4,7 @@ import { getListingById, getConnection, updatePlatformListingStatus } from "@/li
 import { decryptTokens } from "@/lib/crypto";
 import { delistFromGrailed } from "@/lib/marketplace/grailed";
 import { delistFromDepop } from "@/lib/marketplace/depop";
+import { DelistBody, parseBody } from "@/lib/validation";
 import type { GrailedTokens, DepopTokens, Platform } from "@/lib/marketplace/types";
 
 /**
@@ -13,11 +14,9 @@ import type { GrailedTokens, DepopTokens, Platform } from "@/lib/marketplace/typ
 export async function POST(req: NextRequest) {
   try {
     const user = await requireAuth(req);
-    const { listingId, platform } = await req.json() as { listingId: string; platform: string };
-
-    if (!listingId || !platform) {
-      return Response.json({ error: "listingId and platform are required" }, { status: 400 });
-    }
+    const parsed = parseBody(DelistBody, await req.json());
+    if ("error" in parsed) return parsed.error;
+    const { listingId, platform } = parsed.data;
 
     const dbListing = await getListingById(user.id, listingId);
     if (!dbListing) return Response.json({ error: "Listing not found" }, { status: 404 });
