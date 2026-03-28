@@ -53,9 +53,12 @@ depop listings                        # List your products
 depop listing <slug>                  # Get product details
 depop addresses                       # List shipping addresses
 depop upload <image-path>             # Upload a square image → {id, url}
-depop create <json-file>              # Create a product listing
+depop create <json-file>              # Create a draft listing
+depop drafts                          # List draft listings
+depop draft-update <id> <json-file>   # Update a draft
+depop draft-delete <id>               # Delete a draft
 depop edit <product-id> <json-file>   # Edit a live product in-place
-depop delete <product-id>             # Delete a product
+depop delete <product-id>             # Delete a live product
 ```
 
 ---
@@ -63,23 +66,31 @@ depop delete <product-id>             # Delete a product
 ## Listing Lifecycle
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                                                             │
-│   1. Upload images       depop upload ./photo.jpg           │
-│      └─ returns {id, url}                                   │
-│      └─ Images MUST be square (Depop rejects non-square)    │
-│                                                             │
-│   2. Create listing      depop create listing.json          │
-│      └─ POST /api/v2/products/                              │
-│      └─ returns {id, slug}                                  │
-│                                                             │
-│   3. Edit listing        depop edit <id> updates.json       │
-│      └─ PUT /api/v2/products/<id>/                          │
-│                                                             │
-│   4. Delete listing      depop delete <id>                  │
-│      └─ DELETE /api/v2/products/<id>/                       │
-│                                                             │
-└─────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────┐
+│                                                                  │
+│   1. Upload images       depop upload ./photo.jpg                │
+│      └─ Two-step: POST JSON → presigned S3 URL → PUT image      │
+│      └─ Returns {id, url}                                        │
+│      └─ Images MUST be square (Depop rejects non-square)         │
+│                                                                  │
+│   2. Create draft        depop create draft.json                 │
+│      └─ POST /api/v2/drafts/ (direct POST to products fails)    │
+│      └─ Returns {id} (UUID)                                      │
+│                                                                  │
+│   3. Manage drafts       depop drafts / draft-update / draft-del │
+│      └─ GET/PUT /api/v2/drafts/  DELETE /api/v1/drafts/         │
+│                                                                  │
+│   4. Publish             Open draft in browser and click Post    │
+│      └─ depop.com/sellinghub/drafts/edit/<draft-id>/             │
+│      └─ No API-only publish endpoint found yet                   │
+│                                                                  │
+│   5. Edit live listing   depop edit <id> updates.json            │
+│      └─ PUT /api/v2/products/<id>/                               │
+│                                                                  │
+│   6. Delete listing      depop delete <id>                       │
+│      └─ DELETE /api/v1/products/<id>/ (v1, not v2)               │
+│                                                                  │
+└──────────────────────────────────────────────────────────────────┘
 ```
 
 ---
@@ -128,11 +139,13 @@ access_token cookie from browser
 | GET | `/api/v1/addresses/` | Shipping addresses (also returns userId) |
 | GET | `/api/v3/shop/{userId}/products/` | User's listings |
 | GET | `/api/v1/product/by-slug/{slug}/user/` | Product detail by slug |
-| GET | `/api/v2/products/{slug}/` | Product detail (alternate) |
-| POST | `/api/v2/pictures/` | Image upload (FormData) |
-| POST | `/api/v2/products/` | Create product |
-| PUT | `/api/v2/products/{id}/` | Edit product |
-| DELETE | `/api/v2/products/{id}/` | Delete product |
+| POST | `/api/v2/pictures/` | Presigned S3 URL for image upload |
+| POST | `/api/v2/drafts/` | Create draft listing |
+| GET | `/api/v2/drafts/` | List drafts |
+| PUT | `/api/v2/drafts/{id}/` | Update draft |
+| DELETE | `/api/v1/drafts/{id}/` | Delete draft (v1, not v2) |
+| PUT | `/api/v2/products/{id}/` | Edit live product |
+| DELETE | `/api/v1/products/{id}/` | Delete live product (v1, not v2) |
 
 ---
 

@@ -6,6 +6,9 @@
  *
  * API Base: https://webapi.depop.com/
  * Auth: access_token only (userId is auto-resolved)
+ *
+ * Listing flow: draft → update draft → publish (POST from draft edit page)
+ * Direct POST to /api/v2/products/ returns empty 400 — draft-first is required.
  */
 
 import { Impit } from "impit";
@@ -64,46 +67,72 @@ export async function resolveUserId(accessToken) {
 
 // ─── Image Upload ─────────────────────────────────────────────────────────────
 
+/**
+ * Upload an image to Depop (two-step: get presigned URL, then PUT to S3).
+ * Image MUST be square. Returns { id, url }.
+ */
 export async function uploadImage(imagePath, accessToken) {
   const { readFile } = await import("node:fs/promises");
-  const imageBuffer = await readFile(imagePath);
-  const blob = new Blob([imageBuffer], { type: "image/jpeg" });
+  const { extname } = await import("node:path");
 
-  const form = new FormData();
-  form.append("file", blob, "photo.jpg");
+  const ext = extname(imagePath).slice(1).toLowerCase() || "jpg";
+  const mimeType = ext === "png" ? "image/png" : "image/jpeg";
 
-  const headers = {
-    Authorization: `Bearer ${accessToken}`,
-    Origin: "https://www.depop.com",
-    Referer: "https://www.depop.com/products/create/",
-  };
-
-  const res = await impit.fetch(`${DEPOP_API}/api/v2/pictures/`, {
+  // Step 1: Get presigned S3 URL
+  const presigned = await apiFetch(`${DEPOP_API}/api/v2/pictures/`, {
     method: "POST",
-    headers,
-    body: form,
+    headers: makeHeaders(accessToken),
+    body: JSON.stringify({ type: "PRODUCT", extension: ext }),
   });
 
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`Depop image upload failed ${res.status}: ${text}`);
+  // Step 2: Upload image to presigned S3 URL
+  const imageBuffer = await readFile(imagePath);
+  const uploadRes = await impit.fetch(presigned.url, {
+    method: "PUT",
+    headers: { "Content-Type": mimeType },
+    body: imageBuffer,
+  });
+
+  if (!uploadRes.ok) {
+    const text = await uploadRes.text();
+    throw new Error(`S3 upload failed ${uploadRes.status}: ${text}`);
   }
 
-  return res.json();
+  return { id: presigned.id, url: presigned.url.split("?")[0] };
+}
+
+// ─── Drafts ──────────────────────────────────────────────────────────────────
+
+export async function createDraft(draftData, accessToken) {
+  return apiFetch(`${DEPOP_API}/api/v2/drafts/`, {
+    method: "POST",
+    headers: makeHeaders(accessToken),
+    body: JSON.stringify(draftData),
+  });
+}
+
+export async function updateDraft(draftId, draftData, accessToken) {
+  return apiFetch(`${DEPOP_API}/api/v2/drafts/${draftId}/`, {
+    method: "PUT",
+    headers: makeHeaders(accessToken),
+    body: JSON.stringify({ id: draftId, ...draftData }),
+  });
+}
+
+export async function getDrafts(accessToken) {
+  return apiFetch(`${DEPOP_API}/api/v2/drafts/`, {
+    headers: makeHeaders(accessToken),
+  });
+}
+
+export async function deleteDraft(draftId, accessToken) {
+  return apiFetch(`${DEPOP_API}/api/v1/drafts/${draftId}/`, {
+    method: "DELETE",
+    headers: makeHeaders(accessToken),
+  });
 }
 
 // ─── Products ─────────────────────────────────────────────────────────────────
-
-export async function createProduct(productData, accessToken) {
-  return apiFetch(`${DEPOP_API}/api/v2/products/`, {
-    method: "POST",
-    headers: {
-      ...makeHeaders(accessToken),
-      Referer: "https://www.depop.com/products/create/",
-    },
-    body: JSON.stringify(productData),
-  });
-}
 
 export async function editProduct(productId, productData, accessToken) {
   return apiFetch(`${DEPOP_API}/api/v2/products/${productId}/`, {
@@ -117,7 +146,7 @@ export async function editProduct(productId, productData, accessToken) {
 }
 
 export async function deleteProduct(productId, accessToken) {
-  return apiFetch(`${DEPOP_API}/api/v2/products/${productId}/`, {
+  return apiFetch(`${DEPOP_API}/api/v1/products/${productId}/`, {
     method: "DELETE",
     headers: makeHeaders(accessToken),
   });

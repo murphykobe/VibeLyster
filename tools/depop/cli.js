@@ -11,9 +11,12 @@
  *   depop listing <slug>                 Get product details
  *   depop addresses                      List shipping addresses
  *   depop upload <image-path>            Upload a square image, returns {id, url}
- *   depop create <json-file>             Create a product listing
+ *   depop create <json-file>             Create a draft listing
+ *   depop drafts                         List draft listings
+ *   depop draft-update <id> <json-file>  Update a draft
+ *   depop draft-delete <id>              Delete a draft
  *   depop edit <product-id> <json-file>  Edit a live product in-place
- *   depop delete <product-id>            Delete a product
+ *   depop delete <product-id>            Delete a live product
  *
  * Auth: Run `depop login` and paste your access_token from browser cookies.
  *       Token is saved to ~/.vibelyster/depop.json.
@@ -134,9 +137,12 @@ Commands:
   listing <slug>                  Get product details
   addresses                       List shipping addresses
   upload <image-path>             Upload a square image, returns {id, url}
-  create <json-file>              Create a product listing
+  create <json-file>              Create a draft listing
+  drafts                          List draft listings
+  draft-update <id> <json-file>   Update a draft
+  draft-delete <id>               Delete a draft
   edit <product-id> <json-file>   Edit a live product in-place
-  delete <product-id>             Delete a product
+  delete <product-id>             Delete a live product
 
 Auth:
   Run "depop login" and paste your access_token from browser cookies.
@@ -264,15 +270,62 @@ Note: Images must be square. Crop before uploading.
         const jsonFile = args[1];
         if (!jsonFile) {
           console.error("Usage: depop create <json-file>");
-          console.error("\nSee examples/listing.json for the payload format.");
+          console.error("\nSee examples/draft.json for the payload format.");
           process.exit(1);
         }
         const accessToken = await getAccessToken(rawArgs);
-        const productData = JSON.parse(await readFile(jsonFile, "utf-8"));
-        const result = await api.createProduct(productData, accessToken);
-        console.log("Created listing:");
-        console.log("  ID:", result.id);
-        console.log("  URL:", `${DEPOP_BASE}/products/${result.slug || result.id}/`);
+        const draftData = JSON.parse(await readFile(jsonFile, "utf-8"));
+        console.log("Creating draft...");
+        const draft = await api.createDraft(draftData, accessToken);
+        console.log("Draft created:", draft.id);
+        console.log("\nTo publish, open the draft in your browser:");
+        console.log(`  ${DEPOP_BASE}/sellinghub/drafts/edit/${draft.id}/`);
+        console.log("\nOr update it via: depop draft-update <draft-id> <json-file>");
+        break;
+      }
+
+      case "drafts": {
+        const accessToken = await getAccessToken(rawArgs);
+        const result = await api.getDrafts(accessToken);
+        const items = result.drafts || [];
+        if (!items.length) {
+          console.log("No drafts found.");
+          break;
+        }
+        for (const item of items) {
+          const desc = (item.description || "(no description)").split("\n")[0].slice(0, 60);
+          const price = item.priceAmount ? `$${item.priceAmount}` : "?";
+          const missing = item.missingFields?.length ? ` [missing: ${item.missingFields.join(", ")}]` : " [ready]";
+          console.log(`[${item.id}] ${desc} — ${price}${missing}`);
+        }
+        console.log(`\nTotal: ${items.length} drafts`);
+        break;
+      }
+
+      case "draft-update": {
+        const draftId = args[1];
+        const jsonFile = args[2];
+        if (!draftId || !jsonFile) {
+          console.error("Usage: depop draft-update <draft-id> <json-file>");
+          process.exit(1);
+        }
+        const accessToken = await getAccessToken(rawArgs);
+        const draftData = JSON.parse(await readFile(jsonFile, "utf-8"));
+        await api.updateDraft(draftId, draftData, accessToken);
+        console.log("Draft updated:", draftId);
+        console.log(`  ${DEPOP_BASE}/sellinghub/drafts/edit/${draftId}/`);
+        break;
+      }
+
+      case "draft-delete": {
+        const draftId = args[1];
+        if (!draftId) {
+          console.error("Usage: depop draft-delete <draft-id>");
+          process.exit(1);
+        }
+        const accessToken = await getAccessToken(rawArgs);
+        await api.deleteDraft(draftId, accessToken);
+        console.log("Draft deleted:", draftId);
         break;
       }
 
