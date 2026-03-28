@@ -1,0 +1,32 @@
+{
+  "name": "@vibelyster/mobile",
+  "version": "0.1.0",
+  "private": true,
+  "main": "expo-router/entry",
+  "scripts": {
+    "dev": "expo start",
+    "build:ios": "eas build --platform ios",
+    "prebuild": "expo prebuild"
+  },
+  "dependencies": {
+    "expo": "~53.0.0",
+    "expo-router": "~4.0.0",
+    "expo-camera": "~16.0.0",
+    "expo-av": "~15.0.0",
+    "expo-image-picker": "~16.0.0",
+    "react": "^19.0.0",
+    "react-native": "~0.78.0",
+    "react-native-webview": "^13.0.0",
+    "@clerk/clerk-expo": "^2.19.0",
+    "react-native-safe-area-context": "^5.0.0",
+    "react-native-screens": "^4.0.0",
+    "@expo/vector-icons": "^14.0.0",
+    "expo-secure-store": "~14.0.0",
+    "expo-web-browser": "~14.0.0",
+    "@react-native-cookies/cookies": "^6.2.1"
+  },
+  "devDependencies": {
+    "@types/react": "^19.0.0",
+    "typescript": "^5.8.0"
+  }
+}

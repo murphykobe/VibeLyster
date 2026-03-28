@@ -1,0 +1,27 @@
+{
+  "expo": {
+    "name": "VibeLyster",
+    "slug": "vibelyster",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "scheme": "vibelyster",
+    "userInterfaceStyle": "dark",
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.vibelyster.app",
+      "infoPlist": {
+        "NSCameraUsageDescription": "Take photos of items to list",
+        "NSMicrophoneUsageDescription": "Record voice descriptions of items",
+        "NSPhotoLibraryUsageDescription": "Select photos of items to list"
+      }
+    },
+    "plugins": [
+      "expo-router",
+      "expo-camera",
+      "expo-av",
+      "expo-image-picker",
+      "expo-secure-store"
+    ]
+  }
+}

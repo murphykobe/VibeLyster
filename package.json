@@ -1,0 +1,15 @@
+{
+  "name": "vibelyster",
+  "private": true,
+  "workspaces": ["apps/*"],
+  "scripts": {
+    "dev:server": "turbo run dev --filter=@vibelyster/server",
+    "dev:mobile": "turbo run dev --filter=@vibelyster/mobile",
+    "build": "turbo run build",
+    "lint": "turbo run lint"
+  },
+  "devDependencies": {
+    "turbo": "^2.5.0",
+    "typescript": "^5.8.0"
+  }
+}
