@@ -1,0 +1,22 @@
+{
+  "description": "RRL Double RL Leather Passport Holder Green\n\nBrand new, never used. Comes with original box.",
+  "pictures": [3580857447],
+  "priceAmount": "500.00",
+  "priceCurrency": "USD",
+  "quantity": 1,
+  "condition": "brand_new",
+  "gender": "male",
+  "group": "accessories",
+  "productType": "wallet-purses",
+  "brand": "rrl-by-ralph-lauren",
+  "shippingMethods": [
+    {
+      "payer": "buyer",
+      "shipFromAddressId": 27215719,
+      "shippingProviderId": "USPS",
+      "parcelSizeId": "under_4oz"
+    }
+  ],
+  "attributes": {},
+  "isKids": false
+}

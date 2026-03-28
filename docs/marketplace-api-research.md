@@ -280,11 +280,72 @@ Content-Type: application/json
 
 ---
 
+## SellRaze — Competitor Analysis (confirmed via app testing 2026-03-27)
+
+SellRaze (YC F25, 200K+ users, $875K ARR) is the closest competitor. Mobile-first AI cross-listing tool. "The fastest way to sell your stuff."
+
+### Company
+
+- **Founded**: 2023, Georgia Tech (CREATE-X accelerator, won InVenture Prize)
+- **YC batch**: Fall 2025
+- **Funding**: ~$1M total ($560K pre-seed led by Christopher Klaus)
+- **Team**: ~6 people (Jeff Mao CEO, Tyler Ma CTO, Patrick Young COO)
+- **App Store**: 4.8 stars, 27K+ ratings (iOS + Android)
+
+### Product
+
+- **Core flow**: Photograph item → AI identifies brand/attributes → generates title, description, price → posts to multiple marketplaces simultaneously
+- **Platforms**: eBay, Facebook MP, Poshmark, Mercari, Depop, Amazon, StockX, GOAT. **No Grailed support.**
+- **Additional features**: Centralized dashboard, inventory sync (auto-delist when sold), pricing intelligence, shipping labels, scheduled pickups
+- **Planned**: Unified messaging with AI auto-responses and haggling
+
+### Pricing (from app, confirmed 2026-03-27)
+
+| Plan | Monthly | Yearly | Listings | Key Features |
+|------|---------|--------|----------|--------------|
+| **Premium** | $9.99/mo | $3.74/mo ($44.99/yr) | 25 | Lens & Pricing, Shipping labels |
+| **Pro** | $19.99/mo | $15.99/mo ($191.99/yr) | 125 | Sell Through Rate, Auto Delisting |
+| **Elite** | $29.99/mo | $29.99/mo | 250 | Premium Support |
+
+**Notable**: All tiers have listing caps (max 250). No unlimited plan. Auto-delisting (inventory sync across marketplaces) gated behind Pro at $20/mo.
+
+### Auth Strategies (confirmed via app screenshots)
+
+| Platform | SellRaze Auth Method | Notes |
+|----------|---------------------|-------|
+| **eBay** | Real OAuth (`auth2.ebay.com` consent screen) | Only platform with legitimate 3rd-party API. Long-lived token via developer program. |
+| **Poshmark** | In-app WebView login (username/password) | Captures session cookies from login response. SellRaze stores user's Poshmark credentials. Social login options (Facebook, Google, Apple) also available. |
+| **Mercari** | In-app WebView login (email/password + reCAPTCHA) | Same as Poshmark. Must handle reCAPTCHA Enterprise server-side. |
+| **Depop** | Magic link interception | Triggers Depop's email-based login. User copy-pastes the magic link URL back into SellRaze app. App intercepts the redirect → captures `access_token`. Bypasses PerimeterX `_px2` entirely. |
+| **Facebook MP** | Standard Facebook login in WebView | Captures session cookies. Confirmed working — successfully posted a Warehouse & Co. 1003XX listing to FB Marketplace (went to "in review"). |
+
+**Key insight**: Only eBay uses real OAuth. Every other platform uses session token capture — the same approach as Chrome extensions (Crosslist, Flyp) and our CLI, but wrapped in better UX via in-app WebView login flows. No special developer partnerships or API access.
+
+**Depop magic link approach** is particularly clever: the `access_token` obtained via the magic link redirect is a clean JWT — no browser fingerprint, no `_px2` cookie needed. This is a viable auth strategy for our Depop CLI (`depop login` → enter email → paste magic link → token captured).
+
+### Anti-Bot / Session Durability
+
+- **No platform uses browser fingerprint in its auth tokens** — the auth tokens themselves (OAuth, JWT, session cookies) are portable across machines
+- **Anti-bot layers sit in front**: Cloudflare (`__cf_bm`, `cf_clearance`) for Grailed, PerimeterX (`_px2`) for Depop, reCAPTCHA for Mercari
+- **These are only relevant at login time** — once you have a valid session token, API calls work server-side without the anti-bot cookies
+- **Exception**: Cloudflare's `__cf_bm` on Grailed expires every 30 min and is checked on every request. Token replay still works same-machine but will fail cross-machine.
+
+### Competitive Gaps (VibeLyster Opportunities)
+
+1. **No Grailed support** — our strongest platform, critical for fashion/streetwear resellers
+2. **Low listing caps** (max 250) — power sellers with 500+ items are underserved
+3. **Consumer-focused UX** — not designed for professional resellers who need deep per-platform control
+4. **Photo-only input** — no voice workflow. Voice + image is a real differentiator
+5. **Generic AI** — their listing generation is general-purpose. Fashion-domain AI (fabric, fit, condition grading, designer knowledge) produces better listings for apparel
+6. **Reported reliability issues** — broad platform coverage leads to frequent integration breakdowns (per App Store reviews)
+
+---
+
 ## Key Takeaways for VibeLyster
 
 1. **Grailed has a clean REST API** — simplest of all non-eBay platforms to integrate
 2. **eBay has official OAuth API** — fully server-side, no extension needed
-3. **Depop is API-based but has PerimeterX anti-bot** — higher risk for server-side replay
-4. **Chrome extension is the proven pattern** — all successful tools use it
+3. **Depop magic link flow** — can bypass PerimeterX by capturing `access_token` from magic link redirect instead of replaying browser cookies
+4. **In-app WebView login is the industry pattern** — SellRaze, Crosslist, and Flyp all capture tokens this way for platforms without public APIs
 5. **The extension's role is minimal** — just auth + API calls, no DOM manipulation for Grailed/Depop
-6. **Future migration path**: Extension → token sync → fully server-side (not a one-way door)
+6. **Future migration path**: CLI (manual tokens) → magic link / browser tool (automated tokens) → companion app (seamless)
