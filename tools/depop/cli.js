@@ -10,6 +10,9 @@
  *   depop listings                       List your products
  *   depop listing <slug>                 Get product details
  *   depop addresses                      List shipping addresses
+ *   depop categories                     List categories (group → productType)
+ *   depop conditions                     List valid condition values
+ *   depop shipping                       List shipping providers and parcel sizes
  *   depop upload <image-path>            Upload a square image, returns {id, url}
  *   depop create <json-file>             Create a draft listing
  *   depop drafts                         List draft listings
@@ -136,6 +139,9 @@ Commands:
   listings                        List your products
   listing <slug>                  Get product details
   addresses                       List shipping addresses
+  categories                      List categories (group → productType)
+  conditions                      List valid condition values and colors
+  shipping                        List shipping providers and parcel sizes
   upload <image-path>             Upload a square image, returns {id, url}
   create <json-file>              Create a draft listing
   drafts                          List draft listings
@@ -248,6 +254,47 @@ Note: Images must be square. Crop before uploading.
         const accessToken = await getAccessToken(rawArgs);
         const result = await api.getAddresses(accessToken);
         console.log(JSON.stringify(result, null, 2));
+        break;
+      }
+
+      case "categories": {
+        const accessToken = await getAccessToken(rawArgs);
+        const groups = await api.getCategories(accessToken);
+        for (const [groupId, group] of Object.entries(groups)) {
+          if (!group.product_types?.length) continue;
+          const depts = (group.department || []).join(", ");
+          console.log(`\n${groupId} (${depts}):`);
+          for (const pt of group.product_types) {
+            const name = pt.name_i18n?.["en-US"] || pt.name_i18n?.en || pt.id;
+            console.log(`  ${pt.id} — ${name}`);
+          }
+        }
+        break;
+      }
+
+      case "conditions": {
+        const accessToken = await getAccessToken(rawArgs);
+        const attrs = await api.getProductAttributes(accessToken);
+        console.log("Conditions:");
+        for (const c of attrs.condition || []) {
+          console.log(`  ${c.id} — ${c.nameI18N} (${c.descriptionI18N})`);
+        }
+        console.log("\nColors (max " + (attrs.settings?.maxColours || 2) + "):");
+        for (const c of attrs.colour || []) {
+          console.log(`  ${c.id} — ${c.nameI18N}`);
+        }
+        break;
+      }
+
+      case "shipping": {
+        const accessToken = await getAccessToken(rawArgs);
+        const providers = await api.getShippingProviders(accessToken);
+        for (const provider of providers) {
+          console.log(`${provider.id}:`);
+          for (const size of provider.parcelSizes || []) {
+            console.log(`  ${size.id} — ${size.title} (${size.subtitle}) $${size.cost?.amount}`);
+          }
+        }
         break;
       }
 

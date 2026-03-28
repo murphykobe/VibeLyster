@@ -1,6 +1,6 @@
 {
   "name": "@vibelyster/depop-cli",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "CLI for Depop's internal API — list, create, edit, and manage product listings",
   "type": "module",
   "bin": {
@@ -10,7 +10,7 @@
     "dist/"
   ],
   "scripts": {
-    "build": "esbuild cli.js --bundle --platform=node --format=esm --minify --outfile=dist/cli.js",
+    "build": "esbuild cli.js --bundle --platform=node --format=esm --minify --external:impit --outfile=dist/cli.js",
     "prepublishOnly": "npm run build"
   },
   "engines": {
