@@ -175,3 +175,26 @@ export async function getAddresses(accessToken) {
     headers: makeHeaders(accessToken),
   });
 }
+
+// ─── Reference Data ─────────────────────────────────────────────────────────
+
+export async function getCategories(accessToken) {
+  return apiFetch(
+    `${DEPOP_API}/presentation/api/v1/attributes/groups/`,
+    { headers: makeHeaders(accessToken) }
+  );
+}
+
+export async function getProductAttributes(accessToken) {
+  return apiFetch(
+    `${DEPOP_API}/api/v2/search/filters/productAttributes/?country=en`,
+    { headers: makeHeaders(accessToken) }
+  );
+}
+
+export async function getShippingProviders(accessToken, providerId = "USPS") {
+  return apiFetch(
+    `${DEPOP_API}/api/v1/shipping-providers/?ids=${providerId}`,
+    { headers: makeHeaders(accessToken) }
+  );
+}
