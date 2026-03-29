@@ -6,6 +6,7 @@ import { publishToGrailed } from "@/lib/marketplace/grailed";
 import { publishToDepop } from "@/lib/marketplace/depop";
 import { PublishBody, parseBody } from "@/lib/validation";
 import type { GrailedTokens, DepopTokens, Platform, CanonicalListing } from "@/lib/marketplace/types";
+import { isMockMode, mockPlatformListingId } from "@/lib/mock";
 
 const RETRY_DELAY_MS = 2000;
 
@@ -72,10 +73,20 @@ export async function POST(req: NextRequest) {
         continue;
       }
 
-      const tokens = decryptTokens(conn.encrypted_tokens);
-
       // Mark as publishing (attempt_count stays at current value; incremented per actual attempt below)
       await upsertPlatformListing(listingId, platform, { status: "publishing" });
+
+      if (isMockMode()) {
+        const platformListingId = mockPlatformListingId(platform);
+        await updatePlatformListingStatus(listingId, platform, "live", {
+          platformListingId,
+          incrementAttempt: true,
+        });
+        results[platform] = { ok: true, platformListingId, mock: true };
+        continue;
+      }
+
+      const tokens = decryptTokens(conn.encrypted_tokens);
 
       const startMs = Date.now();
       const { result, attempts } = await publishWithRetry(canonical, platform, tokens);

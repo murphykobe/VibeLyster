@@ -1,13 +1,22 @@
 import { neon } from "@neondatabase/serverless";
+import * as mockDb from "./db.mock";
+import { isMockMode } from "./mock";
 
-if (!process.env.DATABASE_URL) {
+const MOCK_MODE = isMockMode();
+
+if (!MOCK_MODE && !process.env.DATABASE_URL) {
   throw new Error("DATABASE_URL is required");
 }
 
-export const sql = neon(process.env.DATABASE_URL);
+const mockSql = (async () => {
+  throw new Error("sql is unavailable in MOCK_MODE");
+}) as unknown as ReturnType<typeof neon>;
+
+export const sql = (MOCK_MODE ? mockSql : neon(process.env.DATABASE_URL as string)) as any;
 
 // Helper to run a raw parameterized query (used for dynamic UPDATE SET clauses)
 export async function rawQuery<T = Record<string, unknown>>(query: string, params: unknown[]): Promise<T[]> {
+  if (MOCK_MODE) return mockDb.rawQuery<T>(query, params);
   // neon() supports calling as a function: sql(query, params)
   return (sql as unknown as (q: string, p: unknown[]) => Promise<T[]>)(query, params);
 }
@@ -15,6 +24,7 @@ export async function rawQuery<T = Record<string, unknown>>(query: string, param
 // ---- User helpers ----
 
 export async function upsertUser(clerkId: string, email: string) {
+  if (MOCK_MODE) return mockDb.upsertUser(clerkId, email);
   const rows = await sql`
     INSERT INTO users (clerk_id, email)
     VALUES (${clerkId}, ${email})
@@ -25,6 +35,7 @@ export async function upsertUser(clerkId: string, email: string) {
 }
 
 export async function getUserByClerkId(clerkId: string) {
+  if (MOCK_MODE) return mockDb.getUserByClerkId(clerkId);
   const rows = await sql`
     SELECT id, clerk_id, email, created_at
     FROM users
@@ -70,6 +81,7 @@ export type PlatformListingRow = {
 };
 
 export async function getListings(userId: string) {
+  if (MOCK_MODE) return mockDb.getListings(userId);
   const rows = await sql`
     SELECT l.*, json_agg(pl.*) FILTER (WHERE pl.id IS NOT NULL) AS platform_listings
     FROM listings l
@@ -82,6 +94,7 @@ export async function getListings(userId: string) {
 }
 
 export async function getListingById(userId: string, listingId: string) {
+  if (MOCK_MODE) return mockDb.getListingById(userId, listingId);
   const rows = await sql`
     SELECT l.*, json_agg(pl.*) FILTER (WHERE pl.id IS NOT NULL) AS platform_listings
     FROM listings l
@@ -109,6 +122,7 @@ export type CreateListingInput = {
 };
 
 export async function createListing(input: CreateListingInput) {
+  if (MOCK_MODE) return mockDb.createListing(input);
   const rows = await sql`
     INSERT INTO listings (
       user_id, title, description, price, size, condition, brand,
@@ -129,6 +143,7 @@ export async function createListing(input: CreateListingInput) {
 export type UpdateListingInput = Partial<Omit<CreateListingInput, "userId">>;
 
 export async function updateListing(userId: string, listingId: string, input: UpdateListingInput) {
+  if (MOCK_MODE) return mockDb.updateListing(userId, listingId, input);
   // Build SET clause dynamically — only update provided fields
   const updates: string[] = [];
   const values: unknown[] = [];
@@ -157,6 +172,7 @@ export async function updateListing(userId: string, listingId: string, input: Up
 }
 
 export async function softDeleteListing(userId: string, listingId: string) {
+  if (MOCK_MODE) return mockDb.softDeleteListing(userId, listingId);
   const rows = await sql`
     UPDATE listings SET status = 'deleted'
     WHERE id = ${listingId} AND user_id = ${userId}
@@ -172,6 +188,7 @@ export async function upsertPlatformListing(
   platform: "grailed" | "depop" | "ebay",
   data: Partial<PlatformListingRow>
 ) {
+  if (MOCK_MODE) return mockDb.upsertPlatformListing(listingId, platform, data as any);
   const idempotencyKey = `${listingId}-${platform}`;
   const rows = await sql`
     INSERT INTO platform_listings (listing_id, platform, idempotency_key, status, platform_listing_id, platform_data, last_error, attempt_count)
@@ -200,6 +217,7 @@ export async function updatePlatformListingStatus(
   status: PlatformListingRow["status"],
   opts?: { platformListingId?: string; lastError?: string; incrementAttempt?: boolean }
 ) {
+  if (MOCK_MODE) return mockDb.updatePlatformListingStatus(listingId, platform, status, opts);
   const rows = await sql`
     UPDATE platform_listings SET
       status = ${status},
@@ -228,6 +246,7 @@ export type MarketplaceConnectionRow = {
 };
 
 export async function getConnections(userId: string) {
+  if (MOCK_MODE) return mockDb.getConnections(userId);
   const rows = await sql`
     SELECT id, user_id, platform, platform_username, connected_at, expires_at
     FROM marketplace_connections
@@ -237,6 +256,7 @@ export async function getConnections(userId: string) {
 }
 
 export async function getConnection(userId: string, platform: string) {
+  if (MOCK_MODE) return mockDb.getConnection(userId, platform);
   const rows = await sql`
     SELECT * FROM marketplace_connections
     WHERE user_id = ${userId} AND platform = ${platform}
@@ -251,6 +271,7 @@ export async function upsertConnection(
   platformUsername?: string,
   expiresAt?: string
 ) {
+  if (MOCK_MODE) return mockDb.upsertConnection(userId, platform, encryptedTokens, platformUsername, expiresAt);
   const rows = await sql`
     INSERT INTO marketplace_connections (user_id, platform, encrypted_tokens, platform_username, expires_at)
     VALUES (${userId}, ${platform}, ${JSON.stringify(encryptedTokens)}, ${platformUsername ?? null}, ${expiresAt ?? null})
@@ -265,6 +286,7 @@ export async function upsertConnection(
 }
 
 export async function deleteConnection(userId: string, platform: string) {
+  if (MOCK_MODE) return mockDb.deleteConnection(userId, platform);
   const rows = await sql`
     DELETE FROM marketplace_connections
     WHERE user_id = ${userId} AND platform = ${platform}

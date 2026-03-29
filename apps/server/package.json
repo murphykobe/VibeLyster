@@ -3,24 +3,35 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev --port 3001",
+    "dev": "next dev --hostname 127.0.0.1 --port 3001",
+    "dev:lan": "next dev --hostname 0.0.0.0 --port 3001",
+    "dev:mock": "MOCK_MODE=1 next dev --hostname 127.0.0.1 --port 3001",
+    "dev:mock:lan": "MOCK_MODE=1 next dev --hostname 0.0.0.0 --port 3001",
     "build": "next build",
-    "start": "next start"
+    "start": "next start",
+    "test": "vitest run",
+    "vercel:pull:preview": "npx vercel pull --yes --environment=preview",
+    "vercel:pull:production": "npx vercel pull --yes --environment=production",
+    "vercel:deploy:preview": "npx vercel --yes",
+    "vercel:deploy:production": "npx vercel --prod --yes",
+    "vercel:env:ls": "npx vercel env ls"
   },
   "dependencies": {
+    "@ai-sdk/openai": "^1.0.0",
+    "@clerk/nextjs": "^6.0.0",
+    "@neondatabase/serverless": "^0.10.0",
+    "@vercel/blob": "^0.27.0",
+    "ai": "^4.0.0",
     "next": "^15.0.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
-    "@neondatabase/serverless": "^0.10.0",
-    "@clerk/nextjs": "^6.0.0",
-    "ai": "^4.0.0",
-    "@ai-sdk/openai": "^1.0.0",
-    "@vercel/blob": "^0.27.0",
     "zod": "^3.23.0"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
     "@types/react": "^19.0.0",
-    "typescript": "^5.8.0"
+    "@vitest/coverage-v8": "^2.1.9",
+    "typescript": "^5.8.0",
+    "vitest": "^2.1.9"
   }
 }

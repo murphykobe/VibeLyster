@@ -6,13 +6,14 @@
  */
 
 import { useRef, useState } from "react";
-import { View, Text, StyleSheet, Pressable, ActivityIndicator, Alert } from "react-native";
+import { View, Text, StyleSheet, Pressable, ActivityIndicator, Alert, Platform as RNPlatform } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
+import { SafeAreaView } from "react-native-safe-area-context";
 import WebView, { WebViewNavigation } from "react-native-webview";
 import type { WebViewMessageEvent } from "react-native-webview";
-import CookieManager from "@react-native-cookies/cookies";
 import { saveConnection } from "@/lib/api";
 import type { Platform } from "@/lib/types";
+import { theme } from "@/lib/theme";
 
 const CONFIG: Record<Platform, { url: string; title: string; successPath?: string }> = {
   grailed: {
@@ -60,6 +61,13 @@ export default function ConnectScreen() {
   async function handleGrailedLoggedIn() {
     setSaving(true);
     try {
+      if (RNPlatform.OS === "web") {
+        Alert.alert("Not supported on web", "Use this flow on iOS/Android, or use mock connect on web.");
+        return;
+      }
+
+      const { default: CookieManager } = await import("@react-native-cookies/cookies");
+
       // Read cookies from the native cookie store — includes HttpOnly cookies
       // that document.cookie cannot access.
       const cookieMap = await CookieManager.get("https://www.grailed.com");
@@ -124,18 +132,18 @@ export default function ConnectScreen() {
   }
 
   return (
-    <View style={styles.container}>
+    <SafeAreaView style={styles.container} edges={["top"]}>
       <View style={styles.header}>
         <Pressable onPress={() => router.back()} style={styles.backBtn}>
-          <Text style={styles.backText}>✕</Text>
+          <Text style={styles.backText}>Close</Text>
         </Pressable>
         <Text style={styles.title}>{config.title}</Text>
-        <View style={{ width: 40 }} />
+        <View style={{ width: 52 }} />
       </View>
 
       {saving && (
         <View style={styles.savingOverlay}>
-          <ActivityIndicator size="large" color="#fff" />
+          <ActivityIndicator size="large" color={theme.colors.white} />
           <Text style={styles.savingText}>Saving connection…</Text>
         </View>
       )}
@@ -156,22 +164,73 @@ export default function ConnectScreen() {
 
       {loading && (
         <View style={styles.loadingOverlay}>
-          <ActivityIndicator size="large" color="#fff" />
+          <ActivityIndicator size="large" color={theme.colors.accent} />
         </View>
       )}
-    </View>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#000" },
-  header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", padding: 16, paddingTop: 56, backgroundColor: "#000" },
-  backBtn: { width: 40, height: 40, alignItems: "center", justifyContent: "center" },
-  backText: { color: "#888", fontSize: 18 },
-  title: { color: "#fff", fontSize: 16, fontWeight: "700" },
-  webview: { flex: 1 },
-  loadingOverlay: { ...StyleSheet.absoluteFillObject, backgroundColor: "#000", alignItems: "center", justifyContent: "center" },
-  savingOverlay: { position: "absolute", top: 100, left: 0, right: 0, bottom: 0, zIndex: 10, backgroundColor: "rgba(0,0,0,0.9)", alignItems: "center", justifyContent: "center", gap: 16 },
-  savingText: { color: "#fff", fontSize: 16 },
-  error: { color: "#888", padding: 24 },
+  container: {
+    flex: 1,
+    backgroundColor: theme.colors.bg,
+  },
+  header: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    backgroundColor: theme.colors.surface,
+    borderBottomWidth: 1,
+    borderBottomColor: theme.colors.border,
+  },
+  backBtn: {
+    minWidth: 52,
+    alignItems: "flex-start",
+    justifyContent: "center",
+  },
+  backText: {
+    color: theme.colors.textMuted,
+    fontSize: 13,
+    fontFamily: theme.fonts.sansBold,
+  },
+  title: {
+    color: theme.colors.text,
+    fontSize: 16,
+    fontFamily: theme.fonts.sansBold,
+  },
+  webview: {
+    flex: 1,
+    backgroundColor: theme.colors.surface,
+  },
+  loadingOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "rgba(246, 241, 232, 0.75)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  savingOverlay: {
+    position: "absolute",
+    top: 62,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    zIndex: 10,
+    backgroundColor: "rgba(0, 0, 0, 0.35)",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 12,
+  },
+  savingText: {
+    color: theme.colors.white,
+    fontSize: 15,
+    fontFamily: theme.fonts.sansBold,
+  },
+  error: {
+    color: theme.colors.textMuted,
+    padding: 24,
+    fontFamily: theme.fonts.sans,
+  },
 });

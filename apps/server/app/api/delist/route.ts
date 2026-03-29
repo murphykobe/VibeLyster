@@ -6,6 +6,7 @@ import { delistFromGrailed } from "@/lib/marketplace/grailed";
 import { delistFromDepop } from "@/lib/marketplace/depop";
 import { DelistBody, parseBody } from "@/lib/validation";
 import type { GrailedTokens, DepopTokens, Platform } from "@/lib/marketplace/types";
+import { isMockMode } from "@/lib/mock";
 
 /**
  * POST /api/delist
@@ -24,6 +25,11 @@ export async function POST(req: NextRequest) {
     const platformListing = (dbListing.platform_listings ?? []).find((pl) => pl.platform === platform);
     if (!platformListing?.platform_listing_id) {
       return Response.json({ error: `No active ${platform} listing found` }, { status: 404 });
+    }
+
+    if (isMockMode()) {
+      await updatePlatformListingStatus(listingId, platform as Platform, "delisted");
+      return Response.json({ ok: true, mock: true });
     }
 
     const conn = await getConnection(user.id, platform);

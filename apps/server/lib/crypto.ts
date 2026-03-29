@@ -1,12 +1,26 @@
-import { createCipheriv, createDecipheriv, randomBytes } from "crypto";
+import { createCipheriv, createDecipheriv, createHash, randomBytes } from "crypto";
+import { isMockMode } from "./mock";
 
 const ALGORITHM = "aes-256-gcm";
 
+function decodeHexKey(key: string): Buffer {
+  const decoded = Buffer.from(key, "hex");
+  if (decoded.length !== 32) {
+    throw new Error("TOKEN_ENCRYPTION_KEY must be 64 hex chars (32 bytes)");
+  }
+  return decoded;
+}
+
 function getKey(): Buffer {
   const key = process.env.TOKEN_ENCRYPTION_KEY;
-  if (!key) throw new Error("TOKEN_ENCRYPTION_KEY is required");
-  // Expect a 64-char hex string (32 bytes)
-  return Buffer.from(key, "hex");
+  if (key) return decodeHexKey(key);
+
+  if (isMockMode()) {
+    // Deterministic local key so mock mode works without secret provisioning.
+    return createHash("sha256").update("vibelyster-mock-token-encryption-key").digest();
+  }
+
+  throw new Error("TOKEN_ENCRYPTION_KEY is required");
 }
 
 export function encryptTokens(tokens: Record<string, unknown>): Record<string, unknown> {

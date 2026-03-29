@@ -1,22 +1,31 @@
-import { useState, useRef } from "react";
+import { useState } from "react";
 import {
-  View, Text, StyleSheet, Pressable, Image, ScrollView,
-  ActivityIndicator, Alert
+  View,
+  Text,
+  StyleSheet,
+  Pressable,
+  Image,
+  ScrollView,
+  ActivityIndicator,
+  Alert,
 } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import * as ImagePicker from "expo-image-picker";
-import { Audio } from "expo-av";
+import { Ionicons } from "@expo/vector-icons";
+import VoiceRecorder from "@/components/VoiceRecorder";
 import { uploadPhoto, generateListing } from "@/lib/api";
+import { theme } from "@/lib/theme";
 
-type State = "idle" | "recording" | "uploading" | "generating";
+type State = "idle" | "uploading" | "generating";
 
 export default function CaptureScreen() {
   const router = useRouter();
-  const [photos, setPhotos] = useState<{ uri: string; blobUrl?: string }[]>([]);
+  const [photos, setPhotos] = useState<{ uri: string }[]>([]);
   const [audioUri, setAudioUri] = useState<string | null>(null);
-  const [recording, setRecording] = useState<Audio.Recording | null>(null);
   const [state, setState] = useState<State>("idle");
   const [uploadProgress, setUploadProgress] = useState(0);
+  const [newListingId, setNewListingId] = useState<string | null>(null);
 
   async function pickPhotos() {
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -24,14 +33,16 @@ export default function CaptureScreen() {
       Alert.alert("Permission required", "Allow photo access to select photos.");
       return;
     }
+
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ImagePicker.MediaTypeOptions.Images,
       allowsMultipleSelection: true,
       quality: 0.8,
       selectionLimit: 8,
     });
+
     if (!result.canceled) {
-      const newPhotos = result.assets.map((a) => ({ uri: a.uri }));
+      const newPhotos = result.assets.map((asset) => ({ uri: asset.uri }));
       setPhotos((prev) => [...prev, ...newPhotos].slice(0, 8));
     }
   }
@@ -42,37 +53,23 @@ export default function CaptureScreen() {
       Alert.alert("Permission required", "Allow camera access to take photos.");
       return;
     }
+
     const result = await ImagePicker.launchCameraAsync({ quality: 0.8 });
     if (!result.canceled) {
       setPhotos((prev) => [...prev, { uri: result.assets[0].uri }].slice(0, 8));
     }
   }
 
-  async function startRecording() {
-    try {
-      await Audio.requestPermissionsAsync();
-      await Audio.setAudioModeAsync({ allowsRecordingIOS: true, playsInSilentModeIOS: true });
-      const { recording: rec } = await Audio.Recording.createAsync(
-        Audio.RecordingOptionsPresets.HIGH_QUALITY
-      );
-      setRecording(rec);
-      setState("recording");
-    } catch (err) {
-      Alert.alert("Error", "Could not start recording.");
-    }
-  }
-
-  async function stopRecording() {
-    if (!recording) return;
-    await recording.stopAndUnloadAsync();
-    const uri = recording.getURI();
-    setRecording(null);
-    setAudioUri(uri ?? null);
-    setState("idle");
-  }
-
   function removePhoto(index: number) {
     setPhotos((prev) => prev.filter((_, i) => i !== index));
+  }
+
+  function resetForNewListing() {
+    setPhotos([]);
+    setAudioUri(null);
+    setUploadProgress(0);
+    setState("idle");
+    setNewListingId(null);
   }
 
   async function handleGenerate() {
@@ -84,19 +81,21 @@ export default function CaptureScreen() {
     try {
       setState("uploading");
 
-      // Upload photos to Vercel Blob
       const blobUrls: string[] = [];
-      for (let i = 0; i < photos.length; i++) {
+      for (let i = 0; i < photos.length; i += 1) {
         setUploadProgress(i);
         const url = await uploadPhoto(photos[i].uri);
         blobUrls.push(url);
       }
 
       setState("generating");
-      const { listing } = await generateListing({ photoUrls: blobUrls, audioUri: audioUri ?? undefined });
+      const { listing } = await generateListing({
+        photoUrls: blobUrls,
+        audioUri: audioUri ?? undefined,
+      });
 
-      // Navigate to listing detail
-      router.replace(`/listing/${listing.id}`);
+      setNewListingId(listing.id);
+      setState("idle");
     } catch (err) {
       console.error(err);
       Alert.alert("Generation failed", err instanceof Error ? err.message : "Try again.");
@@ -106,126 +105,342 @@ export default function CaptureScreen() {
 
   const busy = state === "uploading" || state === "generating";
 
+  if (newListingId) {
+    return (
+      <SafeAreaView style={styles.donePage} edges={["top"]}>
+        <Text style={styles.doneKicker}>Saved</Text>
+        <Text style={styles.doneTitle}>Draft Ready</Text>
+        <Text style={styles.doneSubtitle}>Now review details or jump right into your next listing.</Text>
+
+        <View style={styles.doneActions}>
+          <Pressable style={styles.donePrimary} onPress={() => router.push(`/listing/${newListingId}`)}>
+            <Text style={styles.donePrimaryText}>Review & Edit</Text>
+          </Pressable>
+          <Pressable style={styles.doneSecondary} onPress={resetForNewListing}>
+            <Text style={styles.doneSecondaryText}>+ New Listing</Text>
+          </Pressable>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
   return (
-    <View style={styles.container}>
+    <SafeAreaView style={styles.container} edges={["top"]}>
       <View style={styles.header}>
         <Pressable onPress={() => router.back()} style={styles.backBtn}>
-          <Text style={styles.backText}>✕</Text>
+          <Text style={styles.backText}>Close</Text>
         </Pressable>
-        <Text style={styles.title}>New Listing</Text>
-        <View style={{ width: 40 }} />
+        <Text style={styles.title}>Capture</Text>
+        <View style={{ width: 48 }} />
       </View>
 
       <ScrollView contentContainerStyle={styles.scroll}>
-        {/* Photos */}
-        <View style={styles.photosSection}>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.photoStrip}>
-            {photos.map((p, i) => (
-              <View key={i} style={styles.photoWrapper}>
-                <Image source={{ uri: p.uri }} style={styles.photoThumb} />
-                <Pressable style={styles.removePhoto} onPress={() => removePhoto(i)}>
-                  <Text style={styles.removePhotoText}>✕</Text>
+        <View style={styles.hero}>
+          <Text style={styles.heroTitle}>Build a listing in under a minute</Text>
+          <Text style={styles.heroSub}>Add photos, describe the item, and let AI draft the copy.</Text>
+        </View>
+
+        <View style={styles.sectionCard}>
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>Photos</Text>
+            <Text style={styles.sectionMeta}>{photos.length}/8</Text>
+          </View>
+
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.photoRow}>
+            {photos.map((photo, index) => (
+              <View key={photo.uri} style={styles.photoWrap}>
+                <Image source={{ uri: photo.uri }} style={styles.photoThumb} />
+                <Pressable style={styles.removePhoto} onPress={() => removePhoto(index)}>
+                  <Text style={styles.removePhotoText}>×</Text>
                 </Pressable>
               </View>
             ))}
+
             {photos.length < 8 && (
-              <View style={styles.addPhotoButtons}>
+              <>
                 <Pressable style={styles.addPhotoBtn} onPress={takePhoto}>
-                  <Text style={styles.addPhotoBtnIcon}>📷</Text>
-                  <Text style={styles.addPhotoBtnText}>Camera</Text>
+                  <Ionicons name="camera-outline" size={20} color={theme.colors.accent} />
+                  <Text style={styles.addPhotoLabel}>Camera</Text>
                 </Pressable>
                 <Pressable style={styles.addPhotoBtn} onPress={pickPhotos}>
-                  <Text style={styles.addPhotoBtnIcon}>🖼️</Text>
-                  <Text style={styles.addPhotoBtnText}>Library</Text>
+                  <Ionicons name="images-outline" size={20} color={theme.colors.accent} />
+                  <Text style={styles.addPhotoLabel}>Library</Text>
                 </Pressable>
-              </View>
+              </>
             )}
           </ScrollView>
-          <Text style={styles.photoCount}>{photos.length}/8 photos</Text>
         </View>
 
-        {/* Voice recorder */}
-        <View style={styles.voiceSection}>
-          {audioUri ? (
-            <View style={styles.audioDone}>
-              <Text style={styles.audioDoneText}>✓ Voice note recorded</Text>
+        <View style={styles.sectionCard}>
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>Voice Notes</Text>
+            <Text style={styles.sectionMeta}>{audioUri ? "Recorded" : "Optional"}</Text>
+          </View>
+
+          <VoiceRecorder onRecordingComplete={(uri) => setAudioUri(uri)} disabled={busy} />
+
+          {audioUri && (
+            <View style={styles.audioDoneRow}>
+              <Text style={styles.audioDoneText}>Voice note saved</Text>
               <Pressable onPress={() => setAudioUri(null)}>
-                <Text style={styles.rerecord}>Re-record</Text>
+                <Text style={styles.rerecordText}>Re-record</Text>
               </Pressable>
             </View>
-          ) : (
-            <Pressable
-              style={[styles.micBtn, state === "recording" && styles.micBtnRecording]}
-              onPressIn={startRecording}
-              onPressOut={stopRecording}
-            >
-              <Text style={styles.micIcon}>{state === "recording" ? "⏹" : "🎤"}</Text>
-              <Text style={styles.micLabel}>
-                {state === "recording" ? "Release to stop" : "Hold to record"}
-              </Text>
-            </Pressable>
           )}
         </View>
 
-        {/* Status */}
         {busy && (
           <View style={styles.statusBox}>
-            <ActivityIndicator color="#fff" />
+            <ActivityIndicator color={theme.colors.accent} />
             <Text style={styles.statusText}>
               {state === "uploading"
-                ? `Uploading photos (${uploadProgress + 1}/${photos.length})…`
-                : "AI is generating your draft…"}
+                ? `Uploading photos (${uploadProgress + 1}/${photos.length})`
+                : "Generating listing draft"}
             </Text>
           </View>
         )}
       </ScrollView>
 
-      {/* Generate button */}
-      {!busy && (
-        <View style={styles.footer}>
-          <Pressable
-            style={[styles.generateBtn, (photos.length === 0 && !audioUri) && styles.generateBtnDisabled]}
-            onPress={handleGenerate}
-            disabled={photos.length === 0 && !audioUri}
-          >
-            <Text style={styles.generateBtnText}>Generate Draft →</Text>
-          </Pressable>
-        </View>
-      )}
-    </View>
+      <View style={styles.footer}>
+        <Pressable
+          style={[styles.generateBtn, photos.length === 0 && !audioUri && styles.generateBtnDisabled]}
+          onPress={handleGenerate}
+          disabled={photos.length === 0 && !audioUri || busy}
+        >
+          {busy ? (
+            <ActivityIndicator color={theme.colors.white} />
+          ) : (
+            <Text style={styles.generateBtnText}>Generate Draft</Text>
+          )}
+        </Pressable>
+      </View>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#000" },
-  header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", padding: 16, paddingTop: 56 },
-  backBtn: { width: 40, height: 40, alignItems: "center", justifyContent: "center" },
-  backText: { color: "#888", fontSize: 18 },
-  title: { color: "#fff", fontSize: 18, fontWeight: "700" },
-  scroll: { padding: 16, gap: 24 },
-  photosSection: { gap: 8 },
-  photoStrip: { flexDirection: "row" },
-  photoWrapper: { position: "relative", marginRight: 8 },
-  photoThumb: { width: 100, height: 100, borderRadius: 8, backgroundColor: "#222" },
-  removePhoto: { position: "absolute", top: 4, right: 4, backgroundColor: "rgba(0,0,0,0.7)", borderRadius: 10, width: 20, height: 20, alignItems: "center", justifyContent: "center" },
-  removePhotoText: { color: "#fff", fontSize: 10, fontWeight: "700" },
-  addPhotoButtons: { flexDirection: "row", gap: 8 },
-  addPhotoBtn: { width: 100, height: 100, borderRadius: 8, borderWidth: 1, borderColor: "#333", borderStyle: "dashed", alignItems: "center", justifyContent: "center", gap: 4 },
-  addPhotoBtnIcon: { fontSize: 24 },
-  addPhotoBtnText: { color: "#555", fontSize: 12 },
-  photoCount: { color: "#555", fontSize: 12 },
-  voiceSection: { alignItems: "center" },
-  micBtn: { width: 120, height: 120, borderRadius: 60, backgroundColor: "#111", borderWidth: 2, borderColor: "#333", alignItems: "center", justifyContent: "center", gap: 4 },
-  micBtnRecording: { borderColor: "#ff4444", backgroundColor: "#1a0000" },
-  micIcon: { fontSize: 36 },
-  micLabel: { color: "#555", fontSize: 11, textAlign: "center" },
-  audioDone: { flexDirection: "row", alignItems: "center", gap: 16 },
-  audioDoneText: { color: "#22cc66", fontSize: 15 },
-  rerecord: { color: "#555", fontSize: 13 },
-  statusBox: { flexDirection: "row", alignItems: "center", gap: 12, backgroundColor: "#111", borderRadius: 12, padding: 16 },
-  statusText: { color: "#888", fontSize: 14, flex: 1 },
-  footer: { padding: 16, paddingBottom: 40 },
-  generateBtn: { backgroundColor: "#fff", borderRadius: 12, paddingVertical: 16, alignItems: "center" },
-  generateBtnDisabled: { opacity: 0.4 },
-  generateBtnText: { color: "#000", fontSize: 16, fontWeight: "700" },
+  container: {
+    flex: 1,
+    backgroundColor: theme.colors.bg,
+  },
+  header: {
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  backBtn: {
+    minWidth: 48,
+  },
+  backText: {
+    color: theme.colors.textMuted,
+    fontFamily: theme.fonts.sansBold,
+    fontSize: 13,
+  },
+  title: {
+    color: theme.colors.text,
+    fontFamily: theme.fonts.display,
+    fontSize: 24,
+  },
+  scroll: {
+    paddingHorizontal: 16,
+    paddingBottom: 24,
+    gap: 14,
+  },
+  hero: {
+    paddingVertical: 8,
+  },
+  heroTitle: {
+    color: theme.colors.text,
+    fontFamily: theme.fonts.display,
+    fontSize: 32,
+    lineHeight: 38,
+  },
+  heroSub: {
+    marginTop: 8,
+    color: theme.colors.textMuted,
+    fontFamily: theme.fonts.sans,
+    fontSize: 14,
+    lineHeight: 20,
+  },
+  sectionCard: {
+    backgroundColor: theme.colors.surface,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    borderRadius: theme.radius.lg,
+    padding: 14,
+    gap: 12,
+    ...theme.shadow.card,
+  },
+  sectionHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  sectionTitle: {
+    color: theme.colors.text,
+    fontFamily: theme.fonts.sansBold,
+    fontSize: 16,
+  },
+  sectionMeta: {
+    color: theme.colors.textMuted,
+    fontFamily: theme.fonts.sans,
+    fontSize: 12,
+  },
+  photoRow: {
+    gap: 8,
+  },
+  photoWrap: {
+    position: "relative",
+  },
+  photoThumb: {
+    width: 108,
+    height: 108,
+    borderRadius: theme.radius.sm,
+    backgroundColor: theme.colors.surfaceStrong,
+  },
+  removePhoto: {
+    position: "absolute",
+    top: 6,
+    right: 6,
+    width: 22,
+    height: 22,
+    borderRadius: 99,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(31, 36, 48, 0.78)",
+  },
+  removePhotoText: {
+    color: theme.colors.white,
+    fontFamily: theme.fonts.sansBold,
+    fontSize: 14,
+    marginTop: -1,
+  },
+  addPhotoBtn: {
+    width: 108,
+    height: 108,
+    borderRadius: theme.radius.sm,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    borderStyle: "dashed",
+    backgroundColor: theme.colors.surfaceStrong,
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+  },
+  addPhotoLabel: {
+    color: theme.colors.textMuted,
+    fontFamily: theme.fonts.sans,
+    fontSize: 12,
+  },
+  audioDoneRow: {
+    marginTop: 2,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  audioDoneText: {
+    color: theme.colors.success,
+    fontFamily: theme.fonts.sansBold,
+    fontSize: 12,
+  },
+  rerecordText: {
+    color: theme.colors.textMuted,
+    fontFamily: theme.fonts.sansBold,
+    fontSize: 12,
+  },
+  statusBox: {
+    borderRadius: theme.radius.md,
+    borderWidth: 1,
+    borderColor: "#F8CBB7",
+    backgroundColor: theme.colors.accentSoft,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+  },
+  statusText: {
+    color: theme.colors.accent,
+    fontFamily: theme.fonts.sansBold,
+    fontSize: 13,
+  },
+  footer: {
+    paddingHorizontal: 16,
+    paddingTop: 6,
+    paddingBottom: 22,
+  },
+  generateBtn: {
+    borderRadius: 999,
+    backgroundColor: theme.colors.accent,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 15,
+  },
+  generateBtnDisabled: {
+    opacity: 0.45,
+  },
+  generateBtnText: {
+    color: theme.colors.white,
+    fontFamily: theme.fonts.sansBold,
+    fontSize: 15,
+  },
+  donePage: {
+    flex: 1,
+    backgroundColor: theme.colors.bg,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 24,
+    gap: 10,
+  },
+  doneKicker: {
+    color: theme.colors.accent,
+    fontFamily: theme.fonts.sansBold,
+    textTransform: "uppercase",
+    letterSpacing: 1,
+    fontSize: 12,
+  },
+  doneTitle: {
+    color: theme.colors.text,
+    fontFamily: theme.fonts.display,
+    fontSize: 44,
+    lineHeight: 52,
+  },
+  doneSubtitle: {
+    color: theme.colors.textMuted,
+    fontFamily: theme.fonts.sans,
+    fontSize: 15,
+    textAlign: "center",
+    lineHeight: 22,
+  },
+  doneActions: {
+    width: "100%",
+    marginTop: 12,
+    gap: 10,
+  },
+  donePrimary: {
+    borderRadius: 999,
+    backgroundColor: theme.colors.accent,
+    alignItems: "center",
+    paddingVertical: 14,
+  },
+  donePrimaryText: {
+    color: theme.colors.white,
+    fontFamily: theme.fonts.sansBold,
+    fontSize: 14,
+  },
+  doneSecondary: {
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    backgroundColor: theme.colors.surface,
+    alignItems: "center",
+    paddingVertical: 14,
+  },
+  doneSecondaryText: {
+    color: theme.colors.text,
+    fontFamily: theme.fonts.sansBold,
+    fontSize: 14,
+  },
 });

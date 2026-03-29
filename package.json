@@ -6,7 +6,12 @@
     "dev:server": "turbo run dev --filter=@vibelyster/server",
     "dev:mobile": "turbo run dev --filter=@vibelyster/mobile",
     "build": "turbo run build",
-    "lint": "turbo run lint"
+    "lint": "turbo run lint",
+    "vercel:server:env:ls": "npm run -w apps/server vercel:env:ls",
+    "vercel:server:pull:preview": "npm run -w apps/server vercel:pull:preview",
+    "vercel:server:pull:production": "npm run -w apps/server vercel:pull:production",
+    "vercel:server:deploy:preview": "npm run -w apps/server vercel:deploy:preview",
+    "vercel:server:deploy:production": "npm run -w apps/server vercel:deploy:production"
   },
   "devDependencies": {
     "turbo": "^2.5.0",

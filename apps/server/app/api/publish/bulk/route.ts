@@ -6,6 +6,7 @@ import { publishToGrailed } from "@/lib/marketplace/grailed";
 import { publishToDepop } from "@/lib/marketplace/depop";
 import { BulkPublishBody, parseBody } from "@/lib/validation";
 import type { GrailedTokens, DepopTokens, Platform, CanonicalListing } from "@/lib/marketplace/types";
+import { isMockMode, mockPlatformListingId } from "@/lib/mock";
 
 const RATE_LIMIT_DELAY_MS = 2000; // 1 publish per platform per 2 seconds
 
@@ -29,6 +30,11 @@ export async function POST(req: NextRequest) {
       for (const platform of platforms as Platform[]) {
         await upsertPlatformListing(listingId, platform, { status: "publishing" });
       }
+    }
+
+    if (isMockMode()) {
+      await processMockInBackground(user.id, listingIds, platforms as Platform[]);
+      return Response.json({ acknowledged: true, count: listingIds.length, mock: true });
     }
 
     // Use Next.js `after()` to extend the serverless function lifecycle past the response.
@@ -117,5 +123,29 @@ async function processInBackground(userId: string, listingIds: string[], platfor
     if (listingIds.indexOf(listingId) < listingIds.length - 1) {
       await new Promise((r) => setTimeout(r, RATE_LIMIT_DELAY_MS));
     }
+  }
+}
+
+async function processMockInBackground(userId: string, listingIds: string[], platforms: Platform[]) {
+  for (const listingId of listingIds) {
+    const dbListing = await getListingById(userId, listingId).catch(() => null);
+    if (!dbListing) continue;
+
+    await Promise.all(
+      platforms.map(async (platform) => {
+        const conn = await getConnection(userId, platform).catch(() => null);
+        if (!conn) {
+          await updatePlatformListingStatus(listingId, platform, "failed", {
+            lastError: `Not connected to ${platform}`,
+          });
+          return;
+        }
+
+        await updatePlatformListingStatus(listingId, platform, "live", {
+          platformListingId: mockPlatformListingId(platform),
+          incrementAttempt: true,
+        });
+      })
+    );
   }
 }

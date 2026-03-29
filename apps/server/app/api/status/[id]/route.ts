@@ -5,6 +5,7 @@ import { decryptTokens } from "@/lib/crypto";
 import { checkGrailedStatus } from "@/lib/marketplace/grailed";
 import { checkDepopStatus } from "@/lib/marketplace/depop";
 import type { DepopTokens, Platform } from "@/lib/marketplace/types";
+import { isMockMode, mockPlatformListingId } from "@/lib/mock";
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -21,11 +22,31 @@ export async function GET(req: NextRequest, { params }: Params) {
     const dbListing = await getListingById(user.id, listingId);
     if (!dbListing) return Response.json({ error: "Listing not found" }, { status: 404 });
 
+    const mockMode = isMockMode();
     const platformListings = dbListing.platform_listings ?? [];
     const statusResults: Record<string, unknown> = {};
 
     for (const pl of platformListings) {
-      if (!pl.platform_listing_id || pl.status === "delisted" || pl.status === "pending") {
+      const allowPublishingWithoutId = mockMode && pl.status === "publishing";
+      const platformListingId = pl.platform_listing_id;
+
+      if ((!platformListingId && !allowPublishingWithoutId) || pl.status === "delisted" || pl.status === "pending") {
+        statusResults[pl.platform] = { status: pl.status, synced: false };
+        continue;
+      }
+
+      if (mockMode) {
+        if (pl.status === "publishing") {
+          const resolvedPlatformListingId = platformListingId ?? mockPlatformListingId(pl.platform);
+          await updatePlatformListingStatus(listingId, pl.platform as Platform, "live", { platformListingId: resolvedPlatformListingId });
+          statusResults[pl.platform] = { status: "live", synced: true, mock: true };
+        } else {
+          statusResults[pl.platform] = { status: pl.status, synced: true, mock: true };
+        }
+        continue;
+      }
+
+      if (!platformListingId) {
         statusResults[pl.platform] = { status: pl.status, synced: false };
         continue;
       }
@@ -40,9 +61,9 @@ export async function GET(req: NextRequest, { params }: Params) {
 
       let result;
       if (pl.platform === "grailed") {
-        result = await checkGrailedStatus(pl.platform_listing_id);
+        result = await checkGrailedStatus(platformListingId);
       } else if (pl.platform === "depop") {
-        result = await checkDepopStatus(pl.platform_listing_id, tokens as DepopTokens);
+        result = await checkDepopStatus(platformListingId, tokens as DepopTokens);
       } else {
         statusResults[pl.platform] = { status: pl.status, synced: false };
         continue;

@@ -1,11 +1,13 @@
 /**
  * Backend API client for the VibeLyster mobile app.
- * All requests include a Clerk JWT bearer token.
+ * Uses Clerk JWT bearer tokens by default, or mock headers when EXPO_PUBLIC_MOCK_MODE is enabled.
  */
 
 import type { Listing, MarketplaceConnection, Platform } from "./types";
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL ?? "http://localhost:3001";
+const MOCK_MODE = ["1", "true", "yes", "on"].includes((process.env.EXPO_PUBLIC_MOCK_MODE ?? "").toLowerCase());
+const MOCK_USER_ID = process.env.EXPO_PUBLIC_MOCK_USER_ID ?? "mock-user";
 
 // ─── Auth token injection ─────────────────────────────────────────────────────
 
@@ -17,10 +19,27 @@ export function setTokenProvider(fn: () => Promise<string | null>) {
 }
 
 async function authHeaders(): Promise<Record<string, string>> {
+  if (MOCK_MODE) {
+    return {
+      "x-mock-user-id": MOCK_USER_ID,
+      "Content-Type": "application/json",
+    };
+  }
+
   if (!_getToken) throw new Error("Token provider not configured");
   const token = await _getToken();
   if (!token) throw new Error("Not authenticated");
   return { Authorization: `Bearer ${token}`, "Content-Type": "application/json" };
+}
+
+async function formHeaders(): Promise<Record<string, string>> {
+  if (MOCK_MODE) {
+    return { "x-mock-user-id": MOCK_USER_ID };
+  }
+  if (!_getToken) throw new Error("Token provider not configured");
+  const token = await _getToken();
+  if (!token) throw new Error("Not authenticated");
+  return { Authorization: `Bearer ${token}` };
 }
 
 async function apiRequest<T>(method: string, path: string, body?: unknown): Promise<T> {
@@ -79,16 +98,12 @@ export async function deleteListing(id: string): Promise<void> {
 // ─── Upload ───────────────────────────────────────────────────────────────────
 
 export async function uploadPhoto(uri: string): Promise<string> {
-  if (!_getToken) throw new Error("Token provider not configured");
-  const token = await _getToken();
-  if (!token) throw new Error("Not authenticated");
-
   const form = new FormData();
   form.append("file", { uri, name: "photo.jpg", type: "image/jpeg" } as unknown as Blob);
 
   const res = await fetch(`${API_URL}/api/upload`, {
     method: "POST",
-    headers: { Authorization: `Bearer ${token}` },
+    headers: await formHeaders(),
     body: form,
   });
 
@@ -106,10 +121,6 @@ export async function generateListing(params: {
   photoUrls: string[];
   audioUri?: string;
 }): Promise<{ listing: Listing }> {
-  if (!_getToken) throw new Error("Token provider not configured");
-  const token = await _getToken();
-  if (!token) throw new Error("Not authenticated");
-
   const form = new FormData();
   if (params.photoUrls.length > 0) {
     form.append("photos", params.photoUrls.join(","));
@@ -120,7 +131,7 @@ export async function generateListing(params: {
 
   const res = await fetch(`${API_URL}/api/generate`, {
     method: "POST",
-    headers: { Authorization: `Bearer ${token}` },
+    headers: await formHeaders(),
     body: form,
   });
 
@@ -168,12 +179,19 @@ export async function saveConnection(params: {
 }
 
 export async function disconnectPlatform(platform: Platform) {
-  if (!_getToken) throw new Error("Token provider not configured");
-  const token = await _getToken();
-  if (!token) throw new Error("Not authenticated");
+  let headers: Record<string, string>;
+  if (MOCK_MODE) {
+    headers = { "x-mock-user-id": MOCK_USER_ID };
+  } else {
+    if (!_getToken) throw new Error("Token provider not configured");
+    const token = await _getToken();
+    if (!token) throw new Error("Not authenticated");
+    headers = { Authorization: `Bearer ${token}` };
+  }
+
   const res = await fetch(`${API_URL}/api/connect?platform=${platform}`, {
     method: "DELETE",
-    headers: { Authorization: `Bearer ${token}` },
+    headers,
   });
   if (!res.ok && res.status !== 404) throw new ApiError(res.status, `Disconnect failed`);
 }

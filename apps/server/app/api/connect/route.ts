@@ -6,6 +6,7 @@ import { ConnectBody, DisconnectQuery, parseBody } from "@/lib/validation";
 import { verifyGrailedConnection } from "@/lib/marketplace/grailed";
 import { verifyDepopConnection } from "@/lib/marketplace/depop";
 import type { ConnectionProbeResult, Platform } from "@/lib/marketplace/types";
+import { isMockMode } from "@/lib/mock";
 
 function pickString(value: unknown): string | undefined {
   return typeof value === "string" && value.trim() ? value.trim() : undefined;
@@ -61,7 +62,9 @@ export async function POST(req: NextRequest) {
     if ("error" in parsed) return parsed.error;
     const { platform, tokens, platformUsername, expiresAt } = parsed.data;
 
-    const verification = await verifyConnection(platform, tokens as Record<string, unknown>);
+    const verification: ConnectionProbeResult = isMockMode()
+      ? { ok: true, platformUsername: platformUsername ?? `mock-${platform}-user` }
+      : await verifyConnection(platform, tokens as Record<string, unknown>);
     if (!verification.ok) {
       return Response.json({ error: verification.error }, { status: 400 });
     }

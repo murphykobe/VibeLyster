@@ -1,18 +1,40 @@
 import { useState, useCallback } from "react";
 import { View, Text, StyleSheet, Pressable, ScrollView, Alert, ActivityIndicator } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { useFocusEffect, useRouter } from "expo-router";
-import { useAuth, useUser } from "@clerk/clerk-expo";
 import { getConnections, disconnectPlatform } from "@/lib/api";
 import type { MarketplaceConnection, Platform } from "@/lib/types";
+import { theme } from "@/lib/theme";
 
 const PLATFORMS: { key: Platform; label: string }[] = [
   { key: "grailed", label: "Grailed" },
   { key: "depop", label: "Depop" },
 ];
 
+const MOCK_MODE = ["1", "true", "yes", "on"].includes((process.env.EXPO_PUBLIC_MOCK_MODE ?? "").toLowerCase());
+
+function useSessionState() {
+  if (MOCK_MODE) {
+    return {
+      email: "mock@vibelyster.local",
+      canSignOut: false,
+      signOut: async () => undefined,
+    };
+  }
+
+  const clerk = require("@clerk/clerk-expo") as typeof import("@clerk/clerk-expo");
+  const { signOut } = clerk.useAuth();
+  const { user } = clerk.useUser();
+
+  return {
+    email: user?.primaryEmailAddress?.emailAddress ?? "—",
+    canSignOut: true,
+    signOut,
+  };
+}
+
 export default function SettingsScreen() {
-  const { signOut } = useAuth();
-  const { user } = useUser();
+  const { signOut, email, canSignOut } = useSessionState();
   const router = useRouter();
   const [connections, setConnections] = useState<MarketplaceConnection[]>([]);
   const [loading, setLoading] = useState(true);
@@ -29,10 +51,14 @@ export default function SettingsScreen() {
     }
   }, []);
 
-  useFocusEffect(useCallback(() => { loadConnections(); }, [loadConnections]));
+  useFocusEffect(
+    useCallback(() => {
+      loadConnections();
+    }, [loadConnections])
+  );
 
   function getConnection(platform: Platform) {
-    return connections.find((c) => c.platform === platform);
+    return connections.find((connection) => connection.platform === platform);
   }
 
   function handleConnect(platform: Platform) {
@@ -65,74 +91,206 @@ export default function SettingsScreen() {
   }
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-      {/* Account section */}
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Account</Text>
-        <View style={styles.card}>
-          <Text style={styles.email}>{user?.primaryEmailAddress?.emailAddress ?? "—"}</Text>
-          <Pressable onPress={() => signOut()} style={styles.signOutBtn}>
-            <Text style={styles.signOutText}>Sign Out</Text>
-          </Pressable>
+    <SafeAreaView style={styles.container} edges={["top"]}>
+      <ScrollView contentContainerStyle={styles.content}>
+        <View style={styles.hero}>
+          <Text style={styles.heroKicker}>Profile</Text>
+          <Text style={styles.heroTitle}>Account & Connections</Text>
         </View>
-      </View>
 
-      {/* Marketplaces section */}
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Marketplaces</Text>
-        {loading ? (
-          <ActivityIndicator color="#fff" />
-        ) : (
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Account</Text>
           <View style={styles.card}>
-            {PLATFORMS.map(({ key, label }) => {
-              const conn = getConnection(key);
-              return (
-                <View key={key} style={styles.platformRow}>
-                  <View>
-                    <Text style={styles.platformName}>{label}</Text>
-                    {conn && <Text style={styles.platformUsername}>{conn.platform_username ?? "Connected"}</Text>}
-                  </View>
-                  {conn ? (
-                    <Pressable
-                      onPress={() => handleDisconnect(key)}
-                      style={styles.disconnectBtn}
-                      disabled={disconnecting === key}
-                    >
-                      {disconnecting === key ? (
-                        <ActivityIndicator size="small" color="#ff4444" />
-                      ) : (
-                        <Text style={styles.disconnectText}>Disconnect</Text>
-                      )}
-                    </Pressable>
-                  ) : (
-                    <Pressable onPress={() => handleConnect(key)} style={styles.connectBtn}>
-                      <Text style={styles.connectText}>Connect →</Text>
-                    </Pressable>
-                  )}
-                </View>
-              );
-            })}
+            <Text style={styles.email}>{email}</Text>
+            {canSignOut ? (
+              <Pressable onPress={() => signOut()} style={styles.signOutBtn}>
+                <Text style={styles.signOutText}>Sign Out</Text>
+              </Pressable>
+            ) : (
+              <Text style={styles.mockHint}>Mock mode active</Text>
+            )}
           </View>
-        )}
-      </View>
-    </ScrollView>
+        </View>
+
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Marketplaces</Text>
+          {loading ? (
+            <View style={styles.loaderWrap}>
+              <ActivityIndicator color={theme.colors.accent} />
+            </View>
+          ) : (
+            <View style={styles.card}>
+              {PLATFORMS.map(({ key, label }, idx) => {
+                const connection = getConnection(key);
+                const isLast = idx === PLATFORMS.length - 1;
+
+                return (
+                  <View key={key} style={[styles.platformRow, !isLast && styles.platformRowDivider]}>
+                    <View style={styles.platformInfo}>
+                      <Text style={styles.platformName}>{label}</Text>
+                      <Text style={styles.platformUsername}>
+                        {connection ? (connection.platform_username ?? "Connected") : "Not connected"}
+                      </Text>
+                    </View>
+
+                    {connection ? (
+                      <Pressable
+                        onPress={() => handleDisconnect(key)}
+                        style={styles.disconnectBtn}
+                        disabled={disconnecting === key}
+                      >
+                        {disconnecting === key ? (
+                          <ActivityIndicator size="small" color={theme.colors.danger} />
+                        ) : (
+                          <Text style={styles.disconnectText}>Disconnect</Text>
+                        )}
+                      </Pressable>
+                    ) : (
+                      <Pressable onPress={() => handleConnect(key)} style={styles.connectBtn}>
+                        <Text style={styles.connectText}>Connect</Text>
+                      </Pressable>
+                    )}
+                  </View>
+                );
+              })}
+            </View>
+          )}
+        </View>
+      </ScrollView>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#000" },
-  content: { padding: 16, gap: 24 },
-  section: { gap: 8 },
-  sectionTitle: { color: "#555", fontSize: 12, fontWeight: "700", textTransform: "uppercase", letterSpacing: 1, paddingHorizontal: 4 },
-  card: { backgroundColor: "#111", borderRadius: 12, overflow: "hidden" },
-  email: { color: "#fff", fontSize: 15, padding: 16, borderBottomWidth: 1, borderBottomColor: "#222" },
-  signOutBtn: { padding: 16 },
-  signOutText: { color: "#ff4444", fontSize: 15, fontWeight: "600" },
-  platformRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", padding: 16, borderBottomWidth: 1, borderBottomColor: "#222" },
-  platformName: { color: "#fff", fontSize: 15, fontWeight: "600" },
-  platformUsername: { color: "#555", fontSize: 13, marginTop: 2 },
-  connectBtn: {},
-  connectText: { color: "#0099ff", fontSize: 14, fontWeight: "600" },
-  disconnectBtn: {},
-  disconnectText: { color: "#ff4444", fontSize: 14, fontWeight: "600" },
+  container: {
+    flex: 1,
+    backgroundColor: theme.colors.bg,
+  },
+  content: {
+    paddingHorizontal: 16,
+    paddingBottom: 28,
+    gap: 18,
+  },
+  hero: {
+    paddingTop: 4,
+    paddingBottom: 6,
+  },
+  heroKicker: {
+    color: theme.colors.accent,
+    fontFamily: theme.fonts.sansBold,
+    fontSize: 12,
+    textTransform: "uppercase",
+    letterSpacing: 1,
+  },
+  heroTitle: {
+    color: theme.colors.text,
+    fontFamily: theme.fonts.display,
+    fontSize: 31,
+    lineHeight: 36,
+    marginTop: 3,
+  },
+  section: {
+    gap: 8,
+  },
+  sectionTitle: {
+    color: theme.colors.textMuted,
+    fontFamily: theme.fonts.sansBold,
+    fontSize: 12,
+    textTransform: "uppercase",
+    letterSpacing: 1,
+    marginLeft: 2,
+  },
+  card: {
+    backgroundColor: theme.colors.surface,
+    borderRadius: theme.radius.lg,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    overflow: "hidden",
+    ...theme.shadow.card,
+  },
+  email: {
+    color: theme.colors.text,
+    fontFamily: theme.fonts.sansBold,
+    fontSize: 15,
+    paddingHorizontal: 16,
+    paddingTop: 16,
+    paddingBottom: 8,
+  },
+  signOutBtn: {
+    margin: 16,
+    marginTop: 8,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: "#F5B1A7",
+    backgroundColor: "#FFE7E3",
+    alignItems: "center",
+    paddingVertical: 11,
+  },
+  signOutText: {
+    color: theme.colors.danger,
+    fontFamily: theme.fonts.sansBold,
+    fontSize: 13,
+  },
+  mockHint: {
+    color: theme.colors.textMuted,
+    fontFamily: theme.fonts.sans,
+    fontSize: 12,
+    margin: 16,
+    marginTop: 2,
+  },
+  loaderWrap: {
+    paddingVertical: 24,
+  },
+  platformRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 14,
+    paddingVertical: 14,
+  },
+  platformRowDivider: {
+    borderBottomWidth: 1,
+    borderBottomColor: theme.colors.border,
+  },
+  platformInfo: {
+    gap: 2,
+  },
+  platformName: {
+    color: theme.colors.text,
+    fontFamily: theme.fonts.sansBold,
+    fontSize: 15,
+  },
+  platformUsername: {
+    color: theme.colors.textMuted,
+    fontFamily: theme.fonts.sans,
+    fontSize: 12,
+  },
+  connectBtn: {
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    backgroundColor: theme.colors.surfaceStrong,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+  },
+  connectText: {
+    color: theme.colors.info,
+    fontFamily: theme.fonts.sansBold,
+    fontSize: 12,
+  },
+  disconnectBtn: {
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: "#F5B1A7",
+    backgroundColor: "#FFE7E3",
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    minWidth: 88,
+    alignItems: "center",
+  },
+  disconnectText: {
+    color: theme.colors.danger,
+    fontFamily: theme.fonts.sansBold,
+    fontSize: 12,
+  },
 });

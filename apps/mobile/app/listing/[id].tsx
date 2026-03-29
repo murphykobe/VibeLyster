@@ -1,19 +1,26 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, type ReactNode } from "react";
 import {
-  View, Text, StyleSheet, ScrollView, Pressable, TextInput,
-  ActivityIndicator, Alert, RefreshControl
+  View,
+  Text,
+  StyleSheet,
+  ScrollView,
+  Pressable,
+  TextInput,
+  ActivityIndicator,
+  Alert,
+  RefreshControl,
 } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { useFocusEffect, useRouter, useLocalSearchParams } from "expo-router";
 import { getListing, updateListing, publishListing, delistListing, deleteListing, syncStatus } from "@/lib/api";
 import type { Listing, Platform, PlatformListing } from "@/lib/types";
 import PhotoCarousel from "@/components/PhotoCarousel";
 import PlatformRow from "@/components/PlatformRow";
+import { theme } from "@/lib/theme";
 
 const CONDITIONS = ["new", "gently_used", "used", "heavily_used"];
 const MVP_PLATFORMS: Platform[] = ["grailed", "depop"];
 
-/** Merges the fixed platform list with any existing platform_listings rows.
- *  Platforms with no row yet are shown as pending so the user can initiate publish. */
 function getMergedPlatformRows(listing: Listing): PlatformListing[] {
   const existing = listing.platform_listings ?? [];
   return MVP_PLATFORMS.map((platform) => {
@@ -46,7 +53,6 @@ export default function ListingDetailScreen() {
   const [publishingAll, setPublishingAll] = useState(false);
   const [showAdvanced, setShowAdvanced] = useState(false);
 
-  // Editable fields
   const [title, setTitle] = useState("");
   const [price, setPrice] = useState("");
   const [description, setDescription] = useState("");
@@ -54,18 +60,31 @@ export default function ListingDetailScreen() {
   const [condition, setCondition] = useState("");
   const [brand, setBrand] = useState("");
   const [category, setCategory] = useState("");
+  const [traits, setTraits] = useState<Record<string, string>>({});
+
+  function hydrateListing(data: Listing) {
+    setListing(data);
+    setTitle(data.title);
+    setPrice(String(data.price));
+    setDescription(data.description);
+    setSize(data.size ?? "");
+    setCondition(data.condition ?? "");
+    setBrand(data.brand ?? "");
+    setCategory(data.category ?? "");
+    setTraits(data.traits ?? {});
+
+    const newestSync = (data.platform_listings ?? [])
+      .map((pl) => pl.last_synced_at)
+      .filter((value): value is string => Boolean(value))
+      .sort()
+      .at(-1) ?? null;
+    if (newestSync) setLastSynced(newestSync);
+  }
 
   const load = useCallback(async () => {
     try {
       const data = await getListing(id);
-      setListing(data);
-      setTitle(data.title);
-      setPrice(String(data.price));
-      setDescription(data.description);
-      setSize(data.size ?? "");
-      setCondition(data.condition ?? "");
-      setBrand(data.brand ?? "");
-      setCategory(data.category ?? "");
+      hydrateListing(data);
     } catch (err) {
       console.error(err);
     } finally {
@@ -73,16 +92,56 @@ export default function ListingDetailScreen() {
     }
   }, [id]);
 
-  useFocusEffect(useCallback(() => { load(); }, [load]));
+  useFocusEffect(
+    useCallback(() => {
+      let cancelled = false;
+
+      const run = async () => {
+        await load();
+        if (cancelled) return;
+        setSyncing(true);
+        try {
+          const result = await syncStatus(id);
+          if (cancelled) return;
+          setLastSynced(result.checkedAt);
+          const refreshed = await getListing(id);
+          if (cancelled) return;
+          hydrateListing(refreshed);
+        } catch (err) {
+          console.error(err);
+        } finally {
+          if (!cancelled) setSyncing(false);
+        }
+      };
+
+      run();
+      return () => {
+        cancelled = true;
+      };
+    }, [id, load])
+  );
 
   async function handleSave() {
+    const numericPrice = Number(price);
+    if (Number.isNaN(numericPrice) || numericPrice < 0) {
+      Alert.alert("Invalid price", "Use a valid non-negative number.");
+      return;
+    }
+
     setSaving(true);
     try {
       await updateListing(id, {
-        title, description, price: Number(price), size, condition, brand, category,
+        title,
+        description,
+        price: numericPrice,
+        size,
+        condition,
+        brand,
+        category,
+        traits,
       });
       await load();
-    } catch (err) {
+    } catch {
       Alert.alert("Error", "Failed to save. Try again.");
     } finally {
       setSaving(false);
@@ -106,12 +165,12 @@ export default function ListingDetailScreen() {
     setPublishing(platform);
     try {
       const result = await publishListing(id, [platform]);
-      const pResult = result.results[platform] as { ok: boolean; error?: string };
-      if (!pResult.ok) {
-        Alert.alert("Publish failed", pResult.error ?? "Unknown error");
+      const platformResult = result.results[platform] as { ok: boolean; error?: string };
+      if (!platformResult.ok) {
+        Alert.alert("Publish failed", platformResult.error ?? "Unknown error");
       }
       await load();
-    } catch (err) {
+    } catch {
       Alert.alert("Error", "Publish failed. Try again.");
     } finally {
       setPublishing(null);
@@ -122,22 +181,47 @@ export default function ListingDetailScreen() {
     const connectedPlatforms = (listing ? getMergedPlatformRows(listing) : [])
       .filter((pl) => pl.status !== "live" && pl.status !== "publishing")
       .map((pl) => pl.platform);
+
     if (connectedPlatforms.length === 0) return;
+
     setPublishingAll(true);
     try {
       await publishListing(id, connectedPlatforms);
       await load();
-    } catch (err) {
+    } catch {
       Alert.alert("Error", "Publish failed. Try again.");
     } finally {
       setPublishingAll(false);
     }
   }
 
+  async function handleDelistAll() {
+    const livePlatforms = platformRows.filter((pl) => pl.status === "live").map((pl) => pl.platform);
+    if (livePlatforms.length === 0) return;
+
+    Alert.alert("Delist from all", `Remove from ${livePlatforms.join(", ")}?`, [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Delist all",
+        style: "destructive",
+        onPress: async () => {
+          try {
+            for (const platform of livePlatforms) {
+              await delistListing(id, platform);
+            }
+            await load();
+          } catch {
+            Alert.alert("Error", "Delist all failed.");
+          }
+        },
+      },
+    ]);
+  }
+
   async function handleDelist(platform: Platform) {
     Alert.alert(
       `Delist from ${platform}`,
-      "This will remove the listing from this platform. It will remain on others.",
+      "This removes the item from this platform only.",
       [
         { text: "Cancel", style: "cancel" },
         {
@@ -148,7 +232,7 @@ export default function ListingDetailScreen() {
             try {
               await delistListing(id, platform);
               await load();
-            } catch (err) {
+            } catch {
               Alert.alert("Error", "Delist failed.");
             } finally {
               setDelisting(null);
@@ -160,153 +244,195 @@ export default function ListingDetailScreen() {
   }
 
   async function handleDelete() {
-    Alert.alert(
-      "Delete listing",
-      "This cannot be undone. Delist from all platforms first.",
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Delete",
-          style: "destructive",
-          onPress: async () => {
-            try {
-              await deleteListing(id);
-              router.back();
-            } catch (err: unknown) {
-              const msg = err instanceof Error ? err.message : "Unknown error";
-              Alert.alert("Error", msg.includes("Delist") ? msg : "Delete failed.");
-            }
-          },
+    Alert.alert("Delete listing", "This cannot be undone. Delist from all platforms first.", [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Delete",
+        style: "destructive",
+        onPress: async () => {
+          try {
+            await deleteListing(id);
+            router.back();
+          } catch (err: unknown) {
+            const msg = err instanceof Error ? err.message : "Unknown error";
+            Alert.alert("Error", msg.includes("Delist") ? msg : "Delete failed.");
+          }
         },
-      ]
-    );
+      },
+    ]);
   }
 
   const platformRows = listing ? getMergedPlatformRows(listing) : [];
-  const connectedNotLive = platformRows.filter(
-    (pl) => pl.status !== "live" && pl.status !== "publishing"
-  );
+  const connectedPlatforms = new Set((listing?.platform_listings ?? []).map((pl) => pl.platform));
+  const connectedNotLive = platformRows.filter((pl) => pl.status !== "live" && pl.status !== "publishing");
 
   if (loading) {
-    return <View style={styles.center}><ActivityIndicator size="large" color="#fff" /></View>;
+    return (
+      <View style={styles.center}>
+        <ActivityIndicator size="large" color={theme.colors.accent} />
+      </View>
+    );
   }
+
   if (!listing) {
-    return <View style={styles.center}><Text style={styles.errorText}>Listing not found.</Text></View>;
+    return (
+      <View style={styles.center}>
+        <Text style={styles.errorText}>Listing not found.</Text>
+      </View>
+    );
   }
 
   return (
-    <View style={styles.container}>
-      {/* Header */}
+    <SafeAreaView style={styles.container} edges={["top"]}>
       <View style={styles.header}>
         <Pressable onPress={() => router.back()} style={styles.backBtn}>
-          <Text style={styles.backText}>←</Text>
+          <Text style={styles.backText}>Back</Text>
         </Pressable>
         <Pressable style={styles.saveBtn} onPress={handleSave} disabled={saving}>
-          {saving ? <ActivityIndicator size="small" color="#fff" /> : <Text style={styles.saveBtnText}>Save</Text>}
+          {saving ? <ActivityIndicator size="small" color={theme.colors.white} /> : <Text style={styles.saveBtnText}>Save</Text>}
         </Pressable>
       </View>
 
       <ScrollView
         contentContainerStyle={styles.scroll}
-        refreshControl={<RefreshControl refreshing={loading} onRefresh={load} tintColor="#fff" />}
+        refreshControl={<RefreshControl refreshing={loading} onRefresh={load} tintColor={theme.colors.accent} />}
       >
-        {/* Photos */}
+        <View style={styles.hero}>
+          <Text style={styles.heroTitle}>{title || "Untitled Listing"}</Text>
+          <Text style={styles.heroSub}>Edit details and publish to marketplaces.</Text>
+        </View>
+
         <PhotoCarousel photos={listing.photos} />
 
-        {/* Editable fields */}
-        <View style={styles.fields}>
+        <View style={styles.card}>
           <Field label="Title">
-            <TextInput style={styles.input} value={title} onChangeText={setTitle} placeholderTextColor="#444" />
-          </Field>
-          <Field label="Price">
-            <TextInput style={styles.input} value={price} onChangeText={setPrice} keyboardType="decimal-pad" placeholderTextColor="#444" />
-          </Field>
-          <Field label="Brand">
-            <TextInput style={styles.input} value={brand} onChangeText={setBrand} placeholderTextColor="#444" />
-          </Field>
-          <Field label="Size">
-            <TextInput style={styles.input} value={size} onChangeText={setSize} placeholderTextColor="#444" />
-          </Field>
-          <Field label="Condition">
-            <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-              <View style={styles.conditionPicker}>
-                {CONDITIONS.map((c) => (
-                  <Pressable key={c} onPress={() => setCondition(c)} style={[styles.conditionChip, condition === c && styles.conditionChipActive]}>
-                    <Text style={[styles.conditionChipText, condition === c && styles.conditionChipTextActive]}>
-                      {c.replace(/_/g, " ")}
-                    </Text>
-                  </Pressable>
-                ))}
-              </View>
-            </ScrollView>
-          </Field>
-          <Field label="Description">
-            <TextInput style={[styles.input, styles.textArea]} value={description} onChangeText={setDescription} multiline numberOfLines={4} placeholderTextColor="#444" />
+            <TextInput style={styles.input} value={title} onChangeText={setTitle} placeholderTextColor={theme.colors.textMuted} />
           </Field>
 
-          {/* Advanced */}
-          <Pressable onPress={() => setShowAdvanced((p) => !p)} style={styles.advancedToggle}>
-            <Text style={styles.advancedToggleText}>{showAdvanced ? "▼" : "▶"} Advanced</Text>
+          <View style={styles.twoCol}>
+            <View style={styles.twoColItem}>
+              <Field label="Price">
+                <TextInput style={styles.input} value={price} onChangeText={setPrice} keyboardType="decimal-pad" placeholderTextColor={theme.colors.textMuted} />
+              </Field>
+            </View>
+            <View style={styles.twoColItem}>
+              <Field label="Brand">
+                <TextInput style={styles.input} value={brand} onChangeText={setBrand} placeholderTextColor={theme.colors.textMuted} />
+              </Field>
+            </View>
+          </View>
+
+          <View style={styles.twoCol}>
+            <View style={styles.twoColItem}>
+              <Field label="Size">
+                <TextInput style={styles.input} value={size} onChangeText={setSize} placeholderTextColor={theme.colors.textMuted} />
+              </Field>
+            </View>
+            <View style={styles.twoColItem}>
+              <Field label="Category">
+                <TextInput style={styles.input} value={category} onChangeText={setCategory} placeholderTextColor={theme.colors.textMuted} />
+              </Field>
+            </View>
+          </View>
+
+          <Field label="Condition">
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipsRow}>
+              {CONDITIONS.map((item) => (
+                <Pressable
+                  key={item}
+                  onPress={() => setCondition(item)}
+                  style={[styles.conditionChip, condition === item && styles.conditionChipActive]}
+                >
+                  <Text style={[styles.conditionChipText, condition === item && styles.conditionChipTextActive]}>
+                    {item.replace(/_/g, " ")}
+                  </Text>
+                </Pressable>
+              ))}
+            </ScrollView>
+          </Field>
+
+          <Field label="Description">
+            <TextInput
+              style={[styles.input, styles.textArea]}
+              value={description}
+              onChangeText={setDescription}
+              multiline
+              numberOfLines={5}
+              placeholderTextColor={theme.colors.textMuted}
+            />
+          </Field>
+
+          <Pressable onPress={() => setShowAdvanced((prev) => !prev)} style={styles.advancedToggle}>
+            <Text style={styles.advancedToggleText}>{showAdvanced ? "Hide" : "Show"} advanced fields</Text>
           </Pressable>
+
           {showAdvanced && (
-            <Field label="Category">
-              <TextInput style={styles.input} value={category} onChangeText={setCategory} placeholderTextColor="#444" />
-            </Field>
+            <View style={styles.advancedWrap}>
+              {Object.entries(traits).map(([key, value]) => (
+                <Field key={key} label={key}>
+                  <TextInput
+                    style={styles.input}
+                    value={value}
+                    onChangeText={(text) => setTraits((prev) => ({ ...prev, [key]: text }))}
+                    placeholderTextColor={theme.colors.textMuted}
+                  />
+                </Field>
+              ))}
+            </View>
           )}
         </View>
 
-        {/* Publish section */}
-        <View style={styles.publishSection}>
+        <View style={styles.card}>
           <View style={styles.publishHeader}>
-            <Text style={styles.sectionTitle}>Publish</Text>
-            {lastSynced && (
-              <View style={styles.syncInfo}>
-                <Text style={styles.syncText}>Last synced: {new Date(lastSynced).toLocaleTimeString()}</Text>
-                <Pressable onPress={handleSync} disabled={syncing}>
-                  <Text style={styles.syncBtn}>{syncing ? "…" : "↻"}</Text>
-                </Pressable>
-              </View>
-            )}
-            {!lastSynced && (
-              <Pressable onPress={handleSync} disabled={syncing}>
-                <Text style={styles.syncBtn}>{syncing ? "Syncing…" : "↻ Sync"}</Text>
-              </Pressable>
-            )}
+            <Text style={styles.sectionTitle}>Marketplace Publish</Text>
+            <Pressable onPress={handleSync} disabled={syncing}>
+              <Text style={styles.syncBtn}>{syncing ? "Syncing..." : "Refresh"}</Text>
+            </Pressable>
           </View>
 
-          {platformRows.map((pl) => (
-            <PlatformRow
-              key={pl.platform}
-              platformListing={pl}
-              onPublish={() => handlePublish(pl.platform)}
-              onDelist={() => handleDelist(pl.platform)}
-              onConnect={() => router.push(`/connect/${pl.platform}`)}
-              publishing={publishing === pl.platform}
-              delisting={delisting === pl.platform}
-            />
-          ))}
+          {lastSynced && <Text style={styles.syncTime}>Last synced {new Date(lastSynced).toLocaleTimeString()}</Text>}
+
+          <View style={styles.platformList}>
+            {platformRows.map((platformListing) => (
+              <PlatformRow
+                key={platformListing.platform}
+                platformListing={platformListing}
+                connected={connectedPlatforms.has(platformListing.platform)}
+                onPublish={() => handlePublish(platformListing.platform)}
+                onDelist={() => handleDelist(platformListing.platform)}
+                onConnect={() => router.push(`/connect/${platformListing.platform}`)}
+                publishing={publishing === platformListing.platform}
+                delisting={delisting === platformListing.platform}
+              />
+            ))}
+          </View>
 
           {connectedNotLive.length > 1 && (
             <Pressable style={styles.publishAllBtn} onPress={handlePublishAll} disabled={publishingAll}>
               {publishingAll ? (
-                <ActivityIndicator size="small" color="#000" />
+                <ActivityIndicator size="small" color={theme.colors.white} />
               ) : (
-                <Text style={styles.publishAllText}>Publish to All Connected</Text>
+                <Text style={styles.publishAllText}>Publish to all connected</Text>
               )}
+            </Pressable>
+          )}
+
+          {platformRows.some((pl) => pl.status === "live") && (
+            <Pressable style={styles.delistAllBtn} onPress={handleDelistAll}>
+              <Text style={styles.delistAllText}>Delist from all platforms</Text>
             </Pressable>
           )}
         </View>
 
-        {/* Delete */}
         <Pressable style={styles.deleteBtn} onPress={handleDelete}>
           <Text style={styles.deleteText}>Delete Listing</Text>
         </Pressable>
       </ScrollView>
-    </View>
+    </SafeAreaView>
   );
 }
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
+function Field({ label, children }: { label: string; children: ReactNode }) {
   return (
     <View style={styles.field}>
       <Text style={styles.fieldLabel}>{label}</Text>
@@ -316,35 +442,211 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#000" },
-  center: { flex: 1, backgroundColor: "#000", alignItems: "center", justifyContent: "center" },
-  errorText: { color: "#888" },
-  header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", padding: 16, paddingTop: 56 },
-  backBtn: { padding: 8 },
-  backText: { color: "#fff", fontSize: 22 },
-  saveBtn: { paddingHorizontal: 16, paddingVertical: 8, backgroundColor: "#111", borderRadius: 8 },
-  saveBtnText: { color: "#fff", fontWeight: "600" },
-  scroll: { paddingBottom: 60 },
-  fields: { padding: 16, gap: 16 },
-  field: { gap: 6 },
-  fieldLabel: { color: "#555", fontSize: 12, fontWeight: "700", textTransform: "uppercase", letterSpacing: 0.5 },
-  input: { backgroundColor: "#111", borderRadius: 8, padding: 12, color: "#fff", fontSize: 15 },
-  textArea: { minHeight: 100, textAlignVertical: "top" },
-  conditionPicker: { flexDirection: "row", gap: 8 },
-  conditionChip: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20, backgroundColor: "#111", borderWidth: 1, borderColor: "#222" },
-  conditionChipActive: { backgroundColor: "#fff", borderColor: "#fff" },
-  conditionChipText: { color: "#888", fontSize: 13 },
-  conditionChipTextActive: { color: "#000" },
-  advancedToggle: { paddingVertical: 4 },
-  advancedToggleText: { color: "#555", fontSize: 13 },
-  publishSection: { padding: 16, gap: 12 },
-  publishHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
-  sectionTitle: { color: "#fff", fontSize: 16, fontWeight: "700" },
-  syncInfo: { flexDirection: "row", alignItems: "center", gap: 8 },
-  syncText: { color: "#555", fontSize: 12 },
-  syncBtn: { color: "#0099ff", fontSize: 15 },
-  publishAllBtn: { backgroundColor: "#fff", borderRadius: 12, paddingVertical: 14, alignItems: "center", marginTop: 8 },
-  publishAllText: { color: "#000", fontWeight: "700", fontSize: 15 },
-  deleteBtn: { margin: 16, marginTop: 32, padding: 16, borderWidth: 1, borderColor: "#330000", borderRadius: 12, alignItems: "center" },
-  deleteText: { color: "#ff4444", fontSize: 15 },
+  container: {
+    flex: 1,
+    backgroundColor: theme.colors.bg,
+  },
+  center: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: theme.colors.bg,
+  },
+  errorText: {
+    color: theme.colors.textMuted,
+    fontFamily: theme.fonts.sans,
+  },
+  header: {
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  backBtn: {
+    minWidth: 52,
+  },
+  backText: {
+    color: theme.colors.textMuted,
+    fontSize: 13,
+    fontFamily: theme.fonts.sansBold,
+  },
+  saveBtn: {
+    borderRadius: 999,
+    backgroundColor: theme.colors.accent,
+    paddingHorizontal: 14,
+    paddingVertical: 9,
+    minWidth: 72,
+    alignItems: "center",
+  },
+  saveBtnText: {
+    color: theme.colors.white,
+    fontFamily: theme.fonts.sansBold,
+    fontSize: 13,
+  },
+  scroll: {
+    paddingBottom: 48,
+    gap: 14,
+  },
+  hero: {
+    paddingHorizontal: 16,
+    paddingVertical: 4,
+  },
+  heroTitle: {
+    color: theme.colors.text,
+    fontFamily: theme.fonts.display,
+    fontSize: 34,
+    lineHeight: 40,
+  },
+  heroSub: {
+    marginTop: 4,
+    color: theme.colors.textMuted,
+    fontFamily: theme.fonts.sans,
+    fontSize: 14,
+  },
+  card: {
+    marginHorizontal: 16,
+    borderRadius: theme.radius.lg,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    backgroundColor: theme.colors.surface,
+    padding: 14,
+    gap: 12,
+    ...theme.shadow.card,
+  },
+  field: {
+    gap: 6,
+  },
+  fieldLabel: {
+    color: theme.colors.textMuted,
+    fontSize: 11,
+    fontFamily: theme.fonts.sansBold,
+    textTransform: "uppercase",
+    letterSpacing: 1,
+  },
+  input: {
+    borderRadius: theme.radius.sm,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    backgroundColor: theme.colors.surfaceStrong,
+    paddingHorizontal: 12,
+    paddingVertical: 11,
+    color: theme.colors.text,
+    fontFamily: theme.fonts.sans,
+    fontSize: 14,
+  },
+  textArea: {
+    minHeight: 120,
+    textAlignVertical: "top",
+  },
+  twoCol: {
+    flexDirection: "row",
+    gap: 10,
+  },
+  twoColItem: {
+    flex: 1,
+  },
+  chipsRow: {
+    gap: 8,
+  },
+  conditionChip: {
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    backgroundColor: theme.colors.surfaceStrong,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  conditionChipActive: {
+    borderColor: theme.colors.accent,
+    backgroundColor: theme.colors.accentSoft,
+  },
+  conditionChipText: {
+    color: theme.colors.textMuted,
+    fontFamily: theme.fonts.sansBold,
+    fontSize: 12,
+  },
+  conditionChipTextActive: {
+    color: theme.colors.accent,
+  },
+  advancedToggle: {
+    borderRadius: 999,
+    alignSelf: "flex-start",
+    backgroundColor: theme.colors.surfaceStrong,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  advancedToggleText: {
+    color: theme.colors.textMuted,
+    fontFamily: theme.fonts.sansBold,
+    fontSize: 12,
+  },
+  advancedWrap: {
+    gap: 10,
+  },
+  publishHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  sectionTitle: {
+    color: theme.colors.text,
+    fontFamily: theme.fonts.sansBold,
+    fontSize: 17,
+  },
+  syncBtn: {
+    color: theme.colors.info,
+    fontFamily: theme.fonts.sansBold,
+    fontSize: 12,
+  },
+  syncTime: {
+    color: theme.colors.textMuted,
+    fontFamily: theme.fonts.sans,
+    fontSize: 12,
+  },
+  platformList: {
+    gap: 8,
+  },
+  publishAllBtn: {
+    marginTop: 4,
+    borderRadius: 999,
+    backgroundColor: theme.colors.accent,
+    alignItems: "center",
+    paddingVertical: 12,
+  },
+  publishAllText: {
+    color: theme.colors.white,
+    fontFamily: theme.fonts.sansBold,
+    fontSize: 13,
+  },
+  delistAllBtn: {
+    marginTop: 2,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: "#F5B1A7",
+    backgroundColor: "#FFE7E3",
+    alignItems: "center",
+    paddingVertical: 12,
+  },
+  delistAllText: {
+    color: theme.colors.danger,
+    fontFamily: theme.fonts.sansBold,
+    fontSize: 13,
+  },
+  deleteBtn: {
+    marginHorizontal: 16,
+    borderRadius: theme.radius.md,
+    borderWidth: 1,
+    borderColor: "#F5B1A7",
+    backgroundColor: "#FFE7E3",
+    alignItems: "center",
+    paddingVertical: 13,
+  },
+  deleteText: {
+    color: theme.colors.danger,
+    fontFamily: theme.fonts.sansBold,
+    fontSize: 13,
+  },
 });

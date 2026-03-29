@@ -1,6 +1,7 @@
 import { NextRequest } from "next/server";
 import { put } from "@vercel/blob";
 import { requireAuth, AuthError, authErrorResponse } from "@/lib/auth";
+import { isMockMode } from "@/lib/mock";
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
 const ALLOWED_TYPES = ["image/jpeg", "image/png", "image/webp", "image/heic"];
@@ -18,6 +19,12 @@ export async function POST(req: NextRequest) {
     }
 
     const filename = `listings/${user.id}/${Date.now()}-${file.name.replace(/[^a-zA-Z0-9._-]/g, "_")}`;
+
+    if (isMockMode()) {
+      const url = `https://mock-storage.vibelyster.local/${filename}`;
+      return Response.json({ url }, { status: 201 });
+    }
+
     const blob = await put(filename, file, { access: "public" });
 
     return Response.json({ url: blob.url }, { status: 201 });

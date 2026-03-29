@@ -64,9 +64,10 @@ const CATEGORY_MAP: Record<string, DepopCategory> = {
   "watch": { group: "accessories", productType: "watches" },
 };
 
-function mapCategory(category: string | null): DepopCategory {
+export function mapCategory(category: string | null): DepopCategory {
   if (!category) return { group: "clothing", productType: "t-shirts" };
   const lower = category.toLowerCase();
+  if (CATEGORY_MAP[lower]) return CATEGORY_MAP[lower];
   for (const [key, value] of Object.entries(CATEGORY_MAP)) {
     if (lower.includes(key)) return value;
   }
@@ -84,7 +85,7 @@ const CONDITION_MAP: Record<string, string> = {
   "heavily_used": "fair_condition",
 };
 
-function mapCondition(condition: string | null): string {
+export function mapCondition(condition: string | null): string {
   if (!condition) return "excellent_condition";
   const lower = condition.toLowerCase().replace(/[\s-]+/g, "_");
   return CONDITION_MAP[lower] ?? "excellent_condition";
@@ -229,15 +230,14 @@ export async function publishToDepop(
 
   try {
     // 1. Resolve userId + ship-from address
-    const [userId, shipFromAddressId] = await Promise.all([
-      resolveUserId(access_token),
-      getShipFromAddress(access_token),
-    ]);
+    const userId = await resolveUserId(access_token);
+    const shipFromAddressId = await getShipFromAddress(access_token);
 
     // 2. Upload photos (Depop requires pictures as integer IDs)
-    const pictureIds = await Promise.all(
-      listing.photos.slice(0, 4).map((url) => uploadPhotoFromUrl(url, access_token))
-    );
+    const pictureIds: number[] = [];
+    for (const url of listing.photos.slice(0, 4)) {
+      pictureIds.push(await uploadPhotoFromUrl(url, access_token));
+    }
 
     // 3. Map category + condition
     const { group, productType } = mapCategory(listing.category);

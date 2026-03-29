@@ -52,7 +52,7 @@ const CATEGORY_MAP: Record<string, string> = {
   "blazer": "tailoring.blazers_sportcoats",
 };
 
-function mapCategory(category: string | null): string {
+export function mapCategory(category: string | null): string {
   if (!category) return "tops.t_shirts";
   const lower = category.toLowerCase();
   for (const [key, value] of Object.entries(CATEGORY_MAP)) {
@@ -72,7 +72,7 @@ const CONDITION_MAP: Record<string, string> = {
   "heavily_used": "is_heavily_used",
 };
 
-function mapCondition(condition: string | null): string {
+export function mapCondition(condition: string | null): string {
   if (!condition) return "is_gently_used";
   const lower = condition.toLowerCase().replace(/\s+/g, "_");
   return CONDITION_MAP[lower] ?? "is_gently_used";
@@ -211,12 +211,17 @@ export async function publishToGrailed(
     if (!returnAddressId) throw new Error("No return address on Grailed account");
 
     // 2. Upload photos
-    const uploadedPhotos = await Promise.all(
-      listing.photos.slice(0, 8).map(async (url, i) => {
-        const imageUrl = await uploadPhotoFromUrl(url, csrf_token, cookies);
-        return { url: imageUrl, width: 1080, height: 1080, rotate: 0, position: i };
-      })
-    );
+    const uploadedPhotos: {
+      url: string;
+      width: number;
+      height: number;
+      rotate: number;
+      position: number;
+    }[] = [];
+    for (const [i, url] of listing.photos.slice(0, 8).entries()) {
+      const imageUrl = await uploadPhotoFromUrl(url, csrf_token, cookies);
+      uploadedPhotos.push({ url: imageUrl, width: 1080, height: 1080, rotate: 0, position: i });
+    }
 
     // 3. Build listing payload
     const payload = {

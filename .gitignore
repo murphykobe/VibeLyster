@@ -10,3 +10,6 @@ dist/
 ios/
 android/
 .turbo/
+*.tsbuildinfo
+next-env.d.ts
+.superpowers/

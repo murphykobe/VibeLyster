@@ -1,8 +1,10 @@
 import { View, Text, StyleSheet, Pressable, ActivityIndicator } from "react-native";
 import type { PlatformListing } from "@/lib/types";
+import { theme } from "@/lib/theme";
 
 type Props = {
   platformListing: PlatformListing;
+  connected: boolean;
   onPublish: () => void;
   onDelist: () => void;
   onConnect: () => void;
@@ -11,56 +13,67 @@ type Props = {
 };
 
 const STATUS_LABELS: Record<string, string> = {
-  pending: "Not published",
-  publishing: "Publishing…",
+  pending: "Ready to publish",
+  publishing: "Publishing",
   live: "Live",
-  failed: "Failed",
+  failed: "Needs retry",
   sold: "Sold",
   delisted: "Delisted",
 };
 
 const STATUS_COLORS: Record<string, string> = {
-  live: "#22cc66",
-  sold: "#0099ff",
-  failed: "#ff4444",
-  delisted: "#555",
-  publishing: "#ffaa00",
-  pending: "#555",
+  live: theme.colors.success,
+  sold: theme.colors.info,
+  failed: theme.colors.danger,
+  delisted: theme.colors.textMuted,
+  publishing: theme.colors.warning,
+  pending: theme.colors.textMuted,
 };
 
-export default function PlatformRow({ platformListing, onPublish, onDelist, onConnect, publishing, delisting }: Props) {
+export default function PlatformRow({
+  platformListing,
+  connected,
+  onPublish,
+  onDelist,
+  onConnect,
+  publishing,
+  delisting,
+}: Props) {
   const { platform, status } = platformListing;
   const label = platform.charAt(0).toUpperCase() + platform.slice(1);
   const statusLabel = STATUS_LABELS[status] ?? status;
-  const statusColor = STATUS_COLORS[status] ?? "#555";
+  const statusColor = STATUS_COLORS[status] ?? theme.colors.textMuted;
 
   function renderAction() {
+    if (!connected) {
+      return (
+        <Pressable onPress={onConnect} style={[styles.actionBtn, styles.actionLink]}>
+          <Text style={[styles.actionText, styles.actionLinkText]}>Connect</Text>
+        </Pressable>
+      );
+    }
+
     if (publishing || delisting) {
-      return <ActivityIndicator size="small" color="#fff" />;
+      return <ActivityIndicator size="small" color={theme.colors.accent} />;
     }
 
     if (status === "live" || status === "sold") {
       return (
-        <Pressable onPress={onDelist} style={styles.delistBtn}>
-          <Text style={styles.delistText}>Delist</Text>
+        <Pressable onPress={onDelist} style={[styles.actionBtn, styles.actionGhost]}>
+          <Text style={[styles.actionText, styles.actionGhostText]}>Delist</Text>
         </Pressable>
       );
     }
 
     if (status === "delisted" || status === "pending" || status === "failed") {
       return (
-        <Pressable onPress={onPublish} style={styles.publishBtn}>
-          <Text style={styles.publishText}>{status === "failed" ? "Retry" : "Publish"}</Text>
+        <Pressable onPress={onPublish} style={[styles.actionBtn, styles.actionPrimary]}>
+          <Text style={[styles.actionText, styles.actionPrimaryText]}>{status === "failed" ? "Retry" : "Publish"}</Text>
         </Pressable>
       );
     }
 
-    // Not connected (no platform_listing row or status unknown)
-    return (
-      <Pressable onPress={onConnect} style={styles.connectBtn}>
-        <Text style={styles.connectText}>Connect →</Text>
-      </Pressable>
-    );
+    return null;
   }
 
   return (
@@ -72,29 +85,91 @@ export default function PlatformRow({ platformListing, onPublish, onDelist, onCo
           <Text style={[styles.statusLabel, { color: statusColor }]}>{statusLabel}</Text>
         </View>
         {status === "failed" && platformListing.last_error && (
-          <Text style={styles.errorText} numberOfLines={1}>{platformListing.last_error}</Text>
+          <Text style={styles.errorText} numberOfLines={1}>
+            {platformListing.last_error}
+          </Text>
         )}
       </View>
-      <View style={styles.action}>
-        {renderAction()}
-      </View>
+      {renderAction() ?? <View style={styles.actionSpacer} />}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  row: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", backgroundColor: "#111", borderRadius: 10, padding: 14 },
-  left: { flex: 1, gap: 4 },
-  platformName: { color: "#fff", fontSize: 15, fontWeight: "600" },
-  statusRow: { flexDirection: "row", alignItems: "center", gap: 6 },
-  statusDot: { width: 6, height: 6, borderRadius: 3 },
-  statusLabel: { fontSize: 13 },
-  errorText: { color: "#ff4444", fontSize: 11, marginTop: 2 },
-  action: { marginLeft: 12 },
-  publishBtn: { paddingHorizontal: 14, paddingVertical: 7, backgroundColor: "#fff", borderRadius: 8 },
-  publishText: { color: "#000", fontWeight: "700", fontSize: 13 },
-  delistBtn: { paddingHorizontal: 14, paddingVertical: 7, borderRadius: 8, borderWidth: 1, borderColor: "#ff4444" },
-  delistText: { color: "#ff4444", fontWeight: "700", fontSize: 13 },
-  connectBtn: {},
-  connectText: { color: "#0099ff", fontWeight: "600", fontSize: 13 },
+  row: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    backgroundColor: theme.colors.surface,
+    borderRadius: theme.radius.md,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    paddingHorizontal: 14,
+    paddingVertical: 13,
+  },
+  left: {
+    flex: 1,
+    gap: 4,
+    paddingRight: 10,
+  },
+  platformName: {
+    color: theme.colors.text,
+    fontSize: 15,
+    fontFamily: theme.fonts.sansBold,
+  },
+  statusRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
+  statusDot: {
+    width: 7,
+    height: 7,
+    borderRadius: 99,
+  },
+  statusLabel: {
+    fontSize: 13,
+    fontFamily: theme.fonts.sans,
+  },
+  errorText: {
+    color: theme.colors.danger,
+    fontSize: 12,
+    fontFamily: theme.fonts.sans,
+  },
+  actionBtn: {
+    borderRadius: 999,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    minWidth: 86,
+    alignItems: "center",
+  },
+  actionText: {
+    fontSize: 12,
+    fontFamily: theme.fonts.sansBold,
+  },
+  actionPrimary: {
+    backgroundColor: theme.colors.accent,
+  },
+  actionPrimaryText: {
+    color: theme.colors.white,
+  },
+  actionGhost: {
+    borderWidth: 1,
+    borderColor: theme.colors.danger,
+    backgroundColor: theme.colors.surface,
+  },
+  actionGhostText: {
+    color: theme.colors.danger,
+  },
+  actionLink: {
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    backgroundColor: theme.colors.surfaceStrong,
+  },
+  actionLinkText: {
+    color: theme.colors.info,
+  },
+  actionSpacer: {
+    minWidth: 86,
+  },
 });
