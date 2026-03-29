@@ -46,14 +46,19 @@ test.describe("Publish & Delist", () => {
     await page.waitForLoadState("networkidle");
 
     // Should already show live state (seeded as published)
-    await expect(page.getByText(/live/i).first()).toBeVisible({ timeout: 8000 });
+    await expect(page.getByText("Live", { exact: true }).first()).toBeVisible({ timeout: 8000 });
 
-    // Delist — react-native-web Alert.alert maps to window.confirm; accept the dialog
+    // Delist — react-native-web Alert.alert maps to window.confirm; accept the dialog.
+    // Register waitForResponse BEFORE click so we don't miss the response.
+    const delistResponse = page.waitForResponse((r) => r.url().includes("/api/delist"));
     page.once("dialog", (dialog) => dialog.accept());
     await page.getByText("Delist").first().click();
+    await delistResponse;
 
-    // Live badge should disappear after delist
-    await expect(page.getByText(/live/i)).not.toBeVisible({ timeout: 6000 });
+    // After delist the Grailed row switches to "Delisted" status and shows Publish button.
+    // Asserting on the action button change is more reliable than waiting for "Live" to vanish.
+    await expect(page.getByText("Publish", { exact: true }).first()).toBeVisible({ timeout: 8000 });
+    await expect(page.getByText("Delist", { exact: true })).not.toBeVisible({ timeout: 4000 });
   });
 
   test("published listing shows Live badge on dashboard", async ({ page, request }) => {

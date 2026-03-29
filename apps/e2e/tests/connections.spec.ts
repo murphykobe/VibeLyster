@@ -35,11 +35,14 @@ test.describe("Settings — Marketplace Connections", () => {
     const saveBtn = page.getByText(/save mock connection/i);
     await expect(saveBtn).toBeVisible({ timeout: 8000 });
 
-    // connectMock calls Alert.alert("Connected", ...) → window.alert → accept dialog
+    // Wait for the POST /api/connect response before navigating — if we navigate
+    // first the in-flight fetch is aborted (ECONNRESET) and the connection is not saved.
+    const connectResponse = page.waitForResponse((r) => r.url().includes("/api/connect"));
     page.once("dialog", (dialog) => dialog.accept());
     await saveBtn.click();
+    await connectResponse;
 
-    // After save, navigate to settings and verify Grailed shows as connected
+    // Navigate to settings and verify Grailed shows as connected
     await page.goto("/");
     await page.waitForLoadState("networkidle");
     await page.getByText(/settings/i).click();
@@ -54,10 +57,12 @@ test.describe("Settings — Marketplace Connections", () => {
     const saveBtn = page.getByText(/save mock connection/i);
     await expect(saveBtn).toBeVisible({ timeout: 8000 });
 
+    const connectResponse = page.waitForResponse((r) => r.url().includes("/api/connect"));
     page.once("dialog", (dialog) => dialog.accept());
     await saveBtn.click();
+    await connectResponse;
 
-    // After save, navigate to settings and verify Depop shows as connected
+    // Navigate to settings and verify Depop shows as connected
     await page.goto("/");
     await page.waitForLoadState("networkidle");
     await page.getByText(/settings/i).click();
