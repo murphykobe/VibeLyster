@@ -1,0 +1,404 @@
+/**
+ * API route integration tests.
+ *
+ * Runs against route handlers directly (no HTTP server) with MOCK_MODE=1
+ * so no Neon, Clerk, or marketplace APIs are needed. The in-memory mock DB
+ * is reset before each test via vitest.setup.ts.
+ */
+import { describe, it, expect } from "vitest";
+import { NextRequest } from "next/server";
+import { GET as listListings, POST as createListing } from "../listings/route";
+import { GET as getListing, PUT as updateListing, DELETE as deleteListing } from "../listings/[id]/route";
+import { POST as connectPlatform, DELETE as disconnectPlatform } from "../connect/route";
+import { GET as listConnections } from "../connections/route";
+import { POST as publishListing } from "../publish/route";
+import { POST as delistListing } from "../delist/route";
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+const BASE = "http://localhost:3001";
+
+/** Build a NextRequest with mock auth headers */
+function req(
+  method: string,
+  path: string,
+  opts: { body?: unknown; userId?: string; searchParams?: Record<string, string> } = {}
+): NextRequest {
+  const url = new URL(path, BASE);
+  if (opts.searchParams) {
+    for (const [k, v] of Object.entries(opts.searchParams)) {
+      url.searchParams.set(k, v);
+    }
+  }
+  return new NextRequest(url, {
+    method,
+    headers: {
+      "x-mock-user-id": opts.userId ?? "user-a",
+      "content-type": "application/json",
+    },
+    body: opts.body !== undefined ? JSON.stringify(opts.body) : undefined,
+  });
+}
+
+/** Params wrapper for dynamic route handlers */
+function params(id: string) {
+  return { params: Promise.resolve({ id }) };
+}
+
+const VALID_LISTING = {
+  title: "Nike Air Force 1",
+  description: "Great condition AF1s",
+  price: 120,
+  size: "10",
+  condition: "gently_used",
+  brand: "Nike",
+  category: "sneakers",
+  photos: ["https://blob.vercel-storage.com/photo.jpg"],
+};
+
+// ─── Listings CRUD ────────────────────────────────────────────────────────────
+
+describe("GET /api/listings", () => {
+  it("returns empty array when no listings", async () => {
+    const res = await listListings(req("GET", "/api/listings"));
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual([]);
+  });
+
+  it("returns only listings for the authenticated user", async () => {
+    await createListing(req("POST", "/api/listings", { body: VALID_LISTING, userId: "user-a" }));
+    await createListing(req("POST", "/api/listings", { body: VALID_LISTING, userId: "user-b" }));
+
+    const res = await listListings(req("GET", "/api/listings", { userId: "user-a" }));
+    const listings = await res.json();
+    expect(listings).toHaveLength(1);
+    expect(listings[0].title).toBe("Nike Air Force 1");
+  });
+});
+
+describe("POST /api/listings", () => {
+  it("creates listing and returns 201 with id", async () => {
+    const res = await createListing(req("POST", "/api/listings", { body: VALID_LISTING }));
+    expect(res.status).toBe(201);
+    const data = await res.json();
+    expect(data.id).toBeDefined();
+    expect(data.title).toBe("Nike Air Force 1");
+    expect(data.price).toBe("120");
+  });
+
+  it("returns 400 when title is missing", async () => {
+    const res = await createListing(req("POST", "/api/listings", { body: { ...VALID_LISTING, title: "" } }));
+    expect(res.status).toBe(400);
+    const data = await res.json();
+    expect(data.error).toBe("Validation failed");
+    expect(data.details).toBeInstanceOf(Array);
+  });
+
+  it("returns 400 when price is negative", async () => {
+    const res = await createListing(req("POST", "/api/listings", { body: { ...VALID_LISTING, price: -10 } }));
+    expect(res.status).toBe(400);
+  });
+
+  it("returns 400 when photos is not an array of URLs", async () => {
+    const res = await createListing(req("POST", "/api/listings", { body: { ...VALID_LISTING, photos: ["not-a-url"] } }));
+    expect(res.status).toBe(400);
+  });
+});
+
+describe("GET /api/listings/[id]", () => {
+  it("returns listing by id", async () => {
+    const createRes = await createListing(req("POST", "/api/listings", { body: VALID_LISTING }));
+    const { id } = await createRes.json();
+
+    const res = await getListing(req("GET", `/api/listings/${id}`), params(id));
+    expect(res.status).toBe(200);
+    const data = await res.json();
+    expect(data.id).toBe(id);
+    expect(data.title).toBe("Nike Air Force 1");
+  });
+
+  it("returns 404 for unknown id", async () => {
+    const res = await getListing(
+      req("GET", "/api/listings/00000000-0000-4000-8000-000000000000"),
+      params("00000000-0000-4000-8000-000000000000")
+    );
+    expect(res.status).toBe(404);
+  });
+
+  it("returns 404 when accessing another user's listing", async () => {
+    const createRes = await createListing(req("POST", "/api/listings", { body: VALID_LISTING, userId: "user-a" }));
+    const { id } = await createRes.json();
+
+    const res = await getListing(req("GET", `/api/listings/${id}`, { userId: "user-b" }), params(id));
+    expect(res.status).toBe(404);
+  });
+});
+
+describe("PUT /api/listings/[id]", () => {
+  it("updates listing fields", async () => {
+    const createRes = await createListing(req("POST", "/api/listings", { body: VALID_LISTING }));
+    const { id } = await createRes.json();
+
+    const res = await updateListing(
+      req("PUT", `/api/listings/${id}`, { body: { title: "Updated Title", price: 150 } }),
+      params(id)
+    );
+    expect(res.status).toBe(200);
+    const data = await res.json();
+    expect(data.title).toBe("Updated Title");
+    expect(data.price).toBe("150");
+    // Unchanged fields persist
+    expect(data.brand).toBe("Nike");
+  });
+
+  it("returns 400 for invalid update (empty title)", async () => {
+    const createRes = await createListing(req("POST", "/api/listings", { body: VALID_LISTING }));
+    const { id } = await createRes.json();
+
+    const res = await updateListing(
+      req("PUT", `/api/listings/${id}`, { body: { title: "" } }),
+      params(id)
+    );
+    expect(res.status).toBe(400);
+  });
+
+  it("returns 404 for unknown listing", async () => {
+    const res = await updateListing(
+      req("PUT", "/api/listings/00000000-0000-4000-8000-000000000000", { body: { title: "x" } }),
+      params("00000000-0000-4000-8000-000000000000")
+    );
+    expect(res.status).toBe(404);
+  });
+});
+
+describe("DELETE /api/listings/[id]", () => {
+  it("soft-deletes listing (204) and hides it from GET", async () => {
+    const createRes = await createListing(req("POST", "/api/listings", { body: VALID_LISTING }));
+    const { id } = await createRes.json();
+
+    const delRes = await deleteListing(req("DELETE", `/api/listings/${id}`), params(id));
+    expect(delRes.status).toBe(204);
+
+    const getRes = await getListing(req("GET", `/api/listings/${id}`), params(id));
+    expect(getRes.status).toBe(404);
+  });
+
+  it("returns 404 for unknown listing", async () => {
+    const res = await deleteListing(
+      req("DELETE", "/api/listings/00000000-0000-4000-8000-000000000000"),
+      params("00000000-0000-4000-8000-000000000000")
+    );
+    expect(res.status).toBe(404);
+  });
+
+  it("returns 409 when listing is still live on a platform", async () => {
+    // Create listing, connect grailed, publish, then try to delete
+    const createRes = await createListing(req("POST", "/api/listings", { body: VALID_LISTING }));
+    const { id } = await createRes.json();
+    await connectPlatform(req("POST", "/api/connect", { body: { platform: "grailed", tokens: { csrf_token: "x", cookies: "y" } } }));
+    await publishListing(req("POST", "/api/publish", { body: { listingId: id, platforms: ["grailed"] } }));
+
+    const res = await deleteListing(req("DELETE", `/api/listings/${id}`), params(id));
+    expect(res.status).toBe(409);
+    const data = await res.json();
+    expect(data.platforms).toContain("grailed");
+  });
+});
+
+// ─── Marketplace Connections ──────────────────────────────────────────────────
+
+describe("POST /api/connect", () => {
+  it("saves connection and returns 201", async () => {
+    const res = await connectPlatform(req("POST", "/api/connect", {
+      body: { platform: "grailed", tokens: { csrf_token: "abc", cookies: "session=xyz" } },
+    }));
+    expect(res.status).toBe(201);
+    const data = await res.json();
+    expect(data.platform).toBe("grailed");
+    expect(data.platform_username).toBe("mock-grailed-user");
+  });
+
+  it("upserts — reconnecting updates the record", async () => {
+    await connectPlatform(req("POST", "/api/connect", { body: { platform: "depop", tokens: { access_token: "tok1" } } }));
+    await connectPlatform(req("POST", "/api/connect", { body: { platform: "depop", tokens: { access_token: "tok2" } } }));
+
+    const listRes = await listConnections(req("GET", "/api/connections"));
+    const conns = await listRes.json();
+    expect(conns.filter((c: { platform: string }) => c.platform === "depop")).toHaveLength(1);
+  });
+
+  it("returns 400 for unknown platform", async () => {
+    const res = await connectPlatform(req("POST", "/api/connect", {
+      body: { platform: "shopify", tokens: { key: "val" } },
+    }));
+    expect(res.status).toBe(400);
+  });
+
+  it("returns 400 for empty tokens", async () => {
+    const res = await connectPlatform(req("POST", "/api/connect", {
+      body: { platform: "grailed", tokens: {} },
+    }));
+    expect(res.status).toBe(400);
+  });
+});
+
+describe("DELETE /api/connect", () => {
+  it("removes connection (204)", async () => {
+    await connectPlatform(req("POST", "/api/connect", { body: { platform: "grailed", tokens: { csrf_token: "x", cookies: "y" } } }));
+    const res = await disconnectPlatform(req("DELETE", "/api/connect", { searchParams: { platform: "grailed" } }));
+    expect(res.status).toBe(204);
+
+    const listRes = await listConnections(req("GET", "/api/connections"));
+    expect(await listRes.json()).toEqual([]);
+  });
+
+  it("returns 404 when no connection exists", async () => {
+    const res = await disconnectPlatform(req("DELETE", "/api/connect", { searchParams: { platform: "depop" } }));
+    expect(res.status).toBe(404);
+  });
+
+  it("returns 400 for missing platform query param", async () => {
+    const res = await disconnectPlatform(req("DELETE", "/api/connect"));
+    expect(res.status).toBe(400);
+  });
+});
+
+describe("GET /api/connections", () => {
+  it("returns empty array when no connections", async () => {
+    const res = await listConnections(req("GET", "/api/connections"));
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual([]);
+  });
+
+  it("returns connected platforms without encrypted_tokens", async () => {
+    await connectPlatform(req("POST", "/api/connect", { body: { platform: "grailed", tokens: { csrf_token: "x", cookies: "y" } } }));
+    await connectPlatform(req("POST", "/api/connect", { body: { platform: "depop", tokens: { access_token: "t" } } }));
+
+    const res = await listConnections(req("GET", "/api/connections"));
+    const conns = await res.json();
+    expect(conns).toHaveLength(2);
+    const platforms = conns.map((c: { platform: string }) => c.platform).sort();
+    expect(platforms).toEqual(["depop", "grailed"]);
+    // Tokens must never be returned
+    for (const c of conns) {
+      expect(c).not.toHaveProperty("encrypted_tokens");
+    }
+  });
+});
+
+// ─── Publish ──────────────────────────────────────────────────────────────────
+
+describe("POST /api/publish", () => {
+  async function setup() {
+    const createRes = await createListing(req("POST", "/api/listings", { body: VALID_LISTING }));
+    const { id } = await createRes.json();
+    await connectPlatform(req("POST", "/api/connect", { body: { platform: "grailed", tokens: { csrf_token: "x", cookies: "y" } } }));
+    await connectPlatform(req("POST", "/api/connect", { body: { platform: "depop", tokens: { access_token: "t" } } }));
+    return id as string;
+  }
+
+  it("publishes to connected platform and returns ok:true", async () => {
+    const id = await setup();
+    const res = await publishListing(req("POST", "/api/publish", { body: { listingId: id, platforms: ["grailed"] } }));
+    expect(res.status).toBe(200);
+    const data = await res.json();
+    expect(data.results.grailed.ok).toBe(true);
+    expect(data.results.grailed.platformListingId).toMatch(/^mock-grailed-/);
+  });
+
+  it("publishes to multiple platforms in one call", async () => {
+    const id = await setup();
+    const res = await publishListing(req("POST", "/api/publish", { body: { listingId: id, platforms: ["grailed", "depop"] } }));
+    const data = await res.json();
+    expect(data.results.grailed.ok).toBe(true);
+    expect(data.results.depop.ok).toBe(true);
+  });
+
+  it("returns not-connected error when platform not connected", async () => {
+    const createRes = await createListing(req("POST", "/api/listings", { body: VALID_LISTING }));
+    const { id } = await createRes.json();
+    // No connection seeded
+    const res = await publishListing(req("POST", "/api/publish", { body: { listingId: id, platforms: ["grailed"] } }));
+    expect(res.status).toBe(200);
+    const data = await res.json();
+    expect(data.results.grailed.ok).toBe(false);
+    expect(data.results.grailed.error).toMatch(/not connected/i);
+  });
+
+  it("returns 404 for unknown listing", async () => {
+    const res = await publishListing(req("POST", "/api/publish", { body: { listingId: "00000000-0000-4000-8000-000000000000", platforms: ["grailed"] } }));
+    expect(res.status).toBe(404);
+  });
+
+  it("returns 400 when listingId is not a UUID", async () => {
+    const res = await publishListing(req("POST", "/api/publish", { body: { listingId: "not-a-uuid", platforms: ["grailed"] } }));
+    expect(res.status).toBe(400);
+  });
+
+  it("returns 400 when platforms array is empty", async () => {
+    const id = await setup();
+    const res = await publishListing(req("POST", "/api/publish", { body: { listingId: id, platforms: [] } }));
+    expect(res.status).toBe(400);
+  });
+
+  it("listing platform_listing row is updated to live after publish", async () => {
+    const id = await setup();
+    await publishListing(req("POST", "/api/publish", { body: { listingId: id, platforms: ["grailed"] } }));
+
+    const getRes = await getListing(req("GET", `/api/listings/${id}`), params(id));
+    const listing = await getRes.json();
+    const grailedRow = listing.platform_listings.find((pl: { platform: string }) => pl.platform === "grailed");
+    expect(grailedRow.status).toBe("live");
+    expect(grailedRow.attempt_count).toBe(1);
+  });
+});
+
+// ─── Delist ───────────────────────────────────────────────────────────────────
+
+describe("POST /api/delist", () => {
+  async function setupPublished() {
+    const createRes = await createListing(req("POST", "/api/listings", { body: VALID_LISTING }));
+    const { id } = await createRes.json();
+    await connectPlatform(req("POST", "/api/connect", { body: { platform: "grailed", tokens: { csrf_token: "x", cookies: "y" } } }));
+    await publishListing(req("POST", "/api/publish", { body: { listingId: id, platforms: ["grailed"] } }));
+    return id as string;
+  }
+
+  it("delists from platform and returns ok:true", async () => {
+    const id = await setupPublished();
+    const res = await delistListing(req("POST", "/api/delist", { body: { listingId: id, platform: "grailed" } }));
+    expect(res.status).toBe(200);
+    const data = await res.json();
+    expect(data.ok).toBe(true);
+  });
+
+  it("listing status is delisted after delist", async () => {
+    const id = await setupPublished();
+    await delistListing(req("POST", "/api/delist", { body: { listingId: id, platform: "grailed" } }));
+
+    const getRes = await getListing(req("GET", `/api/listings/${id}`), params(id));
+    const listing = await getRes.json();
+    const grailedRow = listing.platform_listings.find((pl: { platform: string }) => pl.platform === "grailed");
+    expect(grailedRow.status).toBe("delisted");
+  });
+
+  it("can delete listing after delisting from all platforms", async () => {
+    const id = await setupPublished();
+    await delistListing(req("POST", "/api/delist", { body: { listingId: id, platform: "grailed" } }));
+
+    const delRes = await deleteListing(req("DELETE", `/api/listings/${id}`), params(id));
+    expect(delRes.status).toBe(204);
+  });
+
+  it("returns 404 when listing has no platform listing", async () => {
+    const createRes = await createListing(req("POST", "/api/listings", { body: VALID_LISTING }));
+    const { id } = await createRes.json();
+    const res = await delistListing(req("POST", "/api/delist", { body: { listingId: id, platform: "grailed" } }));
+    expect(res.status).toBe(404);
+  });
+
+  it("returns 400 for invalid platform", async () => {
+    const res = await delistListing(req("POST", "/api/delist", { body: { listingId: "00000000-0000-4000-8000-000000000000", platform: "shopify" } }));
+    expect(res.status).toBe(400);
+  });
+});

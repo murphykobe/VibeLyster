@@ -5,3 +5,11 @@ dist/
 .env*.local
 .DS_Store
 *.log
+.next/
+.expo/
+ios/
+android/
+.turbo/
+*.tsbuildinfo
+next-env.d.ts
+.superpowers/
