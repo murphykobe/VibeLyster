@@ -18,12 +18,15 @@ test.describe("Listing Detail", () => {
     await page.goto("/");
     await page.waitForLoadState("networkidle");
 
-    // Wait for entrance animations to settle, then target the Pressable (role=button)
-    // directly — clicking on the inner Text node doesn't reliably fire onPress in CI.
-    await page.waitForTimeout(800);
-    await page.getByRole("button").filter({ hasText: listing.title }).first().click();
-    await page.waitForURL(`**/listing/${listing.id}`, { timeout: 12000 });
-    await expect(page.getByText("Nike Air Force 1")).toBeVisible();
+    // Wait for the card to render, then click the title text.
+    // Playwright's native click() reliably fires onPress on react-native-web Pressable.
+    await expect(page.getByText("Nike Air Force 1").first()).toBeVisible({ timeout: 8000 });
+    await page.getByText("Nike Air Force 1").first().click();
+
+    // Expo Router appends a ?__EXPO_ROUTER_key=… query param, so use a regex
+    // that matches the listing path regardless of trailing query string.
+    await page.waitForURL(new RegExp(`/listing/${listing.id}`), { timeout: 12000 });
+    await expect(page.getByText("Edit details and publish to marketplaces.")).toBeVisible();
   });
 
   test("edits title and persists on reload", async ({ page, request }) => {
