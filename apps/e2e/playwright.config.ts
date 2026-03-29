@@ -56,7 +56,7 @@ export default defineConfig({
             `EXPO_PUBLIC_API_URL=${BACKEND_URL}`,
             "EXPO_PUBLIC_MOCK_USER_ID=e2e-user",
             "npx expo export --platform web --output-dir dist/web 2>&1 &&",
-            "npx serve dist/web --listen 8081",
+            "npx serve dist/web --single --listen 8081",
           ].join(" ")
         : [
             "EXPO_PUBLIC_MOCK_MODE=1",
