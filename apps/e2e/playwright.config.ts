@@ -47,19 +47,29 @@ export default defineConfig({
       timeout: 30_000,
     },
     {
-      // Expo Web dev server
-      command: [
-        "EXPO_PUBLIC_MOCK_MODE=1",
-        `EXPO_PUBLIC_API_URL=${BACKEND_URL}`,
-        "EXPO_PUBLIC_MOCK_USER_ID=e2e-user",
-        "npx expo start --web --port 8081",
-      ].join(" "),
+      // Expo Web:
+      //   - Local dev: dev server (fast iteration)
+      //   - CI: static export served with `serve` (deterministic, no interactive TTY needed)
+      command: process.env.CI
+        ? [
+            "EXPO_PUBLIC_MOCK_MODE=1",
+            `EXPO_PUBLIC_API_URL=${BACKEND_URL}`,
+            "EXPO_PUBLIC_MOCK_USER_ID=e2e-user",
+            "npx expo export --platform web --output-dir dist/web 2>&1 &&",
+            "npx serve dist/web --listen 8081",
+          ].join(" ")
+        : [
+            "EXPO_PUBLIC_MOCK_MODE=1",
+            `EXPO_PUBLIC_API_URL=${BACKEND_URL}`,
+            "EXPO_PUBLIC_MOCK_USER_ID=e2e-user",
+            "npx expo start --web --port 8081",
+          ].join(" "),
       cwd: "../mobile",
       url: WEB_URL,
       reuseExistingServer: !process.env.CI,
       stdout: "pipe",
       stderr: "pipe",
-      timeout: 60_000,
+      timeout: 120_000,   // static build needs more time than a dev server start
     },
   ],
 });
