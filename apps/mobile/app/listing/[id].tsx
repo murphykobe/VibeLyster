@@ -12,8 +12,8 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useFocusEffect, useRouter, useLocalSearchParams } from "expo-router";
-import { getListing, updateListing, publishListing, delistListing, deleteListing, syncStatus } from "@/lib/api";
-import type { Listing, Platform, PlatformListing } from "@/lib/types";
+import { getListing, updateListing, publishListing, delistListing, deleteListing, syncStatus, getConnections } from "@/lib/api";
+import type { Listing, MarketplaceConnection, Platform, PlatformListing } from "@/lib/types";
 import PhotoCarousel from "@/components/PhotoCarousel";
 import PlatformRow from "@/components/PlatformRow";
 import { theme } from "@/lib/theme";
@@ -52,6 +52,8 @@ export default function ListingDetailScreen() {
   const [delisting, setDelisting] = useState<Platform | null>(null);
   const [publishingAll, setPublishingAll] = useState(false);
   const [showAdvanced, setShowAdvanced] = useState(false);
+
+  const [connections, setConnections] = useState<MarketplaceConnection[]>([]);
 
   const [title, setTitle] = useState("");
   const [price, setPrice] = useState("");
@@ -92,12 +94,21 @@ export default function ListingDetailScreen() {
     }
   }, [id]);
 
+  const loadConnections = useCallback(async () => {
+    try {
+      const data = await getConnections();
+      setConnections(data);
+    } catch (err) {
+      console.error(err);
+    }
+  }, []);
+
   useFocusEffect(
     useCallback(() => {
       let cancelled = false;
 
       const run = async () => {
-        await load();
+        await Promise.all([load(), loadConnections()]);
         if (cancelled) return;
         setSyncing(true);
         try {
@@ -263,8 +274,13 @@ export default function ListingDetailScreen() {
   }
 
   const platformRows = listing ? getMergedPlatformRows(listing) : [];
-  const connectedPlatforms = new Set((listing?.platform_listings ?? []).map((pl) => pl.platform));
-  const connectedNotLive = platformRows.filter((pl) => pl.status !== "live" && pl.status !== "publishing");
+  const connectedPlatforms = new Set<Platform>([
+    ...(listing?.platform_listings ?? []).map((pl) => pl.platform as Platform),
+    ...connections.map((c) => c.platform),
+  ]);
+  const connectedNotLive = platformRows.filter(
+    (pl) => connectedPlatforms.has(pl.platform) && pl.status !== "live" && pl.status !== "publishing"
+  );
 
   if (loading) {
     return (

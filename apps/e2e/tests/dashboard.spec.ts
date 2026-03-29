@@ -16,14 +16,14 @@ test.describe("Dashboard", () => {
     await page.waitForLoadState("networkidle");
 
     // Listing card with the seeded title should appear
-    await expect(page.getByText("Nike Air Force 1")).toBeVisible({ timeout: 8000 });
+    await expect(page.getByText("Nike Air Force 1").first()).toBeVisible({ timeout: 8000 });
   });
 
   test("shows price on listing card", async ({ page, request }) => {
     await seedListing(request);
     await page.goto("/");
     await page.waitForLoadState("networkidle");
-    await expect(page.getByText(/\$120/)).toBeVisible({ timeout: 8000 });
+    await expect(page.getByText(/\$120/).first()).toBeVisible({ timeout: 8000 });
   });
 
   test("multiple listings all appear", async ({ page, request }) => {

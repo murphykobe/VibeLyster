@@ -48,10 +48,11 @@ test.describe("Publish & Delist", () => {
     // Should already show live state (seeded as published)
     await expect(page.getByText(/live/i)).toBeVisible({ timeout: 8000 });
 
-    // Delist
-    await page.getByText(/delist/i).click();
+    // Delist — react-native-web Alert.alert maps to window.confirm; accept the dialog
+    page.once("dialog", (dialog) => dialog.accept());
+    await page.getByText("Delist").first().click();
 
-    // Live badge should disappear
+    // Live badge should disappear after delist
     await expect(page.getByText(/live/i)).not.toBeVisible({ timeout: 6000 });
   });
 

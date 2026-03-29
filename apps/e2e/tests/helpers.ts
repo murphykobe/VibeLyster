@@ -1,7 +1,20 @@
+import { test } from "@playwright/test";
 import type { APIRequestContext } from "@playwright/test";
 
 const API = "http://localhost:3001";
 const MOCK_HEADERS = { "x-mock-user-id": "e2e-user", "content-type": "application/json" };
+
+async function resetMockDb(request: APIRequestContext) {
+  await request.post(`${API}/api/test/reset`);
+}
+
+/** Wipe the in-memory mock DB before/after each test so state doesn't bleed between tests. */
+test.beforeEach(async ({ request }) => {
+  await resetMockDb(request);
+});
+test.afterEach(async ({ request }) => {
+  await resetMockDb(request);
+});
 
 const LISTING_FIXTURE = {
   title: "Nike Air Force 1",

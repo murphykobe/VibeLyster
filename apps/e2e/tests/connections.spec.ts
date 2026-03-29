@@ -23,8 +23,8 @@ test.describe("Settings — Marketplace Connections", () => {
     await page.getByText(/settings/i).click();
     await page.waitForLoadState("networkidle");
 
-    // Grailed row should show connected state
-    await expect(page.getByText(/connected/i)).toBeVisible({ timeout: 8000 });
+    // Grailed row should show the Disconnect button (only visible when connected)
+    await expect(page.getByText("Disconnect").first()).toBeVisible({ timeout: 8000 });
   });
 
   test("can connect Grailed via web mock button", async ({ page }) => {
@@ -34,10 +34,13 @@ test.describe("Settings — Marketplace Connections", () => {
     // The web stub renders a "Save Mock Connection" button in mock mode
     const saveBtn = page.getByText(/save mock connection/i);
     await expect(saveBtn).toBeVisible({ timeout: 8000 });
+
+    // connectMock calls Alert.alert("Connected", ...) → window.alert → accept dialog
+    page.once("dialog", (dialog) => dialog.accept());
     await saveBtn.click();
 
-    // Should navigate back after connecting
-    await expect(page.getByText(/connected/i).or(page.getByText(/ok/i))).toBeVisible({ timeout: 8000 });
+    // After dialog is dismissed the router.back() fires; should be on a different page
+    await expect(page).not.toHaveURL(/connect/i, { timeout: 8000 });
   });
 
   test("can connect Depop via web mock button", async ({ page }) => {
@@ -46,9 +49,11 @@ test.describe("Settings — Marketplace Connections", () => {
 
     const saveBtn = page.getByText(/save mock connection/i);
     await expect(saveBtn).toBeVisible({ timeout: 8000 });
+
+    page.once("dialog", (dialog) => dialog.accept());
     await saveBtn.click();
 
-    await expect(page.getByText(/connected/i).or(page.getByText(/ok/i))).toBeVisible({ timeout: 8000 });
+    await expect(page).not.toHaveURL(/connect/i, { timeout: 8000 });
   });
 
   test("can disconnect Grailed", async ({ page, request }) => {
@@ -59,11 +64,14 @@ test.describe("Settings — Marketplace Connections", () => {
     await page.getByText(/settings/i).click();
     await page.waitForLoadState("networkidle");
 
-    const disconnectBtn = page.getByText(/disconnect/i);
+    const disconnectBtn = page.getByText("Disconnect").first();
     await expect(disconnectBtn).toBeVisible({ timeout: 8000 });
+
+    // Disconnect triggers Alert.alert → window.confirm; accept the dialog
+    page.once("dialog", (dialog) => dialog.accept());
     await disconnectBtn.click();
 
-    // After disconnecting, the connect button should reappear for that platform
-    await expect(page.getByText(/connect/i).first()).toBeVisible({ timeout: 6000 });
+    // After disconnecting, the Connect button should reappear
+    await expect(page.getByText("Connect").first()).toBeVisible({ timeout: 6000 });
   });
 });
