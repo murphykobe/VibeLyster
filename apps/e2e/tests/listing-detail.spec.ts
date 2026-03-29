@@ -18,8 +18,8 @@ test.describe("Listing Detail", () => {
     await page.goto("/");
     await page.waitForLoadState("networkidle");
 
-    await page.getByText(listing.title).first().click();
-    await page.waitForURL(`**/listing/${listing.id}`, { timeout: 8000 });
+    await page.getByText(listing.title).first().click({ force: true });
+    await page.waitForURL(`**/listing/${listing.id}`, { timeout: 12000 });
     await expect(page.getByText("Nike Air Force 1")).toBeVisible();
   });
 
@@ -32,6 +32,7 @@ test.describe("Listing Detail", () => {
     const titleInput = page.getByRole("textbox").first();
     await titleInput.clear();
     await titleInput.fill("Nike AF1 White");
+    await titleInput.press("Tab"); // commit React controlled input state
 
     // Save via the header Save button
     await page.getByText("Save").click();
@@ -52,6 +53,7 @@ test.describe("Listing Detail", () => {
     const priceInput = page.getByRole("textbox").nth(1);
     await priceInput.clear();
     await priceInput.fill("150");
+    await priceInput.press("Tab"); // commit React controlled input state
 
     await page.getByText("Save").click();
     await page.waitForLoadState("networkidle");

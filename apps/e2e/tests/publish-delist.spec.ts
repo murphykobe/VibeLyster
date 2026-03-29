@@ -10,7 +10,7 @@ test.describe("Publish & Delist", () => {
     await page.waitForLoadState("networkidle");
 
     // Grailed row should have a Publish button
-    await expect(page.getByText(/publish/i).first()).toBeVisible({ timeout: 8000 });
+    await expect(page.getByText("Publish", { exact: true }).first()).toBeVisible({ timeout: 8000 });
   });
 
   test("publish changes Grailed status to Live", async ({ page, request }) => {
@@ -21,10 +21,10 @@ test.describe("Publish & Delist", () => {
     await page.waitForLoadState("networkidle");
 
     // Click Publish on Grailed row
-    await page.getByText(/publish/i).first().click();
+    await page.getByText("Publish", { exact: true }).first().click();
 
     // Status should update to Live
-    await expect(page.getByText(/live/i)).toBeVisible({ timeout: 8000 });
+    await expect(page.getByText(/live/i).first()).toBeVisible({ timeout: 8000 });
   });
 
   test("after publish, Grailed row shows Delist", async ({ page, request }) => {
@@ -33,10 +33,10 @@ test.describe("Publish & Delist", () => {
 
     await page.goto(`/listing/${listing.id}`);
     await page.waitForLoadState("networkidle");
-    await page.getByText(/publish/i).first().click();
+    await page.getByText("Publish", { exact: true }).first().click();
 
     // Delist button should appear
-    await expect(page.getByText(/delist/i)).toBeVisible({ timeout: 8000 });
+    await expect(page.getByText("Delist", { exact: true }).first()).toBeVisible({ timeout: 8000 });
   });
 
   test("delist reverts status back from Live", async ({ page, request }) => {
@@ -46,7 +46,7 @@ test.describe("Publish & Delist", () => {
     await page.waitForLoadState("networkidle");
 
     // Should already show live state (seeded as published)
-    await expect(page.getByText(/live/i)).toBeVisible({ timeout: 8000 });
+    await expect(page.getByText(/live/i).first()).toBeVisible({ timeout: 8000 });
 
     // Delist — react-native-web Alert.alert maps to window.confirm; accept the dialog
     page.once("dialog", (dialog) => dialog.accept());
@@ -62,7 +62,7 @@ test.describe("Publish & Delist", () => {
     await page.goto("/");
     await page.waitForLoadState("networkidle");
 
-    await expect(page.getByText(/live/i)).toBeVisible({ timeout: 8000 });
+    await expect(page.getByText(/live/i).first()).toBeVisible({ timeout: 8000 });
   });
 
   test("publish to all connected platforms", async ({ page, request }) => {

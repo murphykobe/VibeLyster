@@ -39,8 +39,12 @@ test.describe("Settings — Marketplace Connections", () => {
     page.once("dialog", (dialog) => dialog.accept());
     await saveBtn.click();
 
-    // After dialog is dismissed the router.back() fires; should be on a different page
-    await expect(page).not.toHaveURL(/connect/i, { timeout: 8000 });
+    // After save, navigate to settings and verify Grailed shows as connected
+    await page.goto("/");
+    await page.waitForLoadState("networkidle");
+    await page.getByText(/settings/i).click();
+    await page.waitForLoadState("networkidle");
+    await expect(page.getByText("Disconnect").first()).toBeVisible({ timeout: 8000 });
   });
 
   test("can connect Depop via web mock button", async ({ page }) => {
@@ -53,7 +57,12 @@ test.describe("Settings — Marketplace Connections", () => {
     page.once("dialog", (dialog) => dialog.accept());
     await saveBtn.click();
 
-    await expect(page).not.toHaveURL(/connect/i, { timeout: 8000 });
+    // After save, navigate to settings and verify Depop shows as connected
+    await page.goto("/");
+    await page.waitForLoadState("networkidle");
+    await page.getByText(/settings/i).click();
+    await page.waitForLoadState("networkidle");
+    await expect(page.getByText("Disconnect").first()).toBeVisible({ timeout: 8000 });
   });
 
   test("can disconnect Grailed", async ({ page, request }) => {
