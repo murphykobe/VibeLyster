@@ -29,7 +29,8 @@ Required by live mode code paths:
 - `DATABASE_URL` (Neon/Postgres)
 - `CLERK_SECRET_KEY`
 - `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`
-- `VERCEL_OIDC_TOKEN` (AI Gateway token injected by Vercel)
+- `AI_GATEWAY_API_KEY` (recommended for AI Gateway auth)
+- `VERCEL_OIDC_TOKEN` (optional OIDC-based AI Gateway auth, if supported by runtime)
 - `TOKEN_ENCRYPTION_KEY` (64-hex-char key for encrypting stored marketplace tokens)
 - `BLOB_READ_WRITE_TOKEN` (required by `/api/upload` in non-mock mode)
 

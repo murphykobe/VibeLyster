@@ -176,6 +176,7 @@ cd apps/mobile && EXPO_PUBLIC_MOCK_MODE=1 EXPO_PUBLIC_API_URL=http://<LAN_IP>:30
 | 3 | Playback | Tap play on recorded clip | Audio plays back | |
 | 4 | Re-record | Record again | Previous recording replaced | |
 | 5 | Generate with voice | Photos + voice, tap Generate | Draft created with AI-generated fields | |
+| 6 | Generate with transcript override | Submit photo(s) + manual transcript (no audio) to `/api/generate` | Draft created; transcript is used directly, skipping STT | |
 
 ### 3C. WebView Marketplace Auth (Native Only)
 
@@ -216,9 +217,10 @@ cd apps/mobile && EXPO_PUBLIC_MOCK_MODE=1 EXPO_PUBLIC_API_URL=http://<LAN_IP>:30
 | 3 | Publish without connection | Open listing, tap Publish on unconnected platform | Error or prompt to connect | |
 | 4 | Network offline | Disable network, try to publish | Error toast: network/retry message | |
 | 5 | Token expired | Connect, wait for expiry (or tamper), publish | Error: "Session expired, reconnect" | |
-| 6 | Duplicate publish | Publish same listing to same platform twice | Idempotent: same `platform_listing_id` returned | |
-| 7 | Large description | Generate listing with very long voice note | Description truncated to platform max | |
-| 8 | Special characters | Title with emojis, unicode, quotes | Renders correctly, posts without error | |
+| 6 | Transcript-only generate | POST `/api/generate` with `transcript` + optional `photos`, no audio | Draft created without calling STT | |
+| 7 | Duplicate publish | Publish same listing to same platform twice | Idempotent: same `platform_listing_id` returned | |
+| 8 | Large description | Generate listing with very long voice note or transcript | Description truncated to platform max | |
+| 9 | Special characters | Title/transcript with emojis, unicode, quotes | Renders correctly, posts without error | |
 
 ---
 

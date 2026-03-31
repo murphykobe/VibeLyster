@@ -21,6 +21,19 @@ import { theme } from "@/lib/theme";
 const CONDITIONS = ["new", "gently_used", "used", "heavily_used"];
 const MVP_PLATFORMS: Platform[] = ["grailed", "depop"];
 
+function confirmAction(title: string, message: string, confirmText = "Confirm") {
+  if (typeof window !== "undefined" && typeof window.confirm === "function") {
+    return Promise.resolve(window.confirm(`${title}\n\n${message}`));
+  }
+
+  return new Promise<boolean>((resolve) => {
+    Alert.alert(title, message, [
+      { text: "Cancel", style: "cancel", onPress: () => resolve(false) },
+      { text: confirmText, style: "destructive", onPress: () => resolve(true) },
+    ]);
+  });
+}
+
 function getMergedPlatformRows(listing: Listing): PlatformListing[] {
   const existing = listing.platform_listings ?? [];
   return MVP_PLATFORMS.map((platform) => {
@@ -210,67 +223,53 @@ export default function ListingDetailScreen() {
     const livePlatforms = platformRows.filter((pl) => pl.status === "live").map((pl) => pl.platform);
     if (livePlatforms.length === 0) return;
 
-    Alert.alert("Delist from all", `Remove from ${livePlatforms.join(", ")}?`, [
-      { text: "Cancel", style: "cancel" },
-      {
-        text: "Delist all",
-        style: "destructive",
-        onPress: async () => {
-          try {
-            for (const platform of livePlatforms) {
-              await delistListing(id, platform);
-            }
-            await load();
-          } catch {
-            Alert.alert("Error", "Delist all failed.");
-          }
-        },
-      },
-    ]);
+    const confirmed = await confirmAction("Delist from all", `Remove from ${livePlatforms.join(", ")}?`, "Delist all");
+    if (!confirmed) return;
+
+    try {
+      for (const platform of livePlatforms) {
+        await delistListing(id, platform);
+      }
+      await load();
+    } catch {
+      Alert.alert("Error", "Delist all failed.");
+    }
   }
 
   async function handleDelist(platform: Platform) {
-    Alert.alert(
+    const confirmed = await confirmAction(
       `Delist from ${platform}`,
       "This removes the item from this platform only.",
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Delist",
-          style: "destructive",
-          onPress: async () => {
-            setDelisting(platform);
-            try {
-              await delistListing(id, platform);
-              await load();
-            } catch {
-              Alert.alert("Error", "Delist failed.");
-            } finally {
-              setDelisting(null);
-            }
-          },
-        },
-      ]
+      "Delist"
     );
+    if (!confirmed) return;
+
+    setDelisting(platform);
+    try {
+      await delistListing(id, platform);
+      await load();
+    } catch {
+      Alert.alert("Error", "Delist failed.");
+    } finally {
+      setDelisting(null);
+    }
   }
 
   async function handleDelete() {
-    Alert.alert("Delete listing", "This cannot be undone. Delist from all platforms first.", [
-      { text: "Cancel", style: "cancel" },
-      {
-        text: "Delete",
-        style: "destructive",
-        onPress: async () => {
-          try {
-            await deleteListing(id);
-            router.back();
-          } catch (err: unknown) {
-            const msg = err instanceof Error ? err.message : "Unknown error";
-            Alert.alert("Error", msg.includes("Delist") ? msg : "Delete failed.");
-          }
-        },
-      },
-    ]);
+    const confirmed = await confirmAction(
+      "Delete listing",
+      "This cannot be undone. Delist from all platforms first.",
+      "Delete"
+    );
+    if (!confirmed) return;
+
+    try {
+      await deleteListing(id);
+      router.back();
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Unknown error";
+      Alert.alert("Error", msg.includes("Delist") ? msg : "Delete failed.");
+    }
   }
 
   const platformRows = listing ? getMergedPlatformRows(listing) : [];

@@ -8,6 +8,8 @@
     "build": "turbo run build",
     "lint": "turbo run lint",
     "test:e2e": "npm run test -w apps/e2e",
+    "test:e2e:preview": "npm run test:preview -w apps/e2e",
+    "test:e2e:preview:manual-ai": "npm run test:preview:manual-ai -w apps/e2e",
     "vercel:server:env:ls": "npm run -w apps/server vercel:env:ls",
     "vercel:server:pull:preview": "npm run -w apps/server vercel:pull:preview",
     "vercel:server:pull:production": "npm run -w apps/server vercel:pull:production",

@@ -205,10 +205,14 @@ export async function uploadPhoto(input: string | UploadPhotoInput): Promise<str
 export async function generateListing(params: {
   photoUrls: string[];
   audioUri?: string;
+  transcript?: string;
 }): Promise<{ listing: Listing }> {
   const form = new FormData();
   if (params.photoUrls.length > 0) {
     form.append("photos", params.photoUrls.join(","));
+  }
+  if (params.transcript?.trim()) {
+    form.append("transcript", params.transcript.trim());
   }
   if (params.audioUri) {
     form.append("audio", { uri: params.audioUri, name: "voice.m4a", type: "audio/m4a" } as unknown as Blob);

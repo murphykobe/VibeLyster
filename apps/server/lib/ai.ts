@@ -9,7 +9,7 @@
  * 3. Structured output: single model call returns canonical listing JSON
  *
  * STT provider: Soniox REST API (SONIOX_API_KEY)
- * Generation provider: Vercel AI Gateway (OIDC auth) → minimax/minimax-m2.7
+ * Generation provider: Vercel AI Gateway (prefer AI_GATEWAY_API_KEY, fallback to VERCEL_OIDC_TOKEN) → minimax/minimax-m2.7
  */
 
 import { createOpenAI } from "@ai-sdk/openai";
@@ -19,14 +19,16 @@ import { z } from "zod";
 // ─── Vercel AI Gateway client ─────────────────────────────────────────────────
 
 function getGatewayClient() {
-  // In production (Vercel), VERCEL_OIDC_TOKEN is auto-injected.
-  // For local dev, run `vercel env pull` to get it in .env.local.
-  const oidcToken = process.env.VERCEL_OIDC_TOKEN;
-  if (!oidcToken) throw new Error("VERCEL_OIDC_TOKEN is required");
+  // Preferred: explicit AI Gateway API key configured in Vercel env vars.
+  // Fallback: Vercel-issued OIDC token if available in the runtime.
+  const apiKey = process.env.AI_GATEWAY_API_KEY ?? process.env.VERCEL_OIDC_TOKEN;
+  if (!apiKey) {
+    throw new Error("AI_GATEWAY_API_KEY or VERCEL_OIDC_TOKEN is required");
+  }
 
   return createOpenAI({
     baseURL: "https://ai-gateway.vercel.sh/v1",
-    apiKey: oidcToken,
+    apiKey,
   });
 }
 
@@ -159,6 +161,7 @@ export type GenerateListingInput = {
   audioBuffer?: ArrayBuffer;
   audioMimeType?: string;
   photoUrls: string[];
+  transcript?: string;
 };
 
 export type GenerateListingResult = {
@@ -169,13 +172,17 @@ export type GenerateListingResult = {
 };
 
 export async function generateListing(input: GenerateListingInput): Promise<GenerateListingResult> {
-  const { audioBuffer, audioMimeType, photoUrls } = input;
+  const { audioBuffer, audioMimeType, photoUrls, transcript: providedTranscript } = input;
 
-  // Step 1: Transcribe audio (if provided)
-  let transcript = "";
-  if (audioBuffer && audioMimeType) {
+  // Step 1: Determine transcript.
+  // If a transcript is explicitly provided, prefer it and skip STT so manual
+  // testing can exercise generation without Soniox cost/latency.
+  let transcript = providedTranscript?.trim() ?? "";
+  if (!transcript && audioBuffer && audioMimeType) {
     transcript = await transcribeAudio(audioBuffer, audioMimeType);
     console.log(JSON.stringify({ event: "ai.transcription_complete", transcript_length: transcript.length }));
+  } else if (transcript) {
+    console.log(JSON.stringify({ event: "ai.transcript_provided", transcript_length: transcript.length }));
   }
 
   // Step 2: Decide text-only vs vision

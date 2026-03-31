@@ -22,11 +22,12 @@ function AuthGuard() {
   const segments = useSegments();
   const router = useRouter();
 
+  // Configure the API client during render so child screen effects can safely
+  // issue authenticated requests on the first committed frame.
+  setTokenProvider(async () => getToken());
+
   useEffect(() => {
     if (!isLoaded) return;
-
-    // Wire up the API client's token provider
-    setTokenProvider(async () => getToken());
 
     const inAuthGroup = segments[0] === "(auth)";
     if (!isSignedIn && !inAuthGroup) {
@@ -34,7 +35,7 @@ function AuthGuard() {
     } else if (isSignedIn && inAuthGroup) {
       router.replace("/");
     }
-  }, [isLoaded, isSignedIn, segments]);
+  }, [isLoaded, isSignedIn, segments, router]);
 
   return (
     <Stack
@@ -55,6 +56,8 @@ function AuthGuard() {
 }
 
 function MockLayout() {
+  setTokenProvider(async () => null);
+
   useEffect(() => {
     setTokenProvider(async () => null);
   }, []);
