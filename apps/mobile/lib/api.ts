@@ -8,6 +8,20 @@ import type { Listing, MarketplaceConnection, Platform } from "./types";
 const API_URL = process.env.EXPO_PUBLIC_API_URL ?? "http://localhost:3001";
 const MOCK_MODE = ["1", "true", "yes", "on"].includes((process.env.EXPO_PUBLIC_MOCK_MODE ?? "").toLowerCase());
 const MOCK_USER_ID = process.env.EXPO_PUBLIC_MOCK_USER_ID ?? "mock-user";
+const SUPPORTED_IMAGE_MIME_TYPES = new Set(["image/jpeg", "image/png", "image/webp", "image/heic", "image/heif"]);
+
+const MIME_TYPE_ALIASES: Record<string, string> = {
+  "image/jpg": "image/jpeg",
+};
+
+const EXTENSION_TO_MIME_TYPE: Record<string, string> = {
+  jpg: "image/jpeg",
+  jpeg: "image/jpeg",
+  png: "image/png",
+  webp: "image/webp",
+  heic: "image/heic",
+  heif: "image/heif",
+};
 
 // ─── Auth token injection ─────────────────────────────────────────────────────
 
@@ -65,6 +79,52 @@ export class ApiError extends Error {
   }
 }
 
+function getFilenameFromPath(path: string): string | null {
+  const normalized = path.split("?")[0]?.split("#")[0] ?? "";
+  const parts = normalized.split("/");
+  return parts.at(-1) || null;
+}
+
+function getExtension(value?: string | null): string | null {
+  if (!value) return null;
+  const match = /\.([a-z0-9]+)$/i.exec(value);
+  return match?.[1]?.toLowerCase() ?? null;
+}
+
+function extensionForMimeType(mimeType: string): string {
+  return Object.entries(EXTENSION_TO_MIME_TYPE).find(([, value]) => value === mimeType)?.[0] ?? "jpg";
+}
+
+function normalizeImageUpload(params: {
+  uri: string;
+  fileName?: string | null;
+  mimeType?: string | null;
+}): { fileName: string; mimeType: string } | null {
+  const normalizedMimeType = params.mimeType?.trim().toLowerCase()
+    ? MIME_TYPE_ALIASES[params.mimeType.trim().toLowerCase()] ?? params.mimeType.trim().toLowerCase()
+    : null;
+
+  if (normalizedMimeType && SUPPORTED_IMAGE_MIME_TYPES.has(normalizedMimeType)) {
+    return {
+      fileName: params.fileName ?? getFilenameFromPath(params.uri) ?? `photo.${extensionForMimeType(normalizedMimeType)}`,
+      mimeType: normalizedMimeType,
+    };
+  }
+
+  const inferredExtension = getExtension(params.fileName) ?? getExtension(getFilenameFromPath(params.uri));
+  if (inferredExtension) {
+    const inferredMimeType = EXTENSION_TO_MIME_TYPE[inferredExtension];
+    if (inferredMimeType) {
+      return {
+        fileName: params.fileName ?? getFilenameFromPath(params.uri) ?? `photo.${inferredExtension}`,
+        mimeType: inferredMimeType,
+      };
+    }
+  }
+
+  return null;
+}
+
 // ─── Listings ─────────────────────────────────────────────────────────────────
 
 export async function getListings(): Promise<Listing[]> {
@@ -97,9 +157,34 @@ export async function deleteListing(id: string): Promise<void> {
 
 // ─── Upload ───────────────────────────────────────────────────────────────────
 
-export async function uploadPhoto(uri: string): Promise<string> {
+export type UploadPhotoInput = {
+  uri: string;
+  fileName?: string | null;
+  mimeType?: string | null;
+  file?: File | null;
+};
+
+export async function uploadPhoto(input: string | UploadPhotoInput): Promise<string> {
+  const payload = typeof input === "string" ? { uri: input } : input;
+  const normalizedFile = normalizeImageUpload(payload);
+  if (!normalizedFile) {
+    throw new ApiError(400, "Unsupported image format. Please choose JPG, PNG, WEBP, HEIC, or HEIF.");
+  }
+
   const form = new FormData();
-  form.append("file", { uri, name: "photo.jpg", type: "image/jpeg" } as unknown as Blob);
+  if (payload.file && typeof File !== "undefined" && payload.file instanceof File) {
+    const file = payload.file;
+    const normalizedBrowserFile = file.type === normalizedFile.mimeType && file.name === normalizedFile.fileName
+      ? file
+      : new File([file], normalizedFile.fileName, { type: normalizedFile.mimeType });
+    form.append("file", normalizedBrowserFile);
+  } else {
+    form.append("file", {
+      uri: payload.uri,
+      name: normalizedFile.fileName,
+      type: normalizedFile.mimeType,
+    } as unknown as Blob);
+  }
 
   const res = await fetch(`${API_URL}/api/upload`, {
     method: "POST",

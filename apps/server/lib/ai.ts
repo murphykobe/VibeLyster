@@ -2,14 +2,14 @@
  * AI generation pipeline.
  *
  * Flow:
- * 1. Whisper transcribes voice note → text
+ * 1. Soniox transcribes voice note → text
  * 2. Completeness check: does the transcript contain enough info (brand, size, condition, price)?
  *    - Complete → text-only model call (cheaper, faster)
  *    - Incomplete → text + images sent to vision model
  * 3. Structured output: single model call returns canonical listing JSON
  *
- * Provider: Vercel AI Gateway (OIDC auth, provider-agnostic routing)
- * Models: openai/whisper-1 for transcription, claude-sonnet-4-6 for generation
+ * STT provider: Soniox REST API (SONIOX_API_KEY)
+ * Generation provider: Vercel AI Gateway (OIDC auth) → minimax/minimax-m2.7
  */
 
 import { createOpenAI } from "@ai-sdk/openai";
@@ -61,30 +61,44 @@ function isTranscriptComplete(transcript: string): boolean {
   return passing.length >= 3;
 }
 
-// ─── Whisper transcription ────────────────────────────────────────────────────
+// ─── Soniox transcription ────────────────────────────────────────────────────
+
+type SonioxWord = { text: string; start_ms: number; end_ms: number; conf: number };
+type SonioxResponse = { words: SonioxWord[] };
 
 export async function transcribeAudio(audioBuffer: ArrayBuffer, mimeType: string): Promise<string> {
-  const oidcToken = process.env.VERCEL_OIDC_TOKEN;
-  if (!oidcToken) throw new Error("VERCEL_OIDC_TOKEN is required");
+  const apiKey = process.env.SONIOX_API_KEY;
+  if (!apiKey) throw new Error("SONIOX_API_KEY is required");
+
+  const ext = mimeType.includes("mp4") || mimeType.includes("m4a") ? "m4a" : "webm";
 
   const form = new FormData();
   const blob = new Blob([audioBuffer], { type: mimeType });
-  form.append("file", blob, "voice.m4a");
-  form.append("model", "openai/whisper-1");
+  form.append("file", blob, `voice.${ext}`);
+  // Use Soniox's best general-purpose English model
+  form.append("model", "soniox-1");
 
-  const res = await fetch("https://ai-gateway.vercel.sh/v1/audio/transcriptions", {
+  const res = await fetch("https://api.soniox.com/v1/transcribe", {
     method: "POST",
-    headers: { Authorization: `Bearer ${oidcToken}` },
+    headers: { Authorization: `Bearer ${apiKey}` },
     body: form,
   });
 
   if (!res.ok) {
     const text = await res.text();
-    throw new Error(`Whisper transcription failed ${res.status}: ${text}`);
+    throw new Error(`Soniox transcription failed ${res.status}: ${text}`);
   }
 
-  const data = await res.json() as { text: string };
-  return data.text;
+  const data = await res.json() as SonioxResponse;
+
+  // Join words into a transcript, skipping non-speech tokens (e.g. "<sc>", "<unk>")
+  const transcript = data.words
+    .map((w) => w.text)
+    .filter((t) => !t.startsWith("<"))
+    .join(" ")
+    .trim();
+
+  return transcript;
 }
 
 // ─── Listing generation ───────────────────────────────────────────────────────
@@ -101,7 +115,7 @@ async function generateWithText(transcript: string): Promise<GeneratedListing> {
   const client = getGatewayClient();
 
   const { object } = await generateObject({
-    model: client("anthropic/claude-sonnet-4-6"),
+    model: client("minimax/minimax-m2.7"),
     schema: ListingSchema,
     system: SYSTEM_PROMPT,
     prompt: `Create a marketplace listing based on this voice description:\n\n"${transcript}"`,
@@ -119,7 +133,7 @@ async function generateWithVision(transcript: string, photoUrls: string[]): Prom
   }));
 
   const { object } = await generateObject({
-    model: client("anthropic/claude-sonnet-4-6"),
+    model: client("minimax/minimax-m2.7"),
     schema: ListingSchema,
     system: SYSTEM_PROMPT,
     messages: [

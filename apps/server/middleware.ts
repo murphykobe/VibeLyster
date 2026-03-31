@@ -3,12 +3,19 @@ import type { NextRequest } from "next/server";
 
 /**
  * CORS middleware for API routes.
- * Allows cross-origin requests from any localhost origin so that the Expo web
- * dev server (port 8081) can call the backend (port 3001) during development
- * and E2E testing.
+ * Allows cross-origin requests from localhost (dev/E2E) and deployed Vercel
+ * frontend origins (*.vercel.app + custom domains via ALLOWED_ORIGINS env var).
  */
-function isLocalOrigin(origin: string) {
-  return origin.startsWith("http://localhost:") || origin.startsWith("http://127.0.0.1:");
+const EXTRA_ORIGINS = (process.env.ALLOWED_ORIGINS ?? "")
+  .split(",")
+  .map((s) => s.trim())
+  .filter(Boolean);
+
+function isAllowedOrigin(origin: string) {
+  if (origin.startsWith("http://localhost:") || origin.startsWith("http://127.0.0.1:")) return true;
+  if (origin.endsWith(".vercel.app") || origin === "https://vibelyster.vercel.app") return true;
+  if (EXTRA_ORIGINS.includes(origin)) return true;
+  return false;
 }
 
 const CORS_HEADERS = {
@@ -23,7 +30,7 @@ export function middleware(req: NextRequest) {
 
   if (req.method === "OPTIONS") {
     const res = new NextResponse(null, { status: 204 });
-    if (isLocalOrigin(origin)) {
+    if (isAllowedOrigin(origin)) {
       res.headers.set("Access-Control-Allow-Origin", origin);
     }
     Object.entries(CORS_HEADERS).forEach(([k, v]) => res.headers.set(k, v));
@@ -31,7 +38,7 @@ export function middleware(req: NextRequest) {
   }
 
   const res = NextResponse.next();
-  if (isLocalOrigin(origin)) {
+  if (isAllowedOrigin(origin)) {
     res.headers.set("Access-Control-Allow-Origin", origin);
     Object.entries(CORS_HEADERS).forEach(([k, v]) => res.headers.set(k, v));
   }
