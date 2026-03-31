@@ -13,6 +13,7 @@ import { POST as connectPlatform, DELETE as disconnectPlatform } from "../connec
 import { GET as listConnections } from "../connections/route";
 import { POST as publishListing } from "../publish/route";
 import { POST as delistListing } from "../delist/route";
+import { POST as uploadPhoto } from "../upload/route";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -37,6 +38,16 @@ function req(
       "content-type": "application/json",
     },
     body: opts.body !== undefined ? JSON.stringify(opts.body) : undefined,
+  });
+}
+
+function formReq(path: string, formData: FormData, opts: { userId?: string } = {}): NextRequest {
+  return new NextRequest(new URL(path, BASE), {
+    method: "POST",
+    headers: {
+      "x-mock-user-id": opts.userId ?? "user-a",
+    },
+    body: formData,
   });
 }
 
@@ -102,6 +113,39 @@ describe("POST /api/listings", () => {
   it("returns 400 when photos is not an array of URLs", async () => {
     const res = await createListing(req("POST", "/api/listings", { body: { ...VALID_LISTING, photos: ["not-a-url"] } }));
     expect(res.status).toBe(400);
+  });
+});
+
+describe("POST /api/upload", () => {
+  it("accepts HEIF files when the filename extension is supported", async () => {
+    const formData = new FormData();
+    formData.append("file", new File([new Uint8Array([1, 2, 3])], "closet.heif"));
+
+    const res = await uploadPhoto(formReq("/api/upload", formData));
+
+    expect(res.status).toBe(201);
+    const data = await res.json();
+    expect(data.url).toContain("closet.heif");
+  });
+
+  it("accepts image/jpg by normalizing it to image/jpeg", async () => {
+    const formData = new FormData();
+    formData.append("file", new File([new Uint8Array([1, 2, 3])], "closet.jpg", { type: "image/jpg" }));
+
+    const res = await uploadPhoto(formReq("/api/upload", formData));
+
+    expect(res.status).toBe(201);
+  });
+
+  it("rejects unsupported image types", async () => {
+    const formData = new FormData();
+    formData.append("file", new File([new Uint8Array([1, 2, 3])], "closet.gif", { type: "image/gif" }));
+
+    const res = await uploadPhoto(formReq("/api/upload", formData));
+
+    expect(res.status).toBe(400);
+    const data = await res.json();
+    expect(data.error).toContain("Invalid file type");
   });
 });
 

@@ -18,45 +18,65 @@ import { uploadPhoto, generateListing } from "@/lib/api";
 import { theme } from "@/lib/theme";
 
 type State = "idle" | "uploading" | "generating";
+type SelectedPhoto = Pick<ImagePicker.ImagePickerAsset, "uri" | "fileName" | "mimeType" | "file">;
 
 export default function CaptureScreen() {
   const router = useRouter();
-  const [photos, setPhotos] = useState<{ uri: string }[]>([]);
+  const [photos, setPhotos] = useState<SelectedPhoto[]>([]);
   const [audioUri, setAudioUri] = useState<string | null>(null);
   const [state, setState] = useState<State>("idle");
   const [uploadProgress, setUploadProgress] = useState(0);
   const [newListingId, setNewListingId] = useState<string | null>(null);
 
+  function appendPhotos(assets: ImagePicker.ImagePickerAsset[]) {
+    const nextPhotos = assets.map((asset) => ({
+      uri: asset.uri,
+      fileName: asset.fileName,
+      mimeType: asset.mimeType,
+      file: asset.file,
+    }));
+    setPhotos((prev) => [...prev, ...nextPhotos].slice(0, 8));
+  }
+
   async function pickPhotos() {
-    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (status !== "granted") {
-      Alert.alert("Permission required", "Allow photo access to select photos.");
-      return;
-    }
+    try {
+      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (status !== "granted") {
+        Alert.alert("Permission required", "Allow photo access to select photos.");
+        return;
+      }
 
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      allowsMultipleSelection: true,
-      quality: 0.8,
-      selectionLimit: 8,
-    });
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsMultipleSelection: true,
+        quality: 0.8,
+        selectionLimit: 8,
+      });
 
-    if (!result.canceled) {
-      const newPhotos = result.assets.map((asset) => ({ uri: asset.uri }));
-      setPhotos((prev) => [...prev, ...newPhotos].slice(0, 8));
+      if (!result.canceled) {
+        appendPhotos(result.assets);
+      }
+    } catch (err) {
+      console.error("pickPhotos", err);
+      Alert.alert("Photo selection failed", "Please try a different image.");
     }
   }
 
   async function takePhoto() {
-    const { status } = await ImagePicker.requestCameraPermissionsAsync();
-    if (status !== "granted") {
-      Alert.alert("Permission required", "Allow camera access to take photos.");
-      return;
-    }
+    try {
+      const { status } = await ImagePicker.requestCameraPermissionsAsync();
+      if (status !== "granted") {
+        Alert.alert("Permission required", "Allow camera access to take photos.");
+        return;
+      }
 
-    const result = await ImagePicker.launchCameraAsync({ quality: 0.8 });
-    if (!result.canceled) {
-      setPhotos((prev) => [...prev, { uri: result.assets[0].uri }].slice(0, 8));
+      const result = await ImagePicker.launchCameraAsync({ quality: 0.8 });
+      if (!result.canceled) {
+        appendPhotos(result.assets);
+      }
+    } catch (err) {
+      console.error("takePhoto", err);
+      Alert.alert("Camera failed", "Please try taking the photo again.");
     }
   }
 
@@ -83,8 +103,8 @@ export default function CaptureScreen() {
 
       const blobUrls: string[] = [];
       for (let i = 0; i < photos.length; i += 1) {
-        setUploadProgress(i);
-        const url = await uploadPhoto(photos[i].uri);
+        setUploadProgress(i + 1);
+        const url = await uploadPhoto(photos[i]);
         blobUrls.push(url);
       }
 
@@ -148,7 +168,7 @@ export default function CaptureScreen() {
 
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.photoRow}>
             {photos.map((photo, index) => (
-              <View key={photo.uri} style={styles.photoWrap}>
+              <View key={`${photo.uri}-${index}`} style={styles.photoWrap}>
                 <Image source={{ uri: photo.uri }} style={styles.photoThumb} />
                 <Pressable style={styles.removePhoto} onPress={() => removePhoto(index)}>
                   <Text style={styles.removePhotoText}>×</Text>
@@ -194,7 +214,7 @@ export default function CaptureScreen() {
             <ActivityIndicator color={theme.colors.accent} />
             <Text style={styles.statusText}>
               {state === "uploading"
-                ? `Uploading photos (${uploadProgress + 1}/${photos.length})`
+                ? `Uploading photos (${uploadProgress}/${photos.length})`
                 : "Generating listing draft"}
             </Text>
           </View>

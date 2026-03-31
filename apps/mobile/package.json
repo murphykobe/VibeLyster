@@ -9,6 +9,7 @@
     "dev:lan": "expo start --host lan",
     "dev:tunnel": "expo start --host tunnel",
     "build:ios": "eas build --platform ios",
+    "build:web": "expo export --platform web",
     "prebuild": "expo prebuild"
   },
   "dependencies": {

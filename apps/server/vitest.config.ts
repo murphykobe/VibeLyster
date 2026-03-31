@@ -7,6 +7,7 @@ export default defineConfig({
     env: { MOCK_MODE: "1" },
     environment: "node",
     setupFiles: ["./vitest.setup.ts"],
+    exclude: ["**/*.integration.test.ts"],
   },
   resolve: {
     alias: {

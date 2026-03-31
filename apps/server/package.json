@@ -10,6 +10,7 @@
     "build": "next build",
     "start": "next start",
     "test": "vitest run",
+    "test:integration": "vitest run -c vitest.integration.config.ts",
     "vercel:pull:preview": "npx vercel pull --yes --environment=preview",
     "vercel:pull:production": "npx vercel pull --yes --environment=production",
     "vercel:deploy:preview": "npx vercel --yes",
@@ -22,6 +23,7 @@
     "@neondatabase/serverless": "^0.10.0",
     "@vercel/blob": "^0.27.0",
     "ai": "^4.0.0",
+    "impit": "^0.13.0",
     "next": "^15.0.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
@@ -31,6 +33,7 @@
     "@types/node": "^22.0.0",
     "@types/react": "^19.0.0",
     "@vitest/coverage-v8": "^2.1.9",
+    "dotenv": "^16.4.7",
     "typescript": "^5.8.0",
     "vitest": "^2.1.9"
   }

@@ -30,7 +30,7 @@ function AuthGuard() {
 
     const inAuthGroup = segments[0] === "(auth)";
     if (!isSignedIn && !inAuthGroup) {
-      router.replace("/sign-in");
+      router.replace("/(auth)/sign-in");
     } else if (isSignedIn && inAuthGroup) {
       router.replace("/");
     }
@@ -49,7 +49,7 @@ function AuthGuard() {
       <Stack.Screen name="capture" options={{ animation: "slide_from_bottom" }} />
       <Stack.Screen name="listing/[id]" options={{ animation: "slide_from_right" }} />
       <Stack.Screen name="connect/[platform]" options={{ animation: "slide_from_right" }} />
-      <Stack.Screen name="sign-in" options={{ animation: "fade" }} />
+      <Stack.Screen name="(auth)/sign-in" options={{ animation: "fade" }} />
     </Stack>
   );
 }
@@ -72,7 +72,7 @@ function MockLayout() {
       <Stack.Screen name="capture" options={{ animation: "slide_from_bottom" }} />
       <Stack.Screen name="listing/[id]" options={{ animation: "slide_from_right" }} />
       <Stack.Screen name="connect/[platform]" options={{ animation: "slide_from_right" }} />
-      <Stack.Screen name="sign-in" options={{ animation: "fade" }} />
+      <Stack.Screen name="(auth)/sign-in" options={{ animation: "fade" }} />
     </Stack>
   );
 }
