@@ -2,6 +2,9 @@
 
 Concrete, verifiable tests organised into three tiers: automated unit/integration tests (CI), automated browser tests (Playwright against mock backend), and manual device tests (Expo Dev Client on iOS).
 
+See also:
+- `docs/testing-guide.md` for the current testing strategy, verification status, backend modes, and publish API behavior
+
 ---
 
 ## Tier 1 — Automated Unit & Integration Tests (Vitest)
