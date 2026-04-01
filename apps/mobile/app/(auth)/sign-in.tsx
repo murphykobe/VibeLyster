@@ -1,16 +1,19 @@
 import { View, Text, StyleSheet, Pressable, ActivityIndicator, TextInput } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { useOAuth, useSignIn } from "@clerk/clerk-expo";
 import { useState } from "react";
-import * as WebBrowser from "expo-web-browser";
+import { useRouter } from "expo-router";
 import { theme } from "@/lib/theme";
 
-WebBrowser.maybeCompleteAuthSession();
+const MOCK_MODE = ["1", "true", "yes", "on"].includes((process.env.EXPO_PUBLIC_MOCK_MODE ?? "").toLowerCase());
 
-export default function SignInScreen() {
-  const { startOAuthFlow: startApple } = useOAuth({ strategy: "oauth_apple" });
-  const { startOAuthFlow: startGoogle } = useOAuth({ strategy: "oauth_google" });
-  const { signIn, setActive, isLoaded } = useSignIn();
+function RealSignInScreen() {
+  const clerk = require("@clerk/clerk-expo") as typeof import("@clerk/clerk-expo");
+  const WebBrowser = require("expo-web-browser") as typeof import("expo-web-browser");
+  WebBrowser.maybeCompleteAuthSession();
+
+  const { startOAuthFlow: startApple } = clerk.useOAuth({ strategy: "oauth_apple" });
+  const { startOAuthFlow: startGoogle } = clerk.useOAuth({ strategy: "oauth_google" });
+  const { signIn, setActive, isLoaded } = clerk.useSignIn();
 
   const [loading, setLoading] = useState(false);
   const [email, setEmail] = useState("");
@@ -106,6 +109,34 @@ export default function SignInScreen() {
       </View>
     </SafeAreaView>
   );
+}
+
+function MockSignInScreen() {
+  const router = useRouter();
+
+  return (
+    <SafeAreaView style={styles.container} edges={["top", "bottom"]}>
+      <View style={styles.content}>
+        <View style={styles.hero}>
+          <Text style={styles.kicker}>Mock mode</Text>
+          <Text style={styles.logo}>VibeLyster</Text>
+          <Text style={styles.tagline}>Authentication is bypassed in mock mode.</Text>
+        </View>
+
+        <View style={styles.card}>
+          <Text style={styles.cardTitle}>No sign-in required</Text>
+          <Text style={styles.cardSub}>Return to the app and continue testing native flows.</Text>
+          <Pressable style={[styles.button, styles.emailButton]} onPress={() => router.replace("/")}>
+            <Text style={styles.primaryButtonText}>Go to app</Text>
+          </Pressable>
+        </View>
+      </View>
+    </SafeAreaView>
+  );
+}
+
+export default function SignInScreen() {
+  return MOCK_MODE ? <MockSignInScreen /> : <RealSignInScreen />;
 }
 
 const styles = StyleSheet.create({

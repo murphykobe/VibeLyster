@@ -1,6 +1,5 @@
 import { useEffect } from "react";
 import { Stack, useRouter, useSegments } from "expo-router";
-import { ClerkProvider, useAuth } from "@clerk/clerk-expo";
 import * as SecureStore from "expo-secure-store";
 import { setTokenProvider } from "@/lib/api";
 import { theme } from "@/lib/theme";
@@ -18,7 +17,8 @@ const tokenCache = {
 };
 
 function AuthGuard() {
-  const { isLoaded, isSignedIn, getToken } = useAuth();
+  const clerk = require("@clerk/clerk-expo") as typeof import("@clerk/clerk-expo");
+  const { isLoaded, isSignedIn, getToken } = clerk.useAuth();
   const segments = useSegments();
   const router = useRouter();
 
@@ -88,6 +88,9 @@ export default function RootLayout() {
   if (!publishableKey) {
     throw new Error("EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY is required when EXPO_PUBLIC_MOCK_MODE is not enabled");
   }
+
+  const clerk = require("@clerk/clerk-expo") as typeof import("@clerk/clerk-expo");
+  const ClerkProvider = clerk.ClerkProvider;
 
   return (
     <ClerkProvider publishableKey={publishableKey} tokenCache={tokenCache}>
