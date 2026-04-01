@@ -3,13 +3,6 @@
   "version": "0.1.0",
   "private": true,
   "main": "expo-router/entry",
-  "expo": {
-    "autolinking": {
-      "ios": {
-        "exclude": ["expo-crypto"]
-      }
-    }
-  },
   "scripts": {
     "dev": "expo start",
     "dev:web": "expo start --web --port 8081",
@@ -22,6 +15,7 @@
     "ios": "expo run:ios"
   },
   "dependencies": {
+    "@babel/runtime": "^7.29.2",
     "@clerk/clerk-expo": "^2.19.0",
     "@expo/config": "~11.0.13",
     "@expo/config-plugins": "~10.1.2",
@@ -29,6 +23,7 @@
     "@react-native-cookies/cookies": "^6.2.1",
     "expo": "~53.0.0",
     "expo-apple-authentication": "~7.2.4",
+    "expo-application": "~6.1.5",
     "expo-auth-session": "~6.2.1",
     "expo-av": "~15.1.7",
     "expo-camera": "~16.1.11",

@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import { Stack, useRouter, useSegments } from "expo-router";
 import * as SecureStore from "expo-secure-store";
+import { SafeAreaProvider } from "react-native-safe-area-context";
 import { setTokenProvider } from "@/lib/api";
 import { theme } from "@/lib/theme";
 
@@ -82,7 +83,11 @@ function MockLayout() {
 
 export default function RootLayout() {
   if (mockMode) {
-    return <MockLayout />;
+    return (
+      <SafeAreaProvider>
+        <MockLayout />
+      </SafeAreaProvider>
+    );
   }
 
   if (!publishableKey) {
@@ -93,8 +98,10 @@ export default function RootLayout() {
   const ClerkProvider = clerk.ClerkProvider;
 
   return (
-    <ClerkProvider publishableKey={publishableKey} tokenCache={tokenCache}>
-      <AuthGuard />
-    </ClerkProvider>
+    <SafeAreaProvider>
+      <ClerkProvider publishableKey={publishableKey} tokenCache={tokenCache}>
+        <AuthGuard />
+      </ClerkProvider>
+    </SafeAreaProvider>
   );
 }
