@@ -11,7 +11,6 @@ function RealSignInScreen() {
   const WebBrowser = require("expo-web-browser") as typeof import("expo-web-browser");
   WebBrowser.maybeCompleteAuthSession();
 
-  const { startOAuthFlow: startApple } = clerk.useOAuth({ strategy: "oauth_apple" });
   const { startOAuthFlow: startGoogle } = clerk.useOAuth({ strategy: "oauth_google" });
   const { signIn, setActive, isLoaded } = clerk.useSignIn();
 
@@ -20,12 +19,11 @@ function RealSignInScreen() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
 
-  async function handleOAuth(provider: "apple" | "google") {
+  async function handleOAuth() {
     setLoading(true);
     setError("");
     try {
-      const start = provider === "apple" ? startApple : startGoogle;
-      const { createdSessionId, setActive: activate } = await start();
+      const { createdSessionId, setActive: activate } = await startGoogle();
       if (createdSessionId && activate) {
         await activate({ session: createdSessionId });
       }
@@ -97,10 +95,7 @@ function RealSignInScreen() {
 
               <Text style={styles.divider}>or</Text>
 
-              <Pressable style={[styles.button, styles.appleButton]} onPress={() => handleOAuth("apple")}>
-                <Text style={styles.appleButtonText}>Continue with Apple</Text>
-              </Pressable>
-              <Pressable style={[styles.button, styles.googleButton]} onPress={() => handleOAuth("google")}>
+              <Pressable style={[styles.button, styles.googleButton]} onPress={handleOAuth}>
                 <Text style={styles.secondaryButtonText}>Continue with Google</Text>
               </Pressable>
             </View>

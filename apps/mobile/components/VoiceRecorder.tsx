@@ -1,6 +1,12 @@
 import { useEffect, useRef, useState } from "react";
 import { Animated, Pressable, StyleSheet, Text, View } from "react-native";
-import { Audio } from "expo-av";
+import {
+  AudioModule,
+  RecordingPresets,
+  setAudioModeAsync,
+  useAudioRecorder,
+  useAudioRecorderState,
+} from "expo-audio";
 import { Ionicons } from "@expo/vector-icons";
 import { theme } from "@/lib/theme";
 
@@ -10,71 +16,65 @@ type Props = {
 };
 
 export default function VoiceRecorder({ onRecordingComplete, disabled }: Props) {
-  const [recording, setRecording] = useState<Audio.Recording | null>(null);
-  const [duration, setDuration] = useState(0);
+  const recorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
+  const recorderState = useAudioRecorderState(recorder, 250);
   const pulse = useRef(new Animated.Value(1)).current;
-  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const pulseAnimationRef = useRef<Animated.CompositeAnimation | null>(null);
 
   useEffect(() => {
     return () => {
-      if (timerRef.current) clearInterval(timerRef.current);
+      pulseAnimationRef.current?.stop();
     };
   }, []);
 
-  async function startRecording() {
-    if (disabled || recording) return;
-    try {
-      const permission = await Audio.requestPermissionsAsync();
-      if (!permission.granted) return;
-
-      await Audio.setAudioModeAsync({
-        allowsRecordingIOS: true,
-        playsInSilentModeIOS: true,
-      });
-
-      const { recording: rec } = await Audio.Recording.createAsync(
-        Audio.RecordingOptionsPresets.HIGH_QUALITY
-      );
-      setRecording(rec);
-      setDuration(0);
-
-      timerRef.current = setInterval(() => {
-        setDuration((prev) => prev + 1);
-      }, 1000);
-
-      Animated.loop(
+  useEffect(() => {
+    if (recorderState.isRecording) {
+      pulseAnimationRef.current = Animated.loop(
         Animated.sequence([
           Animated.timing(pulse, { toValue: 1.08, duration: 420, useNativeDriver: true }),
           Animated.timing(pulse, { toValue: 1, duration: 420, useNativeDriver: true }),
         ])
-      ).start();
+      );
+      pulseAnimationRef.current.start();
+      return;
+    }
+
+    pulseAnimationRef.current?.stop();
+    pulse.setValue(1);
+  }, [pulse, recorderState.isRecording]);
+
+  async function startRecording() {
+    if (disabled || recorderState.isRecording) return;
+
+    const permission = await AudioModule.requestRecordingPermissionsAsync();
+    if (!permission.granted) return;
+
+    try {
+      await setAudioModeAsync({
+        allowsRecording: true,
+        playsInSilentMode: true,
+      });
+      await recorder.prepareToRecordAsync();
+      recorder.record();
     } catch {
-      setRecording(null);
-      setDuration(0);
+      pulseAnimationRef.current?.stop();
+      pulse.setValue(1);
     }
   }
 
   async function stopRecording() {
-    if (!recording) return;
-    if (timerRef.current) {
-      clearInterval(timerRef.current);
-      timerRef.current = null;
-    }
-    pulse.stopAnimation();
-    pulse.setValue(1);
+    if (!recorderState.isRecording) return;
 
     try {
-      await recording.stopAndUnloadAsync();
-      const uri = recording.getURI();
+      await recorder.stop();
+      const uri = recorder.uri ?? recorderState.url;
       if (uri) onRecordingComplete(uri);
-    } finally {
-      setRecording(null);
-      setDuration(0);
-    }
+    } catch {}
   }
 
-  const mins = Math.floor(duration / 60);
-  const secs = duration % 60;
+  const durationSeconds = Math.floor((recorderState.durationMillis ?? 0) / 1000);
+  const mins = Math.floor(durationSeconds / 60);
+  const secs = durationSeconds % 60;
 
   return (
     <Pressable
@@ -86,24 +86,26 @@ export default function VoiceRecorder({ onRecordingComplete, disabled }: Props) 
       <Animated.View
         style={[
           styles.outerRing,
-          recording && styles.outerRingRecording,
+          recorderState.isRecording && styles.outerRingRecording,
           { transform: [{ scale: pulse }] },
         ]}
       >
-        <View style={[styles.button, recording && styles.buttonRecording]}>
+        <View style={[styles.button, recorderState.isRecording && styles.buttonRecording]}>
           <Ionicons
-            name={recording ? "mic" : "mic-outline"}
+            name={recorderState.isRecording ? "mic" : "mic-outline"}
             size={30}
-            color={recording ? theme.colors.white : theme.colors.accent}
+            color={recorderState.isRecording ? theme.colors.white : theme.colors.accent}
           />
         </View>
       </Animated.View>
 
-      <Text style={[styles.mainLabel, recording && styles.mainLabelRecording]}>
-        {recording ? `${mins}:${secs.toString().padStart(2, "0")}` : "Hold to describe item"}
+      <Text style={[styles.mainLabel, recorderState.isRecording && styles.mainLabelRecording]}>
+        {recorderState.isRecording
+          ? `${mins}:${secs.toString().padStart(2, "0")}`
+          : "Hold to describe item"}
       </Text>
       <Text style={styles.subLabel}>
-        {recording ? "Release to save" : "Mention brand, size, condition, and price"}
+        {recorderState.isRecording ? "Release to save" : "Mention brand, size, condition, and price"}
       </Text>
     </Pressable>
   );

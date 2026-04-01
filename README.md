@@ -158,6 +158,11 @@ Current live coverage:
   - transcript only
   - transcript + image
 
+Testing strategy notes:
+- Playwright in `apps/e2e` is browser/web coverage, not native simulator coverage.
+- Deterministic publish testing strategy and current testing guidance are documented in `docs/testing-guide.md`.
+- Real marketplace publish should remain a non-blocking smoke path, not a required PR gate.
+
 ## Deployment
 
 Server deploy:
@@ -174,6 +179,7 @@ npx vercel --prod --yes
 
 See also:
 - `docs/vercel-wiring.md`
+- `docs/testing-guide.md`
 - `docs/test-plan.md`
 
 ## Notes
