@@ -1,7 +1,7 @@
 import { useEffect } from "react";
 import { Stack, useRouter, useSegments } from "expo-router";
-import { ClerkProvider, useAuth } from "@clerk/clerk-expo";
 import * as SecureStore from "expo-secure-store";
+import { SafeAreaProvider } from "react-native-safe-area-context";
 import { setTokenProvider } from "@/lib/api";
 import { theme } from "@/lib/theme";
 
@@ -18,15 +18,17 @@ const tokenCache = {
 };
 
 function AuthGuard() {
-  const { isLoaded, isSignedIn, getToken } = useAuth();
+  const clerk = require("@clerk/clerk-expo") as typeof import("@clerk/clerk-expo");
+  const { isLoaded, isSignedIn, getToken } = clerk.useAuth();
   const segments = useSegments();
   const router = useRouter();
 
+  // Configure the API client during render so child screen effects can safely
+  // issue authenticated requests on the first committed frame.
+  setTokenProvider(async () => getToken());
+
   useEffect(() => {
     if (!isLoaded) return;
-
-    // Wire up the API client's token provider
-    setTokenProvider(async () => getToken());
 
     const inAuthGroup = segments[0] === "(auth)";
     if (!isSignedIn && !inAuthGroup) {
@@ -34,7 +36,7 @@ function AuthGuard() {
     } else if (isSignedIn && inAuthGroup) {
       router.replace("/");
     }
-  }, [isLoaded, isSignedIn, segments]);
+  }, [isLoaded, isSignedIn, segments, router]);
 
   return (
     <Stack
@@ -55,6 +57,8 @@ function AuthGuard() {
 }
 
 function MockLayout() {
+  setTokenProvider(async () => null);
+
   useEffect(() => {
     setTokenProvider(async () => null);
   }, []);
@@ -79,16 +83,25 @@ function MockLayout() {
 
 export default function RootLayout() {
   if (mockMode) {
-    return <MockLayout />;
+    return (
+      <SafeAreaProvider>
+        <MockLayout />
+      </SafeAreaProvider>
+    );
   }
 
   if (!publishableKey) {
     throw new Error("EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY is required when EXPO_PUBLIC_MOCK_MODE is not enabled");
   }
 
+  const clerk = require("@clerk/clerk-expo") as typeof import("@clerk/clerk-expo");
+  const ClerkProvider = clerk.ClerkProvider;
+
   return (
-    <ClerkProvider publishableKey={publishableKey} tokenCache={tokenCache}>
-      <AuthGuard />
-    </ClerkProvider>
+    <SafeAreaProvider>
+      <ClerkProvider publishableKey={publishableKey} tokenCache={tokenCache}>
+        <AuthGuard />
+      </ClerkProvider>
+    </SafeAreaProvider>
   );
 }

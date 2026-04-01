@@ -1,14 +1,19 @@
 import { View, Text, StyleSheet, Pressable, ActivityIndicator, TextInput } from "react-native";
-import { useOAuth, useSignIn } from "@clerk/clerk-expo";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { useState } from "react";
-import * as WebBrowser from "expo-web-browser";
+import { useRouter } from "expo-router";
+import { theme } from "@/lib/theme";
 
-WebBrowser.maybeCompleteAuthSession();
+const MOCK_MODE = ["1", "true", "yes", "on"].includes((process.env.EXPO_PUBLIC_MOCK_MODE ?? "").toLowerCase());
 
-export default function SignInScreen() {
-  const { startOAuthFlow: startApple } = useOAuth({ strategy: "oauth_apple" });
-  const { startOAuthFlow: startGoogle } = useOAuth({ strategy: "oauth_google" });
-  const { signIn, setActive, isLoaded } = useSignIn();
+function RealSignInScreen() {
+  const clerk = require("@clerk/clerk-expo") as typeof import("@clerk/clerk-expo");
+  const WebBrowser = require("expo-web-browser") as typeof import("expo-web-browser");
+  WebBrowser.maybeCompleteAuthSession();
+
+  const { startOAuthFlow: startApple } = clerk.useOAuth({ strategy: "oauth_apple" });
+  const { startOAuthFlow: startGoogle } = clerk.useOAuth({ strategy: "oauth_google" });
+  const { signIn, setActive, isLoaded } = clerk.useSignIn();
 
   const [loading, setLoading] = useState(false);
   const [email, setEmail] = useState("");
@@ -50,117 +55,206 @@ export default function SignInScreen() {
   }
 
   return (
-    <View style={styles.container}>
-      <Text style={styles.logo}>VibeLyster</Text>
-      <Text style={styles.tagline}>List faster. Sell everywhere.</Text>
+    <SafeAreaView style={styles.container} edges={["top", "bottom"]}>
+      <View style={styles.content}>
+        <View style={styles.hero}>
+          <Text style={styles.kicker}>Welcome back</Text>
+          <Text style={styles.logo}>VibeLyster</Text>
+          <Text style={styles.tagline}>List faster. Sell everywhere.</Text>
+        </View>
 
-      {loading ? (
-        <ActivityIndicator size="large" color="#fff" />
-      ) : (
-        <View style={styles.form}>
-          <TextInput
-            style={styles.input}
-            placeholder="Email"
-            placeholderTextColor="#555"
-            autoCapitalize="none"
-            keyboardType="email-address"
-            value={email}
-            onChangeText={setEmail}
-          />
-          <TextInput
-            style={styles.input}
-            placeholder="Password"
-            placeholderTextColor="#555"
-            secureTextEntry
-            value={password}
-            onChangeText={setPassword}
-          />
-          {error ? <Text style={styles.error}>{error}</Text> : null}
-          <Pressable style={[styles.button, styles.emailButton]} onPress={handleEmailSignIn}>
-            <Text style={styles.buttonText}>Sign in</Text>
-          </Pressable>
+        <View style={styles.card}>
+          <Text style={styles.cardTitle}>Sign in to your account</Text>
+          <Text style={styles.cardSub}>Use email/password or continue with your provider.</Text>
 
-          <Text style={styles.divider}>or</Text>
+          {loading ? (
+            <View style={styles.loaderWrap}>
+              <ActivityIndicator size="large" color={theme.colors.accent} />
+            </View>
+          ) : (
+            <View style={styles.form}>
+              <TextInput
+                style={styles.input}
+                placeholder="Email"
+                placeholderTextColor={theme.colors.textMuted}
+                autoCapitalize="none"
+                keyboardType="email-address"
+                value={email}
+                onChangeText={setEmail}
+              />
+              <TextInput
+                style={styles.input}
+                placeholder="Password"
+                placeholderTextColor={theme.colors.textMuted}
+                secureTextEntry
+                value={password}
+                onChangeText={setPassword}
+              />
+              {error ? <Text style={styles.error}>{error}</Text> : null}
+              <Pressable style={[styles.button, styles.emailButton]} onPress={handleEmailSignIn}>
+                <Text style={styles.primaryButtonText}>Sign in</Text>
+              </Pressable>
 
-          <Pressable style={[styles.button, styles.appleButton]} onPress={() => handleOAuth("apple")}>
-            <Text style={[styles.buttonText, styles.darkText]}>Continue with Apple</Text>
-          </Pressable>
-          <Pressable style={[styles.button, styles.googleButton]} onPress={() => handleOAuth("google")}>
-            <Text style={styles.buttonText}>Continue with Google</Text>
+              <Text style={styles.divider}>or</Text>
+
+              <Pressable style={[styles.button, styles.appleButton]} onPress={() => handleOAuth("apple")}>
+                <Text style={styles.appleButtonText}>Continue with Apple</Text>
+              </Pressable>
+              <Pressable style={[styles.button, styles.googleButton]} onPress={() => handleOAuth("google")}>
+                <Text style={styles.secondaryButtonText}>Continue with Google</Text>
+              </Pressable>
+            </View>
+          )}
+        </View>
+      </View>
+    </SafeAreaView>
+  );
+}
+
+function MockSignInScreen() {
+  const router = useRouter();
+
+  return (
+    <SafeAreaView style={styles.container} edges={["top", "bottom"]}>
+      <View style={styles.content}>
+        <View style={styles.hero}>
+          <Text style={styles.kicker}>Mock mode</Text>
+          <Text style={styles.logo}>VibeLyster</Text>
+          <Text style={styles.tagline}>Authentication is bypassed in mock mode.</Text>
+        </View>
+
+        <View style={styles.card}>
+          <Text style={styles.cardTitle}>No sign-in required</Text>
+          <Text style={styles.cardSub}>Return to the app and continue testing native flows.</Text>
+          <Pressable style={[styles.button, styles.emailButton]} onPress={() => router.replace("/")}>
+            <Text style={styles.primaryButtonText}>Go to app</Text>
           </Pressable>
         </View>
-      )}
-    </View>
+      </View>
+    </SafeAreaView>
   );
+}
+
+export default function SignInScreen() {
+  return MOCK_MODE ? <MockSignInScreen /> : <RealSignInScreen />;
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#000",
-    alignItems: "center",
+    backgroundColor: theme.colors.bg,
+  },
+  content: {
+    flex: 1,
     justifyContent: "center",
-    padding: 24,
+    paddingHorizontal: 20,
+    paddingVertical: 24,
+    gap: 18,
+  },
+  hero: {
+    gap: 4,
+  },
+  kicker: {
+    color: theme.colors.accent,
+    fontFamily: theme.fonts.sansBold,
+    fontSize: 12,
+    textTransform: "uppercase",
+    letterSpacing: 1,
   },
   logo: {
-    fontSize: 40,
-    fontWeight: "700",
-    color: "#fff",
-    letterSpacing: -1,
-    marginBottom: 8,
+    color: theme.colors.text,
+    fontFamily: theme.fonts.display,
+    fontSize: 42,
+    lineHeight: 46,
   },
   tagline: {
-    fontSize: 16,
-    color: "#888",
-    marginBottom: 40,
+    color: theme.colors.textMuted,
+    fontFamily: theme.fonts.sans,
+    fontSize: 15,
+  },
+  card: {
+    backgroundColor: theme.colors.surface,
+    borderRadius: theme.radius.xl,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    padding: 18,
+    gap: 14,
+    ...theme.shadow.card,
+  },
+  cardTitle: {
+    color: theme.colors.text,
+    fontFamily: theme.fonts.sansBold,
+    fontSize: 20,
+  },
+  cardSub: {
+    color: theme.colors.textMuted,
+    fontFamily: theme.fonts.sans,
+    fontSize: 14,
+    lineHeight: 20,
+  },
+  loaderWrap: {
+    paddingVertical: 28,
+    alignItems: "center",
+    justifyContent: "center",
   },
   form: {
     width: "100%",
     gap: 12,
   },
   input: {
-    backgroundColor: "#111",
+    backgroundColor: theme.colors.surfaceStrong,
     borderWidth: 1,
-    borderColor: "#222",
-    borderRadius: 12,
+    borderColor: theme.colors.border,
+    borderRadius: theme.radius.md,
     paddingVertical: 14,
     paddingHorizontal: 16,
     fontSize: 16,
-    color: "#fff",
+    color: theme.colors.text,
+    fontFamily: theme.fonts.sans,
   },
   error: {
-    color: "#f87171",
+    color: theme.colors.danger,
+    fontFamily: theme.fonts.sans,
     fontSize: 13,
     textAlign: "center",
   },
   divider: {
-    color: "#444",
+    color: theme.colors.textMuted,
     textAlign: "center",
+    fontFamily: theme.fonts.sans,
     fontSize: 13,
-    marginVertical: 4,
+    marginVertical: 2,
   },
   button: {
-    borderRadius: 12,
-    paddingVertical: 16,
+    borderRadius: 999,
+    paddingVertical: 15,
     alignItems: "center",
+    justifyContent: "center",
   },
   emailButton: {
-    backgroundColor: "#6366f1",
+    backgroundColor: theme.colors.accent,
   },
   appleButton: {
-    backgroundColor: "#fff",
+    backgroundColor: theme.colors.text,
   },
   googleButton: {
-    backgroundColor: "transparent",
+    backgroundColor: theme.colors.surfaceStrong,
     borderWidth: 1,
-    borderColor: "#333",
+    borderColor: theme.colors.border,
   },
-  buttonText: {
-    fontSize: 16,
-    fontWeight: "600",
-    color: "#fff",
+  primaryButtonText: {
+    color: theme.colors.white,
+    fontFamily: theme.fonts.sansBold,
+    fontSize: 15,
   },
-  darkText: {
-    color: "#000",
+  appleButtonText: {
+    color: theme.colors.white,
+    fontFamily: theme.fonts.sansBold,
+    fontSize: 15,
+  },
+  secondaryButtonText: {
+    color: theme.colors.text,
+    fontFamily: theme.fonts.sansBold,
+    fontSize: 15,
   },
 });

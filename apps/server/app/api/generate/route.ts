@@ -4,11 +4,11 @@ import { generateListing } from "@/lib/ai";
 import { createListing } from "@/lib/db";
 import { isMockMode } from "@/lib/mock";
 
-function buildMockListing(photoUrls: string[], hasAudio: boolean) {
-  const titleSuffix = photoUrls.length > 0 ? `${photoUrls.length} Photos` : "Voice Draft";
+function buildMockListing(photoUrls: string[], hasAudio: boolean, transcript?: string | null) {
+  const titleSuffix = photoUrls.length > 0 ? `${photoUrls.length} Photos` : transcript ? "Transcript Draft" : "Voice Draft";
   return {
     title: `Mock Listing - ${titleSuffix}`,
-    description: "Mock-generated listing for local frontend E2E testing.",
+    description: transcript?.trim() || "Mock-generated listing for local frontend E2E testing.",
     price: 48,
     size: "M",
     condition: "gently_used",
@@ -19,6 +19,7 @@ function buildMockListing(photoUrls: string[], hasAudio: boolean) {
       material: "cotton",
       source: "mock_mode",
       hasAudio: String(hasAudio),
+      hasTranscript: String(Boolean(transcript?.trim())),
     },
   };
 }
@@ -44,6 +45,8 @@ export async function POST(req: NextRequest) {
     const photosRaw = formData.get("photos") as string | null;
     const photoUrls = photosRaw ? photosRaw.split(",").map((u) => u.trim()).filter(Boolean) : [];
 
+    const transcript = String(formData.get("transcript") ?? "").trim();
+
     // Parse audio (optional)
     const audioFile = formData.get("audio") as File | null;
     let audioBuffer: ArrayBuffer | undefined;
@@ -53,8 +56,8 @@ export async function POST(req: NextRequest) {
       audioMimeType = audioFile.type || "audio/m4a";
     }
 
-    if (!audioBuffer && photoUrls.length === 0) {
-      return Response.json({ error: "At least one photo URL or audio file is required" }, { status: 400 });
+    if (!transcript && !audioBuffer && photoUrls.length === 0) {
+      return Response.json({ error: "At least one photo URL, transcript, or audio file is required" }, { status: 400 });
     }
 
     let generated: {
@@ -66,13 +69,18 @@ export async function POST(req: NextRequest) {
 
     if (isMockMode()) {
       generated = {
-        listing: buildMockListing(photoUrls, Boolean(audioBuffer)),
-        voiceTranscript: audioBuffer ? "[mock transcript] voice input received" : null,
-        aiRawResponse: { mock: true, photoCount: photoUrls.length, hadAudio: Boolean(audioBuffer) },
+        listing: buildMockListing(photoUrls, Boolean(audioBuffer), transcript || null),
+        voiceTranscript: transcript || (audioBuffer ? "[mock transcript] voice input received" : null),
+        aiRawResponse: {
+          mock: true,
+          photoCount: photoUrls.length,
+          hadAudio: Boolean(audioBuffer),
+          hadTranscript: Boolean(transcript),
+        },
         usedVision: photoUrls.length > 0,
       };
     } else {
-      const result = await generateListing({ audioBuffer, audioMimeType, photoUrls });
+      const result = await generateListing({ audioBuffer, audioMimeType, photoUrls, transcript });
       generated = {
         listing: result.listing as GeneratedDraft,
         voiceTranscript: result.voiceTranscript,

@@ -13,6 +13,19 @@ const PLATFORMS: { key: Platform; label: string }[] = [
 
 const MOCK_MODE = ["1", "true", "yes", "on"].includes((process.env.EXPO_PUBLIC_MOCK_MODE ?? "").toLowerCase());
 
+function confirmAction(title: string, message: string, confirmText = "Confirm") {
+  if (typeof window !== "undefined" && typeof window.confirm === "function") {
+    return Promise.resolve(window.confirm(`${title}\n\n${message}`));
+  }
+
+  return new Promise<boolean>((resolve) => {
+    Alert.alert(title, message, [
+      { text: "Cancel", style: "cancel", onPress: () => resolve(false) },
+      { text: confirmText, style: "destructive", onPress: () => resolve(true) },
+    ]);
+  });
+}
+
 function useSessionState() {
   if (MOCK_MODE) {
     return {
@@ -65,29 +78,23 @@ export default function SettingsScreen() {
     router.push(`/connect/${platform}`);
   }
 
-  function handleDisconnect(platform: Platform) {
-    Alert.alert(
+  async function handleDisconnect(platform: Platform) {
+    const confirmed = await confirmAction(
       `Disconnect ${platform}`,
       `Remove your ${platform} connection? You can reconnect anytime.`,
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Disconnect",
-          style: "destructive",
-          onPress: async () => {
-            setDisconnecting(platform);
-            try {
-              await disconnectPlatform(platform);
-              await loadConnections();
-            } catch (err) {
-              Alert.alert("Error", "Failed to disconnect. Try again.");
-            } finally {
-              setDisconnecting(null);
-            }
-          },
-        },
-      ]
+      "Disconnect"
     );
+    if (!confirmed) return;
+
+    setDisconnecting(platform);
+    try {
+      await disconnectPlatform(platform);
+      await loadConnections();
+    } catch (err) {
+      Alert.alert("Error", "Failed to disconnect. Try again.");
+    } finally {
+      setDisconnecting(null);
+    }
   }
 
   return (

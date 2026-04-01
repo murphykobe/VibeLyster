@@ -1,21 +1,37 @@
 {
   "name": "vibelyster",
   "private": true,
-  "workspaces": ["apps/*"],
+  "workspaces": [
+    "apps/*"
+  ],
   "scripts": {
     "dev:server": "turbo run dev --filter=@vibelyster/server",
     "dev:mobile": "turbo run dev --filter=@vibelyster/mobile",
     "build": "turbo run build",
     "lint": "turbo run lint",
     "test:e2e": "npm run test -w apps/e2e",
+    "test:e2e:preview": "npm run test:preview -w apps/e2e",
+    "test:e2e:preview:manual-ai": "npm run test:preview:manual-ai -w apps/e2e",
     "vercel:server:env:ls": "npm run -w apps/server vercel:env:ls",
     "vercel:server:pull:preview": "npm run -w apps/server vercel:pull:preview",
     "vercel:server:pull:production": "npm run -w apps/server vercel:pull:production",
     "vercel:server:deploy:preview": "npm run -w apps/server vercel:deploy:preview",
     "vercel:server:deploy:production": "npm run -w apps/server vercel:deploy:production"
   },
+  "overrides": {
+    "expo-auth-session": "~6.2.1",
+    "expo-crypto": "~14.1.5",
+    "expo-linking": "~7.1.7",
+    "expo-constants": "~17.1.8",
+    "@expo/config": "~11.0.13",
+    "@expo/config-plugins": "~10.1.2"
+  },
   "devDependencies": {
     "turbo": "^2.5.0",
     "typescript": "^5.8.0"
+  },
+  "dependencies": {
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
   }
 }

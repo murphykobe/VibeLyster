@@ -6,6 +6,8 @@
     "test": "playwright test",
     "test:ui": "playwright test --ui",
     "test:headed": "playwright test --headed",
+    "test:preview": "playwright test",
+    "test:preview:manual-ai": "E2E_MANUAL_AI=1 playwright test",
     "install:browsers": "playwright install chromium"
   },
   "devDependencies": {
