@@ -1,6 +1,7 @@
 {
   "name": "vibelyster",
   "private": true,
+  "packageManager": "npm@11.5.1",
   "workspaces": [
     "apps/*"
   ],
@@ -21,12 +22,6 @@
   "devDependencies": {
     "turbo": "^2.5.0",
     "typescript": "^5.8.0"
-  },
-  "dependencies": {
-    "react": "^19.0.0",
-    "react-dom": "^19.0.0",
-    "expo": "~55.0.9",
-    "react-native": "0.83.4"
   },
   "version": "1.0.0"
 }
