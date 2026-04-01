@@ -20,7 +20,15 @@
       "expo-router",
       "expo-apple-authentication",
       "expo-camera",
-      "expo-av",
+      [
+        "expo-audio",
+        {
+          "microphonePermission": "Record voice descriptions of items",
+          "recordAudioAndroid": true,
+          "enableBackgroundPlayback": false,
+          "enableBackgroundRecording": false
+        }
+      ],
       "expo-image-picker",
       "expo-secure-store",
       "expo-web-browser"
