@@ -14,6 +14,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { useFocusEffect, useRouter, useLocalSearchParams } from "expo-router";
 import { getListing, updateListing, publishListing, delistListing, deleteListing, syncStatus, getConnections } from "@/lib/api";
 import type { Listing, MarketplaceConnection, Platform, PlatformListing } from "@/lib/types";
+import { CATEGORY_GROUPS, getCategoryOption } from "@/lib/categories";
 import PhotoCarousel from "@/components/PhotoCarousel";
 import PlatformRow from "@/components/PlatformRow";
 import { theme } from "@/lib/theme";
@@ -280,6 +281,9 @@ export default function ListingDetailScreen() {
   const connectedNotLive = platformRows.filter(
     (pl) => connectedPlatforms.has(pl.platform) && pl.status !== "live" && pl.status !== "publishing"
   );
+  const selectedCategoryOption = getCategoryOption(category);
+  const visibleCategoryGroup = selectedCategoryOption?.group ?? CATEGORY_GROUPS[0].key;
+  const visibleCategoryOptions = CATEGORY_GROUPS.find((group) => group.key === visibleCategoryGroup)?.options ?? [];
   const editableTraitKeys = Array.from(new Set(["color", "country_of_origin", ...Object.keys(traits)]));
 
   if (loading) {
@@ -346,7 +350,41 @@ export default function ListingDetailScreen() {
             </View>
             <View style={styles.twoColItem}>
               <Field label="Category">
-                <TextInput style={styles.input} value={category} onChangeText={setCategory} placeholderTextColor={theme.colors.textMuted} />
+                <Text style={styles.categorySummary}>
+                  {selectedCategoryOption
+                    ? `${selectedCategoryOption.groupLabel} / ${selectedCategoryOption.label}`
+                    : "Choose a supported category"}
+                </Text>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipsRow}>
+                  {CATEGORY_GROUPS.filter((group) => group.key !== "unsupported").map((group) => (
+                    <Pressable
+                      key={group.key}
+                      onPress={() => {
+                        if (selectedCategoryOption?.group !== group.key) {
+                          setCategory(group.options[0]?.key ?? "");
+                        }
+                      }}
+                      style={[styles.conditionChip, visibleCategoryGroup === group.key && styles.conditionChipActive]}
+                    >
+                      <Text style={[styles.conditionChipText, visibleCategoryGroup === group.key && styles.conditionChipTextActive]}>
+                        {group.label}
+                      </Text>
+                    </Pressable>
+                  ))}
+                </ScrollView>
+                <View style={styles.categoryOptionsWrap}>
+                  {visibleCategoryOptions.map((option) => (
+                    <Pressable
+                      key={option.key}
+                      onPress={() => setCategory(option.key)}
+                      style={[styles.categoryOptionChip, category === option.key && styles.categoryOptionChipActive]}
+                    >
+                      <Text style={[styles.categoryOptionText, category === option.key && styles.categoryOptionTextActive]}>
+                        {option.label}
+                      </Text>
+                    </Pressable>
+                  ))}
+                </View>
               </Field>
             </View>
           </View>
@@ -564,6 +602,36 @@ const styles = StyleSheet.create({
   },
   chipsRow: {
     gap: 8,
+  },
+  categorySummary: {
+    color: theme.colors.textMuted,
+    fontFamily: theme.fonts.sans,
+    fontSize: 13,
+  },
+  categoryOptionsWrap: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+  },
+  categoryOptionChip: {
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    backgroundColor: theme.colors.surfaceStrong,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  categoryOptionChipActive: {
+    borderColor: theme.colors.accent,
+    backgroundColor: theme.colors.accentSoft,
+  },
+  categoryOptionText: {
+    color: theme.colors.textMuted,
+    fontFamily: theme.fonts.sansBold,
+    fontSize: 12,
+  },
+  categoryOptionTextActive: {
+    color: theme.colors.accent,
   },
   conditionChip: {
     borderRadius: 999,

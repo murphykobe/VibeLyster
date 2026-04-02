@@ -153,7 +153,7 @@ export type CreateListingInput = {
   size?: string;
   condition?: string;
   brand?: string;
-  category?: string;
+  category?: string | null;
   traits?: Record<string, unknown>;
   photos: string[];
   voiceTranscript?: string;

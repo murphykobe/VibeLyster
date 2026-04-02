@@ -227,7 +227,7 @@ function defaultListing() {
     size: "10",
     condition: "gently_used",
     brand: "Nike",
-    category: "sneakers",
+    category: "footwear.sneakers",
     traits: {
       color: "black",
       country_of_origin: "US",

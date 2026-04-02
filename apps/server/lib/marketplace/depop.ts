@@ -18,6 +18,7 @@ import type {
   StatusResult,
   ConnectionProbeResult,
 } from "./types";
+import { mapCanonicalCategoryToDepop } from "../categories";
 
 const DEPOP_API = "https://webapi.depop.com";
 
@@ -43,35 +44,8 @@ async function loadImpit() {
 
 type DepopCategory = { group: string; productType: string };
 
-const CATEGORY_MAP: Record<string, DepopCategory> = {
-  "t-shirt": { group: "clothing", productType: "t-shirts" },
-  "shirt": { group: "clothing", productType: "shirts" },
-  "hoodie": { group: "clothing", productType: "sweatshirts-hoodies" },
-  "sweatshirt": { group: "clothing", productType: "sweatshirts-hoodies" },
-  "sweater": { group: "clothing", productType: "knitwear" },
-  "jacket": { group: "clothing", productType: "coats-jackets" },
-  "coat": { group: "clothing", productType: "coats-jackets" },
-  "pants": { group: "clothing", productType: "trousers" },
-  "jeans": { group: "clothing", productType: "jeans" },
-  "shorts": { group: "clothing", productType: "shorts" },
-  "sneakers": { group: "shoes", productType: "trainers" },
-  "boots": { group: "shoes", productType: "boots" },
-  "shoes": { group: "shoes", productType: "shoes" },
-  "bag": { group: "bags", productType: "bags" },
-  "wallet": { group: "accessories", productType: "wallet-purses" },
-  "belt": { group: "accessories", productType: "belts" },
-  "hat": { group: "accessories", productType: "hats" },
-  "watch": { group: "accessories", productType: "watches" },
-};
-
 export function mapCategory(category: string | null): DepopCategory {
-  if (!category) return { group: "clothing", productType: "t-shirts" };
-  const lower = category.toLowerCase();
-  if (CATEGORY_MAP[lower]) return CATEGORY_MAP[lower];
-  for (const [key, value] of Object.entries(CATEGORY_MAP)) {
-    if (lower.includes(key)) return value;
-  }
-  return { group: "clothing", productType: "t-shirts" };
+  return mapCanonicalCategoryToDepop(category) ?? { group: "clothing", productType: "t-shirts" };
 }
 
 // ─── Condition mapping ────────────────────────────────────────────────────────
@@ -240,7 +214,11 @@ export async function publishToDepop(
     }
 
     // 3. Map category + condition
-    const { group, productType } = mapCategory(listing.category);
+    const mappedCategory = mapCanonicalCategoryToDepop(listing.category);
+    if (!mappedCategory) {
+      return { ok: false, error: "Depop does not support this category yet.", retryable: false };
+    }
+    const { group, productType } = mappedCategory;
     const condition = mapCondition(listing.condition);
 
     // 4. Create draft

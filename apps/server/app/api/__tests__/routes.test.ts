@@ -95,6 +95,7 @@ describe("POST /api/listings", () => {
     expect(data.id).toBeDefined();
     expect(data.title).toBe("Nike Air Force 1");
     expect(data.price).toBe("120");
+    expect(data.category).toBe("footwear.sneakers");
   });
 
   it("returns 400 when title is missing", async () => {
@@ -113,6 +114,15 @@ describe("POST /api/listings", () => {
   it("returns 400 when photos is not an array of URLs", async () => {
     const res = await createListing(req("POST", "/api/listings", { body: { ...VALID_LISTING, photos: ["not-a-url"] } }));
     expect(res.status).toBe(400);
+  });
+
+  it("returns 400 for unsupported item categories", async () => {
+    const res = await createListing(req("POST", "/api/listings", {
+      body: { ...VALID_LISTING, category: "car" },
+    }));
+    expect(res.status).toBe(400);
+    const data = await res.json();
+    expect(data.error).toContain("not supported");
   });
 });
 
@@ -193,6 +203,30 @@ describe("PUT /api/listings/[id]", () => {
     expect(data.price).toBe("150");
     // Unchanged fields persist
     expect(data.brand).toBe("Nike");
+  });
+
+  it("normalizes updated categories into canonical keys", async () => {
+    const createRes = await createListing(req("POST", "/api/listings", { body: VALID_LISTING }));
+    const { id } = await createRes.json();
+
+    const res = await updateListing(
+      req("PUT", `/api/listings/${id}`, { body: { category: "boots" } }),
+      params(id)
+    );
+    expect(res.status).toBe(200);
+    const data = await res.json();
+    expect(data.category).toBe("footwear.boots");
+  });
+
+  it("returns 400 when updating to an unsupported item category", async () => {
+    const createRes = await createListing(req("POST", "/api/listings", { body: VALID_LISTING }));
+    const { id } = await createRes.json();
+
+    const res = await updateListing(
+      req("PUT", `/api/listings/${id}`, { body: { category: "car" } }),
+      params(id)
+    );
+    expect(res.status).toBe(400);
   });
 
   it("returns 400 for invalid update (empty title)", async () => {
