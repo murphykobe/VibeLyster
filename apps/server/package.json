@@ -11,6 +11,7 @@
     "start": "next start",
     "test": "vitest run",
     "test:integration": "vitest run -c vitest.integration.config.ts",
+    "publish:smoke": "node ./scripts/live-publish-smoke.mjs",
     "vercel:pull:preview": "npx vercel pull --yes --environment=preview",
     "vercel:pull:production": "npx vercel pull --yes --environment=production",
     "vercel:deploy:preview": "npx vercel --yes",

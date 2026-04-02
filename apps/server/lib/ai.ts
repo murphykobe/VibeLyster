@@ -42,7 +42,9 @@ const ListingSchema = z.object({
   condition: z.enum(["new", "gently_used", "used", "heavily_used"]).describe("Item condition"),
   brand: z.string().nullable().describe("Brand name (e.g. 'Nike', 'Levi\\'s'). null if unknown."),
   category: z.string().nullable().describe("Item category (e.g. 't-shirt', 'jeans', 'sneakers', 'jacket', 'bag'). Use lowercase singular."),
-  traits: z.record(z.string()).describe("Additional attributes as key-value pairs (e.g. {color: 'black', material: 'denim'})"),
+  traits: z.record(z.string()).describe(
+    "Additional attributes as key-value pairs. Always include traits.color when identifiable (for example black, white, blue, red, green, silver, gold, brown, grey, navy, orange, pink, purple, yellow, multi, cream). Include traits.country_of_origin only when known."
+  ),
 });
 
 type GeneratedListing = z.infer<typeof ListingSchema>;
@@ -111,7 +113,63 @@ Given a voice description and optionally photos, generate a complete, accurate l
 - Descriptions should be detailed, mention condition, measurements, and any flaws
 - Be accurate — do not invent details not mentioned or visible
 - Prices should be reasonable resale values unless specified by the seller
-- For condition: "new" = unworn/unused with tags, "gently_used" = minimal wear, "used" = visible wear, "heavily_used" = significant wear/flaws`;
+- For condition: "new" = unworn/unused with tags, "gently_used" = minimal wear, "used" = visible wear, "heavily_used" = significant wear/flaws
+- In traits, include color whenever it can be inferred from the text or photos
+- Prefer marketplace-safe trait keys such as color and country_of_origin`;
+
+const COLOR_KEYWORDS: Array<[string, string]> = [
+  ["off-white", "cream"],
+  ["off white", "cream"],
+  ["ivory", "cream"],
+  ["beige", "cream"],
+  ["tan", "cream"],
+  ["khaki", "cream"],
+  ["multicolor", "multi"],
+  ["multi color", "multi"],
+  ["multi-color", "multi"],
+  ["gray", "grey"],
+  ["grey", "grey"],
+  ["black", "black"],
+  ["white", "white"],
+  ["blue", "blue"],
+  ["red", "red"],
+  ["green", "green"],
+  ["silver", "silver"],
+  ["gold", "gold"],
+  ["brown", "brown"],
+  ["navy", "navy"],
+  ["orange", "orange"],
+  ["pink", "pink"],
+  ["purple", "purple"],
+  ["yellow", "yellow"],
+];
+
+function inferColorFromText(...sources: Array<string | null | undefined>) {
+  const haystack = sources.filter(Boolean).join(" ").toLowerCase();
+  if (!haystack) return null;
+
+  for (const [needle, color] of COLOR_KEYWORDS) {
+    if (haystack.includes(needle)) return color;
+  }
+
+  return null;
+}
+
+function normalizeGeneratedListing(listing: GeneratedListing, transcript: string) {
+  const traits = { ...(listing.traits ?? {}) };
+  const inferredColor = typeof traits.color === "string" && traits.color.trim()
+    ? traits.color.trim().toLowerCase()
+    : inferColorFromText(listing.title, listing.description, listing.category, transcript);
+
+  if (inferredColor) {
+    traits.color = inferredColor;
+  }
+
+  return {
+    ...listing,
+    traits,
+  };
+}
 
 async function generateWithText(transcript: string): Promise<GeneratedListing> {
   const client = getGatewayClient();
@@ -197,13 +255,14 @@ export async function generateListing(input: GenerateListingInput): Promise<Gene
     ? await generateWithVision(transcript, photoUrls)
     : await generateWithText(transcript);
   const latencyMs = Date.now() - startMs;
+  const normalizedListing = normalizeGeneratedListing(listing, transcript);
 
   console.log(JSON.stringify({ event: "ai.generation_complete", latency_ms: latencyMs, used_vision: useVision }));
 
   return {
-    listing,
+    listing: normalizedListing,
     voiceTranscript: transcript || null,
-    aiRawResponse: { listing, usedVision: useVision, transcript },
+    aiRawResponse: { listing: normalizedListing, usedVision: useVision, transcript },
     usedVision: useVision,
   };
 }

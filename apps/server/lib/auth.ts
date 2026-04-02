@@ -5,6 +5,11 @@ import { isMockMode } from "./mock";
 
 let clerkClient: ReturnType<typeof createClerkClient> | null = null;
 
+function isLocalDevAuthBypassEnabled() {
+  return process.env.NODE_ENV !== "production"
+    && ["1", "true", "yes", "on"].includes((process.env.LOCAL_DEV_AUTH_BYPASS ?? "").toLowerCase());
+}
+
 function getClerkClient() {
   if (clerkClient) return clerkClient;
   if (!process.env.CLERK_SECRET_KEY) {
@@ -24,6 +29,14 @@ export async function requireAuth(req: NextRequest) {
     const mockClerkId = req.headers.get("x-mock-user-id")?.trim() || "mock-user";
     const mockEmail = req.headers.get("x-mock-user-email")?.trim() || `${mockClerkId}@mock.vibelyster.local`;
     return upsertUser(mockClerkId, mockEmail);
+  }
+
+  if (isLocalDevAuthBypassEnabled()) {
+    const devUserId = req.headers.get("x-dev-user-id")?.trim();
+    if (devUserId) {
+      const devEmail = req.headers.get("x-dev-user-email")?.trim() || `${devUserId}@dev.vibelyster.local`;
+      return upsertUser(devUserId, devEmail);
+    }
   }
 
   const authHeader = req.headers.get("authorization");

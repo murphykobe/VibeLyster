@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { mapCategory, mapCondition, publishToGrailed, delistFromGrailed, checkGrailedStatus } from "../grailed";
+import { mapCategory, mapCondition, normalizeGrailedTraits, publishToGrailed, delistFromGrailed, checkGrailedStatus } from "../grailed";
 import type { CanonicalListing, GrailedTokens } from "../types";
 
 // ─── Fixtures ─────────────────────────────────────────────────────────────────
@@ -16,7 +16,7 @@ function makeListing(overrides: Partial<CanonicalListing> = {}): CanonicalListin
     condition: "gently_used",
     brand: "Carhartt",
     category: "jacket",
-    traits: {},
+    traits: { color: "black" },
     photos: ["https://blob.vercel-storage.com/photo1.jpg"],
     ...overrides,
   };
@@ -111,6 +111,40 @@ describe("mapCondition (Grailed)", () => {
 
 // ─── publishToGrailed ─────────────────────────────────────────────────────────
 
+describe("normalizeGrailedTraits", () => {
+  it("requires a color trait when none can be inferred", () => {
+    const result = normalizeGrailedTraits(makeListing({
+      title: "Mystery Piece",
+      description: "Rare archive item",
+      category: null,
+      traits: {},
+    }));
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error).toMatch(/color trait/i);
+    }
+  });
+
+  it("infers color from listing text and filters unsupported traits", () => {
+    const result = normalizeGrailedTraits(makeListing({
+      title: "Silver Bullet Sneakers",
+      traits: {
+        material: "mesh",
+        country_of_origin: "US",
+      } as Record<string, string>,
+    }));
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.traits).toEqual([
+        { name: "color", value: "silver" },
+        { name: "country_of_origin", value: "US" },
+      ]);
+    }
+  });
+});
+
 describe("publishToGrailed", () => {
   beforeEach(() => {
     vi.resetAllMocks();
@@ -153,6 +187,25 @@ describe("publishToGrailed", () => {
     if (!result.ok) expect(result.retryable).toBe(true);
   });
 
+  it("returns retryable=false when required Grailed traits are missing", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await publishToGrailed(makeListing({
+      title: "Mystery Piece",
+      description: "Rare archive item",
+      category: null,
+      traits: {},
+    }), TOKENS);
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.retryable).toBe(false);
+      expect(result.error).toMatch(/color trait/i);
+    }
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
   it("builds correct payload shape and returns platformListingId on success", async () => {
     mockFetchSequence([
       // getMe
@@ -180,6 +233,7 @@ describe("publishToGrailed", () => {
         price: "120",
         size: "L",
         designers: [{ name: "Carhartt" }],
+        traits: [{ name: "color", value: "black" }],
       });
     }
   });
