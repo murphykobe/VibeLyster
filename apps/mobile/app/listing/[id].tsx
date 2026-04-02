@@ -280,6 +280,7 @@ export default function ListingDetailScreen() {
   const connectedNotLive = platformRows.filter(
     (pl) => connectedPlatforms.has(pl.platform) && pl.status !== "live" && pl.status !== "publishing"
   );
+  const editableTraitKeys = Array.from(new Set(["color", "country_of_origin", ...Object.keys(traits)]));
 
   if (loading) {
     return (
@@ -383,11 +384,11 @@ export default function ListingDetailScreen() {
 
           {showAdvanced && (
             <View style={styles.advancedWrap}>
-              {Object.entries(traits).map(([key, value]) => (
+              {editableTraitKeys.map((key) => (
                 <Field key={key} label={key}>
                   <TextInput
                     style={styles.input}
-                    value={value}
+                    value={traits[key] ?? ""}
                     onChangeText={(text) => setTraits((prev) => ({ ...prev, [key]: text }))}
                     placeholderTextColor={theme.colors.textMuted}
                   />

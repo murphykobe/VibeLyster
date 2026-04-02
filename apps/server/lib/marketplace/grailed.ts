@@ -72,6 +72,42 @@ const CONDITION_MAP: Record<string, string> = {
   "heavily_used": "is_heavily_used",
 };
 
+const GRAILED_ALLOWED_COLORS = [
+  "black",
+  "white",
+  "blue",
+  "red",
+  "green",
+  "silver",
+  "gold",
+  "brown",
+  "grey",
+  "navy",
+  "orange",
+  "pink",
+  "purple",
+  "yellow",
+  "multi",
+  "cream",
+] as const;
+
+const COLOR_ALIASES: Record<string, typeof GRAILED_ALLOWED_COLORS[number]> = {
+  gray: "grey",
+  grey: "grey",
+  multicolor: "multi",
+  "multi-color": "multi",
+  colourful: "multi",
+  colorful: "multi",
+  offwhite: "cream",
+  "off-white": "cream",
+  ivory: "cream",
+  beige: "cream",
+  tan: "cream",
+  khaki: "cream",
+};
+
+type GrailedTrait = { name: "color" | "country_of_origin"; value: string };
+
 export function mapCondition(condition: string | null): string {
   if (!condition) return "is_gently_used";
   const lower = condition.toLowerCase().replace(/\s+/g, "_");
@@ -110,6 +146,61 @@ class GrailedError extends Error {
 
 function pickString(value: unknown): string | undefined {
   return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+function normalizeGrailedColor(value: string | null | undefined) {
+  const raw = pickString(value);
+  if (!raw) return null;
+
+  const lower = raw.toLowerCase().trim();
+  const normalized = COLOR_ALIASES[lower] ?? lower;
+  if ((GRAILED_ALLOWED_COLORS as readonly string[]).includes(normalized)) {
+    return normalized;
+  }
+
+  return null;
+}
+
+function inferGrailedColor(...sources: Array<string | null | undefined>) {
+  const haystack = sources.filter(Boolean).join(" ").toLowerCase();
+  if (!haystack) return null;
+
+  for (const color of GRAILED_ALLOWED_COLORS) {
+    if (haystack.includes(color)) return color;
+  }
+
+  for (const [alias, canonical] of Object.entries(COLOR_ALIASES)) {
+    if (haystack.includes(alias)) return canonical;
+  }
+
+  return null;
+}
+
+export function normalizeGrailedTraits(listing: CanonicalListing):
+  | { ok: true; traits: GrailedTrait[] }
+  | { ok: false; error: string } {
+  const rawTraits = listing.traits ?? {};
+  const color = normalizeGrailedColor(rawTraits.color) ?? inferGrailedColor(
+    rawTraits.color,
+    listing.title,
+    listing.description,
+    listing.category,
+  );
+
+  if (!color) {
+    return {
+      ok: false,
+      error: "Grailed requires a color trait before publish. Add traits.color in the listing details.",
+    };
+  }
+
+  const traits: GrailedTrait[] = [{ name: "color", value: color }];
+  const countryOfOrigin = pickString(rawTraits.country_of_origin);
+  if (countryOfOrigin) {
+    traits.push({ name: "country_of_origin", value: countryOfOrigin });
+  }
+
+  return { ok: true, traits };
 }
 
 // ─── Image upload ─────────────────────────────────────────────────────────────
@@ -201,6 +292,10 @@ export async function publishToGrailed(
   tokens: GrailedTokens
 ): Promise<PublishResult> {
   const { csrf_token, cookies } = tokens;
+  const normalizedTraits = normalizeGrailedTraits(listing);
+  if (!normalizedTraits.ok) {
+    return { ok: false, error: normalizedTraits.error, retryable: false };
+  }
 
   try {
     // 1. Get user ID + return address
@@ -254,7 +349,7 @@ export async function publishToGrailed(
       styles: [],
       exact_size: null,
       title: listing.title,
-      traits: Object.entries(listing.traits ?? {}).map(([name, value]) => ({ name, value })),
+      traits: normalizedTraits.traits,
     };
 
     // 4. Publish
