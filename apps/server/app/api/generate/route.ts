@@ -13,7 +13,7 @@ function buildMockListing(photoUrls: string[], hasAudio: boolean, transcript?: s
     size: "M",
     condition: "gently_used",
     brand: "Mock Brand",
-    category: "t-shirt",
+    category: "tops.t_shirt",
     traits: {
       color: "black",
       material: "cotton",

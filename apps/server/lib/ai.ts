@@ -15,6 +15,7 @@
 import { createOpenAI } from "@ai-sdk/openai";
 import { generateObject } from "ai";
 import { z } from "zod";
+import { CANONICAL_CATEGORY_KEYS, normalizeCategoryForStorage } from "./categories";
 
 // ─── Vercel AI Gateway client ─────────────────────────────────────────────────
 
@@ -41,7 +42,9 @@ const ListingSchema = z.object({
   size: z.string().nullable().describe("Size (e.g. 'M', 'L', '32x30', 'one size'). null if not applicable."),
   condition: z.enum(["new", "gently_used", "used", "heavily_used"]).describe("Item condition"),
   brand: z.string().nullable().describe("Brand name (e.g. 'Nike', 'Levi\\'s'). null if unknown."),
-  category: z.string().nullable().describe("Item category (e.g. 't-shirt', 'jeans', 'sneakers', 'jacket', 'bag'). Use lowercase singular."),
+  category: z.enum(CANONICAL_CATEGORY_KEYS).describe(
+    "Canonical supported category key. Choose only from the provided enum. If the item is not supported by our marketplaces, use unsupported.other."
+  ),
   traits: z.record(z.string()).describe(
     "Additional attributes as key-value pairs. Always include traits.color when identifiable (for example black, white, blue, red, green, silver, gold, brown, grey, navy, orange, pink, purple, yellow, multi, cream). Include traits.country_of_origin only when known."
   ),
@@ -114,6 +117,8 @@ Given a voice description and optionally photos, generate a complete, accurate l
 - Be accurate — do not invent details not mentioned or visible
 - Prices should be reasonable resale values unless specified by the seller
 - For condition: "new" = unworn/unused with tags, "gently_used" = minimal wear, "used" = visible wear, "heavily_used" = significant wear/flaws
+- Category must be one of the canonical supported category enum values
+- If the item is outside our supported fashion/accessory categories, set category to unsupported.other
 - In traits, include color whenever it can be inferred from the text or photos
 - Prefer marketplace-safe trait keys such as color and country_of_origin`;
 
@@ -160,6 +165,7 @@ function normalizeGeneratedListing(listing: GeneratedListing, transcript: string
   const inferredColor = typeof traits.color === "string" && traits.color.trim()
     ? traits.color.trim().toLowerCase()
     : inferColorFromText(listing.title, listing.description, listing.category, transcript);
+  const category = normalizeCategoryForStorage(listing.category);
 
   if (inferredColor) {
     traits.color = inferredColor;
@@ -167,6 +173,7 @@ function normalizeGeneratedListing(listing: GeneratedListing, transcript: string
 
   return {
     ...listing,
+    category,
     traits,
   };
 }

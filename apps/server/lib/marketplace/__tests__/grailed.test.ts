@@ -15,7 +15,7 @@ function makeListing(overrides: Partial<CanonicalListing> = {}): CanonicalListin
     size: "L",
     condition: "gently_used",
     brand: "Carhartt",
-    category: "jacket",
+    category: "outerwear.jacket",
     traits: { color: "black" },
     photos: ["https://blob.vercel-storage.com/photo1.jpg"],
     ...overrides,
@@ -46,8 +46,7 @@ describe("mapCategory (Grailed)", () => {
       ["t-shirt", "tops.t_shirts"],
       ["shirt", "tops.shirts"],
       ["hoodie", "tops.sweatshirts_hoodies"],
-      // "sweatshirt" contains "shirt" which appears earlier in the map → maps to shirts (documented behavior)
-      ["sweatshirt", "tops.shirts"],
+      ["sweatshirt", "tops.sweatshirts_hoodies"],
       ["sweater", "tops.sweaters_knitwear"],
       ["jacket", "tops.jackets"],
       ["coat", "tops.coats"],
@@ -68,6 +67,11 @@ describe("mapCategory (Grailed)", () => {
     for (const [input, expected] of cases) {
       expect(mapCategory(input), input).toBe(expected);
     }
+  });
+
+  it("maps canonical category keys directly", () => {
+    expect(mapCategory("footwear.sneakers")).toBe("footwear.sneakers");
+    expect(mapCategory("outerwear.jacket")).toBe("tops.jackets");
   });
 
   it("matches on substring (case-insensitive)", () => {

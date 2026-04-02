@@ -27,7 +27,7 @@ function makeListing(overrides: Partial<CanonicalListing> = {}): CanonicalListin
     size: "M",
     condition: "used",
     brand: "Champion",
-    category: "hoodie",
+    category: "tops.hoodie",
     traits: {},
     photos: ["https://blob.vercel-storage.com/photo1.jpg"],
     ...overrides,
@@ -77,6 +77,11 @@ describe("mapCategory (Depop)", () => {
     for (const [input, expected] of cases) {
       expect(mapCategory(input), input).toEqual(expected);
     }
+  });
+
+  it("maps canonical category keys directly", () => {
+    expect(mapCategory("tops.hoodie")).toEqual({ group: "clothing", productType: "sweatshirts-hoodies" });
+    expect(mapCategory("footwear.sneakers")).toEqual({ group: "shoes", productType: "trainers" });
   });
 
   it("matches on substring (case-insensitive)", () => {

@@ -2,6 +2,7 @@ import { NextRequest } from "next/server";
 import { requireAuth, AuthError, authErrorResponse } from "@/lib/auth";
 import { getListingById, updateListing, softDeleteListing } from "@/lib/db";
 import { UpdateListingBody, parseBody } from "@/lib/validation";
+import { coerceCategoryForStorage } from "@/lib/categories";
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -25,13 +26,17 @@ export async function PUT(req: NextRequest, { params }: Params) {
     const { id } = await params;
     const parsed = parseBody(UpdateListingBody, await req.json());
     if ("error" in parsed) return parsed.error;
+    const categoryResult = coerceCategoryForStorage(parsed.data.category);
+    if (!categoryResult.ok) {
+      return Response.json({ error: categoryResult.error }, { status: 400 });
+    }
 
     const updated = await updateListing(user.id, id, {
       ...parsed.data,
       size: parsed.data.size ?? undefined,
       condition: parsed.data.condition ?? undefined,
       brand: parsed.data.brand ?? undefined,
-      category: parsed.data.category ?? undefined,
+      category: categoryResult.category,
       traits: parsed.data.traits as Record<string, unknown> | undefined,
     });
 

@@ -14,51 +14,13 @@ import type {
   StatusResult,
   ConnectionProbeResult,
 } from "./types";
+import { mapCanonicalCategoryToGrailed } from "../categories";
 
 const GRAILED_API = "https://www.grailed.com/api";
 const GRAILED_S3 = "https://grailed-media.s3.amazonaws.com/";
 
-// ─── Category mapping ────────────────────────────────────────────────────────
-// Maps canonical category strings to Grailed category_path values.
-// Extend as needed — these cover the most common resale categories.
-
-const CATEGORY_MAP: Record<string, string> = {
-  // Tops
-  "t-shirt": "tops.t_shirts",
-  "shirt": "tops.shirts",
-  "hoodie": "tops.sweatshirts_hoodies",
-  "sweatshirt": "tops.sweatshirts_hoodies",
-  "sweater": "tops.sweaters_knitwear",
-  "jacket": "tops.jackets",
-  "coat": "tops.coats",
-  // Bottoms
-  "pants": "bottoms.pants",
-  "jeans": "bottoms.denim",
-  "shorts": "bottoms.shorts",
-  "trousers": "bottoms.pants",
-  // Footwear
-  "sneakers": "footwear.sneakers",
-  "boots": "footwear.boots",
-  "shoes": "footwear.dress_shoes",
-  "sandals": "footwear.sandals",
-  // Accessories
-  "bag": "accessories.bags_luggage",
-  "wallet": "accessories.wallets",
-  "belt": "accessories.belts",
-  "hat": "accessories.hats_scarves_gloves",
-  "watch": "accessories.watches",
-  // Tailoring
-  "suit": "tailoring.suits",
-  "blazer": "tailoring.blazers_sportcoats",
-};
-
 export function mapCategory(category: string | null): string {
-  if (!category) return "tops.t_shirts";
-  const lower = category.toLowerCase();
-  for (const [key, value] of Object.entries(CATEGORY_MAP)) {
-    if (lower.includes(key)) return value;
-  }
-  return "tops.t_shirts"; // fallback
+  return mapCanonicalCategoryToGrailed(category) ?? "tops.t_shirts";
 }
 
 // ─── Condition mapping ────────────────────────────────────────────────────────
@@ -296,6 +258,10 @@ export async function publishToGrailed(
   if (!normalizedTraits.ok) {
     return { ok: false, error: normalizedTraits.error, retryable: false };
   }
+  const grailedCategory = mapCanonicalCategoryToGrailed(listing.category);
+  if (!grailedCategory) {
+    return { ok: false, error: "Grailed does not support this category yet.", retryable: false };
+  }
 
   try {
     // 1. Get user ID + return address
@@ -321,7 +287,7 @@ export async function publishToGrailed(
     // 3. Build listing payload
     const payload = {
       buynow: true,
-      category_path: mapCategory(listing.category),
+      category_path: grailedCategory,
       condition: mapCondition(listing.condition),
       description: listing.description,
       designers: listing.brand
