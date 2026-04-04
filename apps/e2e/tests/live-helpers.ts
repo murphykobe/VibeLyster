@@ -4,6 +4,7 @@ const API_URL = process.env.E2E_API_URL ?? (process.env.E2E_BASE_URL ? new URL(p
 const EBAY_SANDBOX = ["1", "true", "yes", "on"].includes((process.env.E2E_EBAY_SANDBOX ?? "true").toLowerCase());
 const EBAY_AUTH_HOST = EBAY_SANDBOX ? "https://auth.sandbox.ebay.com" : "https://auth.ebay.com";
 const EBAY_SCOPE = "https://api.ebay.com/oauth/api_scope/commerce.identity.readonly";
+const EBAY_CALLBACK_HOST = process.env.E2E_EBAY_CALLBACK_HOST ?? "https://vibelyster.vercel.app";
 
 if (!API_URL) {
   throw new Error("E2E_BASE_URL is required for live helpers.");
@@ -141,22 +142,32 @@ export async function captureEbaySandboxAuthorizationCode(page: Page) {
   const state = `pw-ebay-${Date.now()}`;
   const { url } = buildEbayAuthorizeUrl(state);
 
-  const callbackResponsePromise = page.waitForResponse(
-    (response) => response.url().includes("/api/ebay/callback") && response.request().method() === "GET",
-    { timeout: 60_000 },
-  );
-
   await page.goto(url);
   await page.getByLabel(/email or username/i).fill(username);
   await page.getByRole("button", { name: /continue/i }).click();
   await page.getByLabel(/password/i).fill(password);
   await page.getByRole("button", { name: /^sign in$/i }).click();
 
-  const callbackResponse = await callbackResponsePromise;
-  const location = callbackResponse.headers()["location"];
-  expect(location).toBeTruthy();
+  const callbackUrlPredicate = (currentUrl: URL) => {
+    const value = currentUrl.toString();
+    return value.startsWith(`${EBAY_CALLBACK_HOST}/api/ebay/callback`) || value.startsWith("vibelyster://connect/ebay");
+  };
 
-  const deepLink = new URL(location as string);
+  const agreeButton = page.getByRole("button", { name: /agree and continue/i });
+  const reachedCallbackAfterSignIn = await page
+    .waitForURL(callbackUrlPredicate, { timeout: 10_000 })
+    .then(() => true)
+    .catch(() => false);
+
+  if (!reachedCallbackAfterSignIn) {
+    await agreeButton.waitFor({ state: "visible", timeout: 20_000 });
+    await agreeButton.scrollIntoViewIfNeeded().catch(() => undefined);
+    await agreeButton.click();
+  }
+
+  await page.waitForURL(callbackUrlPredicate, { timeout: 60_000 });
+
+  const deepLink = new URL(page.url());
   const authorizationCode = deepLink.searchParams.get("code");
   expect(authorizationCode).toBeTruthy();
   expect(deepLink.searchParams.get("state")).toBe(state);
@@ -165,11 +176,10 @@ export async function captureEbaySandboxAuthorizationCode(page: Page) {
 }
 
 export async function connectEbayThroughApi(
-  page: Page,
   request: APIRequestContext,
+  token: string,
   input: { authorizationCode: string; ruName: string },
 ) {
-  const token = await getClerkToken(page);
   return api<{
     platform: "ebay";
     platform_username: string | null;
@@ -181,14 +191,11 @@ export async function connectEbayThroughApi(
   });
 }
 
-export async function getConnectionsViaApi(page: Page, request: APIRequestContext) {
-  const token = await getClerkToken(page);
+export async function getConnectionsViaApi(request: APIRequestContext, token: string) {
   return api<Array<{ platform: string; platform_username: string | null }>>(request, token, "GET", "/api/connections");
 }
 
-export async function disconnectPlatformViaApi(page: Page, request: APIRequestContext, platform: "ebay") {
-  const token = await getClerkToken(page);
-
+export async function disconnectPlatformViaApi(request: APIRequestContext, token: string, platform: "ebay") {
   const response = await request.fetch(`${API_URL}/api/connect?platform=${platform}`, {
     method: "DELETE",
     headers: {

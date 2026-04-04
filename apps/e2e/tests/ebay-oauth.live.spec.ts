@@ -3,6 +3,7 @@ import {
   captureEbaySandboxAuthorizationCode,
   connectEbayThroughApi,
   disconnectPlatformViaApi,
+  getClerkToken,
   getConnectionsViaApi,
 } from "./live-helpers";
 
@@ -27,18 +28,20 @@ test.describe("eBay OAuth live", () => {
   });
 
   test("captures a sandbox auth code and stores an eBay connection through the live API", async ({ page, request }) => {
+    await page.goto("/");
+    const clerkToken = await getClerkToken(page);
     const { authorizationCode, ruName } = await captureEbaySandboxAuthorizationCode(page);
 
     try {
-      const connection = await connectEbayThroughApi(page, request, { authorizationCode, ruName });
+      const connection = await connectEbayThroughApi(request, clerkToken, { authorizationCode, ruName });
 
       expect(connection.platform).toBe("ebay");
       expect(connection.platform_username).toBeTruthy();
 
-      const connections = await getConnectionsViaApi(page, request);
+      const connections = await getConnectionsViaApi(request, clerkToken);
       expect(connections.some((item) => item.platform === "ebay")).toBe(true);
     } finally {
-      await disconnectPlatformViaApi(page, request, "ebay").catch(() => undefined);
+      await disconnectPlatformViaApi(request, clerkToken, "ebay").catch(() => undefined);
     }
   });
 });
