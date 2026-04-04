@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo } from "react";
+import { useState, useCallback, useEffect, useMemo, useRef } from "react";
 import {
   View,
   FlatList,
@@ -23,6 +23,8 @@ import { useFadeSlideIn, usePressScale } from "@/lib/motion";
 type FilterTab = "all" | "draft" | "live" | "sold";
 
 const FILTER_TABS: FilterTab[] = ["all", "draft", "live", "sold"];
+const PUBLISH_POLL_INTERVAL_MS = 3_000;
+const PUBLISH_POLL_TIMEOUT_MS = 120_000;
 
 export default function DashboardScreen() {
   const router = useRouter();
@@ -36,6 +38,10 @@ export default function DashboardScreen() {
   const [bulkPlatforms, setBulkPlatforms] = useState<Set<Platform>>(new Set(["grailed", "depop"]));
   const [publishing, setPublishing] = useState(false);
   const [publishMode, setPublishMode] = useState<PublishMode>("live");
+  const listingsRef = useRef<Listing[]>([]);
+  const publishPollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const publishPollTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const publishPollInFlightRef = useRef(false);
   const heroMotion = useFadeSlideIn({ delay: 35, y: 8, duration: 240 });
   const metricsMotion = useFadeSlideIn({ delay: 110, y: 10, duration: 240 });
   const tabsMotion = useFadeSlideIn({ delay: 160, y: 10, duration: 240 });
@@ -44,15 +50,76 @@ export default function DashboardScreen() {
   const loadListings = useCallback(async () => {
     try {
       const data = await getListings();
+      listingsRef.current = data;
       setListings(data);
+      return data;
     } catch (err) {
       console.error(err);
       showToast("Failed to load listings. Pull to retry.");
+      return null;
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
   }, [showToast]);
+
+  const clearPublishPolling = useCallback(() => {
+    if (publishPollIntervalRef.current) {
+      clearInterval(publishPollIntervalRef.current);
+      publishPollIntervalRef.current = null;
+    }
+    if (publishPollTimeoutRef.current) {
+      clearTimeout(publishPollTimeoutRef.current);
+      publishPollTimeoutRef.current = null;
+    }
+    publishPollInFlightRef.current = false;
+  }, []);
+
+  const stopPublishPolling = useCallback(() => {
+    clearPublishPolling();
+    setPublishing(false);
+  }, [clearPublishPolling]);
+
+  const hasPublishingListings = useCallback((items: Listing[]) => {
+    return items.some((listing) =>
+      (listing.platform_listings ?? []).some((platformListing) => platformListing.status === "publishing")
+    );
+  }, []);
+
+  const startPublishPolling = useCallback(async () => {
+    clearPublishPolling();
+
+    const pollOnce = async () => {
+      if (publishPollInFlightRef.current) return true;
+      publishPollInFlightRef.current = true;
+
+      try {
+        const data = await loadListings();
+        if (!data) return true;
+        if (!hasPublishingListings(listingsRef.current)) {
+          stopPublishPolling();
+          return false;
+        }
+        return true;
+      } finally {
+        publishPollInFlightRef.current = false;
+      }
+    };
+
+    publishPollIntervalRef.current = setInterval(() => {
+      void pollOnce();
+    }, PUBLISH_POLL_INTERVAL_MS);
+
+    publishPollTimeoutRef.current = setTimeout(() => {
+      stopPublishPolling();
+    }, PUBLISH_POLL_TIMEOUT_MS);
+  }, [clearPublishPolling, hasPublishingListings, loadListings, stopPublishPolling]);
+
+  useEffect(() => {
+    return () => {
+      clearPublishPolling();
+    };
+  }, [clearPublishPolling]);
 
   const loadPublishMode = useCallback(async () => {
     try {
@@ -113,14 +180,19 @@ export default function DashboardScreen() {
     if (selected.size === 0 || bulkPlatforms.size === 0) return;
     setPublishing(true);
     try {
-      await bulkPublish(Array.from(selected), Array.from(bulkPlatforms), publishMode);
+      const response = await bulkPublish(Array.from(selected), Array.from(bulkPlatforms), publishMode);
+      if (!response.acknowledged) {
+        setPublishing(false);
+        return;
+      }
+
       setSelectMode(false);
       setSelected(new Set());
-      await loadListings();
+
+      await startPublishPolling();
     } catch (err) {
       console.error(err);
       showToast("Bulk publish failed. Try again.");
-    } finally {
       setPublishing(false);
     }
   }
