@@ -1,4 +1,9 @@
-# VibeLyster — Product Requirements Document
+# VibeLyster — Product Requirements Document (Archived Original Concept)
+
+> Status: historical reference only.
+> The current source of truth for MVP scope, architecture, and platform support is [docs/superpowers/specs/2026-03-28-vibelyster-app-design.md](docs/superpowers/specs/2026-03-28-vibelyster-app-design.md).
+> This PRD preserves the original Chrome extension + PWA concept and intentionally differs from the current implementation plan.
+> Current MVP direction: Expo iOS app, Grailed + Depop in scope, eBay deferred to post-MVP.
 
 ## Overview
 
