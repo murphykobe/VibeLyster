@@ -11,23 +11,24 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 import { SafeAreaView } from "react-native-safe-area-context";
 import WebView, { WebViewNavigation } from "react-native-webview";
 import type { WebViewMessageEvent } from "react-native-webview";
-import { saveConnection } from "@/lib/api";
+import { saveConnection, saveEbayConnection } from "@/lib/api";
 import type { Platform } from "@/lib/types";
 import { theme } from "@/lib/theme";
 
 const MOBILE_SAFARI_USER_AGENT = "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1";
+const EBAY_SCOPE = "https://api.ebay.com/oauth/api_scope/commerce.identity.readonly";
+const EBAY_CALLBACK_PREFIX = "vibelyster://connect/ebay";
+const EBAY_CLIENT_ID = pickString(process.env.EXPO_PUBLIC_EBAY_CLIENT_ID);
+const EBAY_RU_NAME = pickString(process.env.EXPO_PUBLIC_EBAY_RU_NAME);
 
-const CONFIG: Record<Platform, { url: string; title: string }> = {
+const CONFIG: Record<Platform, { title: string }> = {
   grailed: {
-    url: "https://www.grailed.com/",
     title: "Connect Grailed",
   },
   depop: {
-    url: "https://www.depop.com/login/",
     title: "Connect Depop",
   },
   ebay: {
-    url: "https://signin.ebay.com/",
     title: "Connect eBay",
   },
 };
@@ -98,6 +99,20 @@ function extractAccessTokenFromUrl(value: string) {
   return match?.[1] ? decodeURIComponent(match[1]) : undefined;
 }
 
+function createOauthState() {
+  return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
+
+function buildEbayAuthorizeUrl(params: { clientId: string; ruName: string; state: string }) {
+  const url = new URL("https://auth.ebay.com/oauth2/authorize");
+  url.searchParams.set("client_id", params.clientId);
+  url.searchParams.set("redirect_uri", params.ruName);
+  url.searchParams.set("response_type", "code");
+  url.searchParams.set("scope", EBAY_SCOPE);
+  url.searchParams.set("state", params.state);
+  return url.toString();
+}
+
 function getGrailedAuthPayload(cookieMap: Record<string, { value?: string }>) {
   const csrfToken = pickString(cookieMap["csrf_token"]?.value);
   const grailedJwt = pickString(cookieMap["grailed_jwt"]?.value);
@@ -127,6 +142,7 @@ export default function ConnectScreen() {
   const webviewRef = useRef<WebView>(null);
   const saveAttemptedRef = useRef(false);
   const debugIdRef = useRef(1);
+  const ebayStateRef = useRef(createOauthState());
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [currentUrl, setCurrentUrl] = useState<string | null>(null);
@@ -138,7 +154,18 @@ export default function ConnectScreen() {
   const config = CONFIG[platform as Platform];
   const typedPlatform = platform as Platform;
   const showDebug = typeof __DEV__ !== "undefined" ? __DEV__ : false;
-  const sourceUri = overrideUrl ?? config?.url ?? "";
+  const sourceUri = useMemo(() => {
+    if (overrideUrl) return overrideUrl;
+    if (typedPlatform === "grailed") return "https://www.grailed.com/";
+    if (typedPlatform === "depop") return "https://www.depop.com/login/";
+    if (typedPlatform !== "ebay") return "";
+    if (!EBAY_CLIENT_ID || !EBAY_RU_NAME) return "";
+    return buildEbayAuthorizeUrl({
+      clientId: EBAY_CLIENT_ID,
+      ruName: EBAY_RU_NAME,
+      state: ebayStateRef.current,
+    });
+  }, [overrideUrl, typedPlatform]);
 
   const pushDebug = useCallback((message: string) => {
     console.log(`[connect:${platform ?? "unknown"}] ${message}`);
@@ -249,6 +276,69 @@ export default function ConnectScreen() {
     }
   }
 
+  async function handleEbayCallback(url: string) {
+    if (saveAttemptedRef.current) return;
+
+    let parsed: URL;
+    try {
+      parsed = new URL(url);
+    } catch {
+      pushDebug(`eBay callback parse failed: ${url}`);
+      Alert.alert("Error", "eBay returned an invalid callback URL.");
+      return;
+    }
+
+    const error = pickString(parsed.searchParams.get("error"));
+    const errorDescription = pickString(parsed.searchParams.get("error_description"));
+    if (error) {
+      pushDebug(`eBay callback error: ${error}${errorDescription ? ` (${errorDescription})` : ""}`);
+      Alert.alert("Error", errorDescription ?? "eBay connection failed. Please try again.");
+      return;
+    }
+
+    const authorizationCode = pickString(parsed.searchParams.get("code"));
+    const returnedState = pickString(parsed.searchParams.get("state"));
+
+    if (!authorizationCode) {
+      pushDebug("eBay callback missing code");
+      Alert.alert("Error", "eBay did not return an authorization code.");
+      return;
+    }
+
+    if (!returnedState || returnedState !== ebayStateRef.current) {
+      pushDebug(`eBay callback state mismatch expected=${ebayStateRef.current} received=${returnedState ?? "(missing)"}`);
+      Alert.alert("Error", "eBay connection failed. Please try again.");
+      return;
+    }
+
+    if (!EBAY_RU_NAME) {
+      pushDebug("eBay callback missing RU name env");
+      Alert.alert("Error", "Missing eBay redirect configuration.");
+      return;
+    }
+
+    saveAttemptedRef.current = true;
+    setSaving(true);
+
+    try {
+      await saveEbayConnection({
+        authorizationCode,
+        ruName: EBAY_RU_NAME,
+      });
+      pushDebug("eBay saveConnection ok");
+      Alert.alert("Connected!", "eBay account connected successfully.", [
+        { text: "OK", onPress: () => router.back() },
+      ]);
+    } catch (err) {
+      saveAttemptedRef.current = false;
+      const message = err instanceof Error ? err.message : "Failed to save eBay connection.";
+      pushDebug(`eBay save failed: ${message}`);
+      Alert.alert("Error", message);
+    } finally {
+      setSaving(false);
+    }
+  }
+
   async function tryCaptureDepopTokenFromCookies(reason: string) {
     if (typedPlatform !== "depop" || saveAttemptedRef.current) return;
     if (RNPlatform.OS === "web") return;
@@ -343,6 +433,10 @@ export default function ConnectScreen() {
 
   function handleShouldStartLoad(request: { url: string }) {
     pushDebug(`Should load: ${request.url}`);
+    if (typedPlatform === "ebay" && request.url.startsWith(EBAY_CALLBACK_PREFIX)) {
+      void handleEbayCallback(request.url);
+      return false;
+    }
     return true;
   }
 
@@ -353,6 +447,13 @@ export default function ConnectScreen() {
 
     if (typedPlatform === "grailed") {
       await tryCaptureGrailedConnection("navigation");
+      return;
+    }
+
+    if (typedPlatform === "ebay") {
+      if (url.startsWith(EBAY_CALLBACK_PREFIX)) {
+        await handleEbayCallback(url);
+      }
       return;
     }
 
@@ -392,32 +493,45 @@ export default function ConnectScreen() {
         </View>
       )}
 
-      <WebView
-        ref={webviewRef}
-        source={{ uri: sourceUri }}
-        style={styles.webview}
-        originWhitelist={["http://*", "https://*", "about:*"]}
-        userAgent={typedPlatform === "grailed" ? MOBILE_SAFARI_USER_AGENT : undefined}
-        mediaPlaybackRequiresUserAction
-        onLoadStart={() => setLoading(true)}
-        onLoadEnd={() => {
-          setLoading(false);
-          pushDebug(`Load end: ${currentUrl ?? sourceUri}`);
-          if (typedPlatform === "grailed") {
-            void tryCaptureGrailedConnection("load-end");
-          } else if (typedPlatform === "depop") {
-            void tryCaptureDepopTokenFromCookies("load-end");
-          }
-        }}
-        onMessage={handleMessage}
-        onNavigationStateChange={(nav) => {
-          void handleNavigationChange(nav);
-        }}
-        onOpenWindow={typedPlatform === "grailed" ? handleOpenWindow : undefined}
-        onShouldStartLoadWithRequest={handleShouldStartLoad}
-        sharedCookiesEnabled
-        javaScriptEnabled
-      />
+      {typedPlatform === "ebay" && !sourceUri && (
+        <View style={styles.helperPanel}>
+          <Text style={styles.helperTitle}>Missing eBay configuration</Text>
+          <Text style={styles.helperText}>
+            Set `EXPO_PUBLIC_EBAY_CLIENT_ID` and `EXPO_PUBLIC_EBAY_RU_NAME` to start the eBay connection flow.
+          </Text>
+        </View>
+      )}
+
+      {sourceUri ? (
+        <WebView
+          ref={webviewRef}
+          source={{ uri: sourceUri }}
+          style={styles.webview}
+          originWhitelist={["http://*", "https://*", "about:*", "vibelyster://*"]}
+          userAgent={typedPlatform === "grailed" ? MOBILE_SAFARI_USER_AGENT : undefined}
+          mediaPlaybackRequiresUserAction
+          onLoadStart={() => setLoading(true)}
+          onLoadEnd={() => {
+            setLoading(false);
+            pushDebug(`Load end: ${currentUrl ?? sourceUri}`);
+            if (typedPlatform === "grailed") {
+              void tryCaptureGrailedConnection("load-end");
+            } else if (typedPlatform === "depop") {
+              void tryCaptureDepopTokenFromCookies("load-end");
+            }
+          }}
+          onMessage={handleMessage}
+          onNavigationStateChange={(nav) => {
+            void handleNavigationChange(nav);
+          }}
+          onOpenWindow={typedPlatform === "grailed" ? handleOpenWindow : undefined}
+          onShouldStartLoadWithRequest={handleShouldStartLoad}
+          sharedCookiesEnabled
+          javaScriptEnabled
+        />
+      ) : (
+        <View style={styles.webview} />
+      )}
 
       {loading && (
         <View style={styles.loadingOverlay}>
@@ -453,7 +567,7 @@ export default function ConnectScreen() {
         <View style={styles.debugPanel}>
           <Text style={styles.debugTitle}>Debug</Text>
           <Text numberOfLines={2} style={styles.debugCurrentUrl}>
-            {currentUrl ?? config.url}
+            {(currentUrl ?? sourceUri) || "(no url)"}
           </Text>
           {debugSummary ? <Text style={styles.debugText}>{debugSummary}</Text> : null}
         </View>
