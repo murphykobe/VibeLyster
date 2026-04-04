@@ -365,7 +365,7 @@ const styles = StyleSheet.create({
   },
   activeTab: {
     backgroundColor: theme.colors.accentSoft,
-    borderColor: "#F8CBB7",
+    borderColor: theme.colors.accentSoft,
   },
   tabText: {
     color: theme.colors.textMuted,

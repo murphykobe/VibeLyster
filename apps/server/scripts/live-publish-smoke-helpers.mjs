@@ -1,24 +1,4 @@
-const GRAILED_DRAFT_CATEGORY_MAP = {
-  "tops.t_shirt": "tops.t_shirts",
-  "tops.shirt": "tops.shirts",
-  "tops.hoodie": "tops.sweatshirts_hoodies",
-  "tops.sweater": "tops.sweaters_knitwear",
-  "outerwear.jacket": "outerwear.light_jackets",
-  "outerwear.coat": "outerwear.heavy_coats",
-  "bottoms.pants": "bottoms.casual_pants",
-  "bottoms.jeans": "bottoms.denim",
-  "bottoms.shorts": "bottoms.shorts",
-  "footwear.sneakers": "footwear.lowtop_sneakers",
-  "footwear.boots": "footwear.boots",
-  "footwear.shoes": "footwear.formal_shoes",
-  "bags.bag": "accessories.bags_luggage",
-  "accessories.wallet": "accessories.wallets",
-  "accessories.belt": "accessories.belts",
-  "accessories.hat": "accessories.hats",
-  "accessories.watch": "accessories.jewelry_watches",
-  "tailoring.suit": "tailoring.suits",
-  "tailoring.blazer": "tailoring.blazers",
-};
+import GRAILED_DRAFT_CATEGORY_MAP from "../lib/marketplace/grailed-draft-category-map.json" with { type: "json" };
 
 function makeDraftPhoto(url, position) {
   return {

@@ -225,11 +225,9 @@ export async function publishToDepop(
     const condition = mapCondition(listing.condition);
 
     // 4. Create or reuse draft
-    const existingDraftId = mode === "live" && options.existingPlatformData?.remote_state === "draft"
+    const existingDraftId = options.existingPlatformData?.remote_state === "draft"
       ? Number(options.existingPlatformListingId)
-      : mode === "draft" && options.existingPlatformData?.remote_state === "draft"
-        ? Number(options.existingPlatformListingId)
-        : Number.NaN;
+      : Number.NaN;
 
     const draftId = Number.isFinite(existingDraftId)
       ? existingDraftId

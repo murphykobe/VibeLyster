@@ -16,36 +16,28 @@ import type {
   PublishOptions,
 } from "./types";
 import { mapCanonicalCategoryToGrailed } from "../categories";
+import GRAILED_DRAFT_CATEGORY_MAP from "./grailed-draft-category-map.json";
+
+const GRAILED_DRAFT_CATEGORY_LOOKUP = GRAILED_DRAFT_CATEGORY_MAP as Record<string, string>;
 
 const GRAILED_API = "https://www.grailed.com/api";
 const GRAILED_S3 = "https://grailed-media.s3.amazonaws.com/";
 const ALGOLIA_URL = "https://mnrwefss2q-dsn.algolia.net/1/indexes/Designer_production/query";
 const ALGOLIA_PARAMS =
   "x-algolia-agent=Algolia&x-algolia-application-id=MNRWEFSS2Q&x-algolia-api-key=bc9ee1c014521ccf312525a4ef324a16";
-const GRAILED_DRAFT_CATEGORY_MAP: Record<string, string> = {
-  "tops.t_shirt": "tops.t_shirts",
-  "tops.shirt": "tops.shirts",
-  "tops.hoodie": "tops.sweatshirts_hoodies",
-  "tops.sweater": "tops.sweaters_knitwear",
-  "outerwear.jacket": "outerwear.light_jackets",
-  "outerwear.coat": "outerwear.heavy_coats",
-  "bottoms.pants": "bottoms.casual_pants",
-  "bottoms.jeans": "bottoms.denim",
-  "bottoms.shorts": "bottoms.shorts",
-  "footwear.sneakers": "footwear.lowtop_sneakers",
-  "footwear.boots": "footwear.boots",
-  "footwear.shoes": "footwear.formal_shoes",
-  "bags.bag": "accessories.bags_luggage",
-  "accessories.wallet": "accessories.wallets",
-  "accessories.belt": "accessories.belts",
-  "accessories.hat": "accessories.hats",
-  "accessories.watch": "accessories.jewelry_watches",
-  "tailoring.suit": "tailoring.suits",
-  "tailoring.blazer": "tailoring.blazers",
-};
 
 export function mapCategory(category: string | null): string {
   return mapCanonicalCategoryToGrailed(category) ?? "tops.t_shirts";
+}
+
+function isRetryableGrailedError(err: unknown) {
+  if (err instanceof GrailedPublishStepError) {
+    return err.statusCode !== undefined ? err.statusCode >= 500 || err.statusCode === 429 : true;
+  }
+  if (err instanceof GrailedError) {
+    return err.statusCode >= 500 || err.statusCode === 429;
+  }
+  return true;
 }
 
 // ─── Condition mapping ────────────────────────────────────────────────────────
@@ -307,7 +299,7 @@ function mapDraftCondition(condition: string | null): string {
 
 function mapGrailedDraftCategory(category: string | null) {
   if (!category) return null;
-  return GRAILED_DRAFT_CATEGORY_MAP[category] ?? null;
+  return GRAILED_DRAFT_CATEGORY_LOOKUP[category] ?? null;
 }
 
 function buildDraftPhotos(urls: string[]) {
@@ -482,14 +474,7 @@ export async function publishToGrailed(
       }));
     }
     const error = err instanceof Error ? err.message : String(err);
-    const retryable =
-      err instanceof GrailedPublishStepError
-        ? err.statusCode !== undefined
-          ? err.statusCode >= 500 || err.statusCode === 429
-          : true
-        : err instanceof GrailedError
-          ? err.statusCode >= 500 || err.statusCode === 429
-      : true;
+    const retryable = isRetryableGrailedError(err);
     return { ok: false, error, retryable };
   }
 }
