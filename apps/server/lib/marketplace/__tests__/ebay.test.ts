@@ -73,17 +73,28 @@ describe("eBay marketplace helper", () => {
     );
   });
 
-  it("verifies an eBay connection from tokens and accepts an optional username", async () => {
+  it("verifies an eBay connection from tokens and returns platformUsername when present", async () => {
     const fetchMock = vi.fn().mockResolvedValue(
-      new Response(JSON.stringify({ userId: "ebay-user-123" }), { status: 200 })
+      new Response(JSON.stringify({ userId: "ebay-user-123", username: "ebay-handle" }), { status: 200 })
     );
     vi.stubGlobal("fetch", fetchMock);
 
     const result = await verifyEbayConnectionFromTokens({ accessToken: "access-123" });
 
-    expect(result).toEqual({ ok: true, ebayUserId: "ebay-user-123", platformUsername: undefined });
+    expect(result).toEqual({ ok: true, ebayUserId: "ebay-user-123", platformUsername: "ebay-handle" });
     expect(fetchMock).toHaveBeenCalledWith("https://apiz.ebay.com/commerce/identity/v1/user/", {
       headers: { Authorization: "Bearer access-123" },
     });
+  });
+
+  it("returns an error when getUser omits userId", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(new Response(JSON.stringify({ username: "ebay-handle" }), { status: 200 }))
+    );
+
+    const result = await verifyEbayConnectionFromTokens({ accessToken: "access-123" });
+
+    expect(result).toEqual({ ok: false, error: "eBay verification response missing userId" });
   });
 });
