@@ -5,42 +5,14 @@ import { encryptTokens } from "@/lib/crypto";
 import { ConnectBody, DisconnectQuery, parseBody } from "@/lib/validation";
 import { verifyGrailedConnection } from "@/lib/marketplace/grailed";
 import { verifyDepopConnection } from "@/lib/marketplace/depop";
+import {
+  EbayTokenExchangeError,
+  type EbayConnectionVerificationResult,
+  exchangeEbayAuthorizationCode,
+  verifyEbayConnectionFromTokens,
+} from "@/lib/marketplace/ebay";
 import type { ConnectionProbeResult, Platform } from "@/lib/marketplace/types";
 import { isMockMode } from "@/lib/mock";
-
-function pickString(value: unknown): string | undefined {
-  return typeof value === "string" && value.trim() ? value.trim() : undefined;
-}
-
-async function verifyEbayConnection(tokens: Record<string, unknown>): Promise<ConnectionProbeResult> {
-  const accessToken = pickString(tokens.access_token);
-  if (!accessToken) {
-    return { ok: false, error: "Invalid eBay tokens: access_token is required" };
-  }
-
-  const res = await fetch("https://api.ebay.com/commerce/identity/v1/user/", {
-    headers: {
-      Accept: "application/json",
-      Authorization: `Bearer ${accessToken}`,
-    },
-  });
-
-  if (!res.ok) {
-    if (res.status === 401 || res.status === 403) {
-      return { ok: false, error: "eBay authentication failed. Please reconnect your account." };
-    }
-    const detail = await res.text().catch(() => "");
-    return { ok: false, error: `eBay verification failed (${res.status}): ${detail || "upstream error"}` };
-  }
-
-  const data = await res.json().catch(() => ({})) as Record<string, unknown>;
-  const platformUsername =
-    pickString(data.username) ??
-    pickString(data.userId) ??
-    pickString(data.nickname) ??
-    pickString(data.email);
-  return { ok: true, platformUsername };
-}
 
 async function verifyConnection(
   platform: Platform,
@@ -52,7 +24,19 @@ async function verifyConnection(
   if (platform === "depop") {
     return verifyDepopConnection(tokens as { access_token: string });
   }
-  return verifyEbayConnection(tokens);
+  return { ok: false, error: "Unsupported platform" };
+}
+
+function buildMockEbayTokens() {
+  const expiresAt = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+  return {
+    access_token: "mock-ebay-access-token",
+    refresh_token: "mock-ebay-refresh-token",
+    token_type: "Bearer",
+    ebay_user_id: "mock-ebay-user-id",
+    expires_at: expiresAt,
+    refresh_token_expires_in: 7776000,
+  };
 }
 
 export async function POST(req: NextRequest) {
@@ -60,22 +44,85 @@ export async function POST(req: NextRequest) {
     const user = await requireAuth(req);
     const parsed = parseBody(ConnectBody, await req.json());
     if ("error" in parsed) return parsed.error;
-    const { platform, tokens, platformUsername, expiresAt } = parsed.data;
+    const { platform } = parsed.data;
 
-    const verification: ConnectionProbeResult = isMockMode()
-      ? { ok: true, platformUsername: platformUsername ?? `mock-${platform}-user` }
-      : await verifyConnection(platform, tokens as Record<string, unknown>);
-    if (!verification.ok) {
-      return Response.json({ error: verification.error }, { status: 400 });
+    let encryptedTokens: Record<string, unknown>;
+    let connectionPlatformUsername: string | null | undefined;
+    let connectionExpiresAt: string | undefined;
+    let verification: ConnectionProbeResult;
+    let ebayVerification: EbayConnectionVerificationResult | undefined;
+
+    if (platform === "ebay") {
+      if (isMockMode()) {
+        const mockTokens = buildMockEbayTokens();
+        encryptedTokens = encryptTokens(mockTokens);
+        ebayVerification = { ok: true, ebayUserId: "mock-ebay-user-id", platformUsername: "mock-ebay-user" };
+        connectionPlatformUsername = "mock-ebay-user";
+        connectionExpiresAt = mockTokens.expires_at;
+      } else {
+        const clientId = process.env.EBAY_CLIENT_ID;
+        const clientSecret = process.env.EBAY_CLIENT_SECRET;
+        if (!clientId || !clientSecret) {
+          throw new Error("EBAY_CLIENT_ID and EBAY_CLIENT_SECRET are required");
+        }
+
+        let exchange: Awaited<ReturnType<typeof exchangeEbayAuthorizationCode>>;
+        try {
+          exchange = await exchangeEbayAuthorizationCode({
+            clientId,
+            clientSecret,
+            ruName: parsed.data.ruName,
+            authorizationCode: parsed.data.authorizationCode,
+          });
+        } catch (err) {
+          if (err instanceof EbayTokenExchangeError && err.oauthError === "invalid_grant") {
+            return Response.json(
+              { error: "Invalid eBay authorization code. Please reconnect your account." },
+              { status: 400 },
+            );
+          }
+          throw err;
+        }
+        ebayVerification = await verifyEbayConnectionFromTokens({ accessToken: exchange.accessToken });
+        if (!ebayVerification.ok) {
+          return Response.json({ error: ebayVerification.error }, { status: 400 });
+        }
+
+        const expiresAtIso = new Date(Date.now() + exchange.expiresIn * 1000).toISOString();
+        encryptedTokens = encryptTokens({
+          access_token: exchange.accessToken,
+          refresh_token: exchange.refreshToken,
+          token_type: exchange.tokenType,
+          ebay_user_id: ebayVerification.ebayUserId,
+          expires_at: expiresAtIso,
+          ...(exchange.refreshTokenExpiresIn === undefined
+            ? {}
+            : { refresh_token_expires_in: exchange.refreshTokenExpiresIn }),
+        });
+        connectionPlatformUsername = ebayVerification.platformUsername ?? null;
+        connectionExpiresAt = expiresAtIso;
+      }
+    } else {
+      const { tokens, platformUsername, expiresAt } = parsed.data;
+      verification = isMockMode()
+        ? { ok: true, platformUsername: platformUsername ?? `mock-${platform}-user` }
+        : await verifyConnection(platform, tokens as Record<string, unknown>);
+      if (!verification.ok) {
+        return Response.json({ error: verification.error }, { status: 400 });
+      }
+
+      encryptedTokens = encryptTokens(tokens as Record<string, unknown>);
+      connectionPlatformUsername = platformUsername ?? verification.platformUsername;
+      connectionExpiresAt = expiresAt ?? verification.expiresAt;
     }
 
-    const encrypted = encryptTokens(tokens as Record<string, unknown>);
     const connection = await upsertConnection(
       user.id,
       platform,
-      encrypted,
-      platformUsername ?? verification.platformUsername,
-      expiresAt ?? verification.expiresAt
+      encryptedTokens,
+      connectionPlatformUsername,
+      connectionExpiresAt,
+      platform === "ebay" ? { replacePlatformUsername: true } : undefined
     );
 
     return Response.json(connection, { status: 201 });

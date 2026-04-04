@@ -2,10 +2,11 @@
 
 > Supersedes the original PRD architecture (Chrome extension + PWA).
 > Updated 2026-03-28 based on SellRaze competitive analysis and POC learnings.
+> Canonical product doc for the current MVP direction. Updated 2026-04-03 to reflect the current implementation and testing baseline.
 
 ## Overview
 
-VibeLyster is an AI-powered reselling automation app. Users take photos and record a voice description on their phone. AI transcribes the voice, analyzes images when needed, and generates optimized listings for Grailed, eBay, and Depop. Users review drafts, edit if needed, and publish to marketplaces — all from the app.
+VibeLyster is an AI-powered reselling automation app. Users take photos and record a voice description on their phone. AI transcribes the voice, analyzes images when needed, and generates optimized listings for the MVP marketplaces, Grailed and Depop. Users review drafts, edit if needed, and publish to marketplaces from the app. eBay remains post-MVP.
 
 ## What Changed from the Original PRD
 
@@ -17,7 +18,7 @@ VibeLyster is an AI-powered reselling automation app. Users take photos and reco
 | Backend | Unspecified | Next.js API routes on Vercel |
 | Database | Unspecified | Neon Postgres (Vercel Marketplace) |
 | App auth | Unspecified | Clerk (Apple + Google Sign in) |
-| AI pipeline | Single AI agent call | Whisper transcription → vision model (structured output) |
+| AI pipeline | Single AI agent call | Soniox transcription → completeness check → AI Gateway structured output |
 | Core UX | Linear capture flow | Dashboard home → draft-first workflow |
 
 **Why:** SellRaze (YC F25, 200K+ users) proved the in-app WebView login pattern works for all platforms. No browser extension needed. The Depop CLI POC proved magic link token capture works. The Grailed CLI POC proved direct API posting works with session cookies.
@@ -44,7 +45,7 @@ VibeLyster is an AI-powered reselling automation app. Users take photos and reco
 | Backend | Next.js (App Router) on Vercel |
 | Database | Neon Postgres (Vercel Marketplace) |
 | App Auth | Clerk (Apple + Google Sign in) |
-| AI | Vercel AI Gateway (Whisper + vision model) |
+| AI | Soniox (STT) + Vercel AI Gateway (MiniMax M2.7 structured output) |
 | Photo storage | Vercel Blob (up to 5TB, client uploads) |
 | Marketplace posting | Shared TypeScript module (ported from CLI POCs) |
 | TLS bypass (Depop) | impit (Rust-based Chrome TLS mimic) |
@@ -73,7 +74,7 @@ VibeLyster is an AI-powered reselling automation app. Users take photos and reco
 
 ### 4. AI Processing Pipeline
 
-1. **Voice → Text**: Whisper transcription via AI Gateway
+1. **Voice → Text**: Soniox transcription via server-side REST API
 2. **Completeness check**: Does the transcript contain enough info (brand, size, condition, price)?
    - If complete: text-only model call (cheaper, faster — no vision needed)
    - If incomplete: text + images sent to vision model
@@ -87,7 +88,7 @@ VibeLyster is an AI-powered reselling automation app. Users take photos and reco
    - Category (per-platform mapped)
    - Traits/attributes
 
-**Model selection:** Use a vision-capable model (Claude Sonnet 4.6 or GPT-5.4) via AI Gateway with structured output (JSON schema). AI Gateway provides failover, cost tracking, and provider-agnostic routing.
+**Model selection:** The current implementation uses MiniMax M2.7 via AI Gateway for both text-only and image-assisted structured output. AI Gateway still provides provider-agnostic routing, cost tracking, and a future path to swap in GPT-5.4- or Claude-class models if quality or reliability requires it.
 
 ### 5. Draft Review
 
@@ -235,7 +236,7 @@ The user edits the canonical listing. They never see platform-specific fields (t
 │                         │
 │  API Routes:            │
 │  POST /api/upload       │  Photo → Vercel Blob
-│  POST /api/generate     │  AI pipeline (Whisper + vision)
+│  POST /api/generate     │  AI pipeline (Soniox + AI Gateway)
 │  GET/POST/PUT/DELETE    │
 │    /api/listings/*      │  Draft/listing CRUD
 │  POST /api/publish      │  Single publish (sync)
@@ -246,10 +247,11 @@ The user edits the canonical listing. They never see platform-specific fields (t
 │  DELETE /api/connect    │  Disconnect marketplace
 │  GET  /api/connections  │  List connected platforms
 │                         │
+│  Soniox API:            │
+│  • Voice → text         │
 │  AI Gateway (OIDC):     │
-│  • Whisper (voice→text) │
-│  • Vision model         │
-│    (structured output)  │
+│  • MiniMax M2.7         │
+│    structured output    │
 └───────────┬─────────────┘
             │
     ┌───────┼───────┐
@@ -306,7 +308,7 @@ Unique constraint on (user_id, platform).
 | brand | text | |
 | category | text | |
 | photos | jsonb | Array of Vercel Blob URLs |
-| voice_transcript | text | Raw Whisper output |
+| voice_transcript | text | Raw Soniox transcript or provided transcript override |
 | ai_raw_response | jsonb | Full AI response for debugging |
 | status | text | 'deleted' only. For active listings, display status is derived at read time from platform_listings: 'draft' (no platform live/publishing), 'live' (any platform live), 'partially_live' (some live, some failed), 'sold' (any platform sold). Not stored — computed via SQL view or application logic. |
 | created_at | timestamp | |
@@ -338,13 +340,12 @@ Unique constraint on (listing_id, platform). Unique constraint on (idempotency_k
 | Neon Postgres (free tier) | Free |
 | Clerk (free tier, 10K MAUs) | Free |
 | AI Gateway | No markup (pass-through) |
-| Whisper transcription | ~$0.003 per voice note (30 sec) |
-| Vision model call | ~$0.03-0.08 per listing (with images) |
-| Text-only model call | ~$0.005-0.01 per listing (when voice is sufficient) |
+| Soniox transcription | Variable by provider plan; refresh before launch |
+| AI Gateway model call | Depends on model mix and image usage; track in gateway billing |
 | Apple Developer Program | $99/year |
 | Expo EAS Build (free tier) | Free (30 builds/month) |
 
-**At 100 listings/day:** ~$3-8/day for AI costs. Everything else free tier.
+**AI cost note:** refresh this estimate before launch. The app no longer uses Whisper, so transcription pricing should be recalculated against the active Soniox plan plus current AI Gateway model usage.
 
 ## Out of Scope (MVP)
 
@@ -363,7 +364,7 @@ Unique constraint on (listing_id, platform). Unique constraint on (idempotency_k
 ## Success Metrics
 
 - User can create a draft from photos + voice in under 30 seconds of active time
-- User can publish a draft to 3 platforms in under 10 seconds
+- User can publish a draft to all connected MVP marketplaces in under 10 seconds
 - AI-generated listings are accurate enough that user approves without editing >80% of the time
 - Batch workflow: 10 items drafted and published in under 10 minutes
 
@@ -398,7 +399,7 @@ Marketplace API calls (publish, delist) use a simple retry policy:
 
 ### Rate Limits
 
-- **AI Gateway:** inherits provider rate limits (Whisper, Claude, etc.) — no custom limits needed for MVP
+- **AI providers:** AI Gateway inherits model-provider limits for MiniMax, and Soniox has its own STT limits. No custom app-side throttling is planned for MVP beyond normal retry/backoff behavior.
 - **Marketplace APIs:** Grailed and Depop don't publish rate limit headers. For safety: max 1 publish per platform per 2 seconds during bulk publish (sequential per platform, parallel across platforms)
 - **App API:** no auth rate limiting for MVP (Clerk handles abuse via bot detection). Add per-user limits post-MVP if needed.
 
@@ -415,7 +416,7 @@ Track these metrics from day one to understand system health:
 
 **AI pipeline:**
 - `ai.generate_latency` — end-to-end time from voice+photos to draft
-- `ai.transcription_latency` — Whisper call time
+- `ai.transcription_latency` — Soniox call time
 - `ai.vision_skip_rate` — how often voice is "complete enough" to skip vision (cost optimization signal)
 - `ai.model_cost` — per-listing AI cost via AI Gateway cost tracking
 

@@ -11,7 +11,7 @@ See also:
 
 Run: `cd apps/server && npm test`
 
-### 1A. Marketplace Adapter Contract Tests (DONE — 42 tests)
+### 1A. Marketplace Adapter Contract Tests (DONE — 50 tests)
 
 Files: `apps/server/lib/marketplace/__tests__/{grailed,depop}.test.ts`
 
@@ -35,9 +35,9 @@ Files: `apps/server/lib/marketplace/__tests__/{grailed,depop}.test.ts`
 | 16 | `delist*` 5xx -> `retryable: true` | 500 response |
 | 17 | `checkStatus` live/sold/delisted | Status mapping |
 
-### 1B. API Route Integration Tests (TODO)
+### 1B. API Route Integration Tests (DONE — 43 tests)
 
-File: `apps/server/lib/marketplace/__tests__/api-routes.test.ts`
+File: `apps/server/app/api/__tests__/routes.test.ts`
 
 Uses `MOCK_MODE=1` so tests hit real Next.js route handlers with the in-memory mock DB — no Neon, Clerk, or external APIs required.
 
@@ -62,9 +62,13 @@ Uses `MOCK_MODE=1` so tests hit real Next.js route handlers with the in-memory m
 | 17 | Zod validation — missing title | POST | `/api/listings` | 400, `details` array |
 | 18 | Zod validation — bad platform | POST | `/api/publish` | 400, invalid platform |
 | 19 | Zod validation — price < 0 | POST | `/api/listings` | 400, price validation |
-| 20 | Auth — no header | GET | `/api/listings` | 401 (when not in mock mode) |
+| 20 | Publish draft mode | POST | `/api/publish` | Stores remote draft metadata without marking listing live |
+| 21 | Delist after publish | POST | `/api/delist` | Status moves to `delisted` |
+| 22 | Delete after delist | DELETE | `/api/listings/[id]` | Allowed once all platforms are delisted |
+| 23 | Upload route accepts HEIF/JPG aliases | POST | `/api/upload` | Supported image types normalize correctly |
+| 24 | Upload route rejects unsupported image types | POST | `/api/upload` | 400 validation error |
 
-### 1C. Crypto Round-Trip Tests (TODO)
+### 1C. Crypto Round-Trip Tests (DONE — 5 tests)
 
 File: `apps/server/lib/__tests__/crypto.test.ts`
 
@@ -72,8 +76,17 @@ File: `apps/server/lib/__tests__/crypto.test.ts`
 |---|------|--------|
 | 1 | Encrypt then decrypt returns original | JSON tokens survive round-trip |
 | 2 | Different plaintexts produce different ciphertexts | Non-deterministic (IV) |
-| 3 | Tampered ciphertext throws | Modified bytes -> decryption error |
-| 4 | Missing `TOKEN_ENCRYPTION_KEY` throws | Env var validation |
+| 3 | Encrypted envelope shape | Includes `iv`, `data`, and `tag` fields with expected lengths |
+| 4 | Tampered ciphertext throws | Modified bytes -> decryption error |
+| 5 | Tampered auth tag throws | Auth failure on modified tag |
+
+### 1D. Supporting Unit Tests (DONE — 12 tests)
+
+Files:
+- `apps/server/lib/__tests__/categories.test.ts`
+- `apps/server/scripts/__tests__/live-publish-smoke-helpers.test.ts`
+
+These cover canonical category normalization/mapping and draft-safe helper payload generation used by the live publish smoke tooling.
 
 ---
 
@@ -233,17 +246,18 @@ cd apps/mobile && EXPO_PUBLIC_MOCK_MODE=1 EXPO_PUBLIC_API_URL=http://<LAN_IP>:30
 
 | Tier | Scope | Count | Status |
 |------|-------|-------|--------|
-| 1A | Marketplace adapter contracts | 42 | **PASS** |
-| 1B | API route integration | 20 | TODO |
-| 1C | Crypto round-trip | 4 | TODO |
-| 2A-E | Browser E2E (Playwright) | 20 | TODO |
-| 3A-E | Manual device tests | 31 | TODO |
-| **Total** | | **117** | **42 pass, 75 remaining** |
+| 1A | Marketplace adapter contracts | 50 | **PASS** |
+| 1B | API route integration | 43 | **PASS** |
+| 1C | Crypto round-trip | 5 | **PASS** |
+| 1D | Supporting unit tests | 12 | **PASS** |
+| 2A-E | Browser E2E (Playwright, mock backend) | 23 planned scenarios | Not re-verified in this document |
+| 3A-E | Manual device tests | 40 planned scenarios | TODO |
+| **Verified automated server total** | | **110** | **PASS** |
 
 ### Automation Priority
 
-1. **1B (API routes)** — Highest value. Tests the full request/response cycle with Zod validation and mock DB. Can run in CI with zero external dependencies (`MOCK_MODE=1`).
-2. **1C (Crypto)** — Quick win. Pure functions, no setup.
-3. **2D (Publish/Delist browser flow)** — Validates the core money flow through the UI.
-4. **3D (Full happy path)** — Manual but critical. Run before each release.
-5. **3C (WebView auth)** — Must be manual (native WebView). Run when changing auth code.
+1. **2D / 2E (Publish/Delist + Bulk Publish browser flows)** — Highest remaining automated value for the money path outside server-only tests.
+2. **3C (WebView auth)** — Native-only and still the biggest product risk for real marketplace connections.
+3. **3A / 3B (Camera, picker, voice recording)** — Native capture remains lightly verified compared with server behavior.
+4. **3D (Full happy path)** — Manual release gate for end-to-end confidence on iOS.
+5. **3E (Error states)** — Important for reconnect, offline, and duplicate-publish handling once native happy paths are stable.

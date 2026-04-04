@@ -11,6 +11,7 @@ import { useToast } from "@/lib/toast";
 const PLATFORMS: { key: Platform; label: string }[] = [
   { key: "grailed", label: "Grailed" },
   { key: "depop", label: "Depop" },
+  { key: "ebay", label: "eBay" },
 ];
 
 const MOCK_MODE = ["1", "true", "yes", "on"].includes((process.env.EXPO_PUBLIC_MOCK_MODE ?? "").toLowerCase());

@@ -302,14 +302,19 @@ export async function upsertConnection(
   userId: string,
   platform: string,
   encryptedTokens: Record<string, unknown>,
-  platformUsername?: string,
-  expiresAt?: string
+  platformUsername?: string | null,
+  expiresAt?: string,
+  opts?: { replacePlatformUsername?: boolean }
 ) {
   const state = getState();
   const existing = state.connections.find((c) => c.user_id === userId && c.platform === platform);
   if (existing) {
     existing.encrypted_tokens = clone(encryptedTokens);
-    existing.platform_username = platformUsername ?? existing.platform_username;
+    if (opts?.replacePlatformUsername) {
+      existing.platform_username = platformUsername ?? null;
+    } else {
+      existing.platform_username = platformUsername ?? existing.platform_username;
+    }
     existing.connected_at = nowIso();
     existing.expires_at = expiresAt ?? null;
     return clone({

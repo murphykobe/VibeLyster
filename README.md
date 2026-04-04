@@ -88,6 +88,24 @@ AI:
 - `EXPO_PUBLIC_MOCK_MODE`
 - `EXPO_PUBLIC_MOCK_USER_ID`
 
+### eBay connection-only env vars
+
+#### `apps/server`
+
+- `EBAY_CLIENT_ID`
+- `EBAY_CLIENT_SECRET`
+
+#### `apps/mobile`
+
+- `EXPO_PUBLIC_EBAY_CLIENT_ID`
+- `EXPO_PUBLIC_EBAY_RU_NAME`
+
+Notes:
+- The mobile app uses `EXPO_PUBLIC_EBAY_CLIENT_ID` to build the eBay consent URL.
+- The mobile app uses `EXPO_PUBLIC_EBAY_RU_NAME` when completing the eBay connect flow.
+- The server uses `EBAY_CLIENT_ID` and `EBAY_CLIENT_SECRET` to exchange the eBay authorization code.
+- eBay publish is still out of scope; this release only adds connect and disconnect.
+
 ## Local development
 
 Install deps:

@@ -268,6 +268,19 @@ export async function saveConnection(params: {
   return apiRequest<MarketplaceConnection>("POST", "/api/connect", params);
 }
 
+export type SaveEbayConnectionInput = {
+  authorizationCode: string;
+  ruName: string;
+};
+
+export async function saveEbayConnection(input: SaveEbayConnectionInput) {
+  return apiRequest<MarketplaceConnection>("POST", "/api/connect", {
+    platform: "ebay",
+    authorizationCode: input.authorizationCode,
+    ruName: input.ruName,
+  });
+}
+
 export async function disconnectPlatform(platform: Platform) {
   let headers: Record<string, string>;
   if (MOCK_MODE) {
