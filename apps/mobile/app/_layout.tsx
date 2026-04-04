@@ -5,6 +5,7 @@ import { SafeAreaProvider } from "react-native-safe-area-context";
 import { useFonts, Inter_400Regular, Inter_600SemiBold } from "@expo-google-fonts/inter";
 import { SpaceGrotesk_700Bold } from "@expo-google-fonts/space-grotesk";
 import { setTokenProvider } from "@/lib/api";
+import { BackgroundTokenRefresh } from "@/lib/token-refresh";
 import { theme } from "@/lib/theme";
 
 const mockMode = ["1", "true", "yes", "on"].includes((process.env.EXPO_PUBLIC_MOCK_MODE ?? "").toLowerCase());
@@ -41,20 +42,23 @@ function AuthGuard() {
   }, [isLoaded, isSignedIn, segments, router]);
 
   return (
-    <Stack
-      screenOptions={{
-        headerShown: false,
-        animation: "slide_from_right",
-        animationDuration: 220,
-        contentStyle: { backgroundColor: theme.colors.bg },
-      }}
-    >
-      <Stack.Screen name="(tabs)" options={{ animation: "fade" }} />
-      <Stack.Screen name="capture" options={{ animation: "slide_from_bottom" }} />
-      <Stack.Screen name="listing/[id]" options={{ animation: "slide_from_right" }} />
-      <Stack.Screen name="connect/[platform]" options={{ animation: "slide_from_right" }} />
-      <Stack.Screen name="(auth)/sign-in" options={{ animation: "fade" }} />
-    </Stack>
+    <>
+      <Stack
+        screenOptions={{
+          headerShown: false,
+          animation: "slide_from_right",
+          animationDuration: 220,
+          contentStyle: { backgroundColor: theme.colors.bg },
+        }}
+      >
+        <Stack.Screen name="(tabs)" options={{ animation: "fade" }} />
+        <Stack.Screen name="capture" options={{ animation: "slide_from_bottom" }} />
+        <Stack.Screen name="listing/[id]" options={{ animation: "slide_from_right" }} />
+        <Stack.Screen name="connect/[platform]" options={{ animation: "slide_from_right" }} />
+        <Stack.Screen name="(auth)/sign-in" options={{ animation: "fade" }} />
+      </Stack>
+      {isSignedIn ? <BackgroundTokenRefresh /> : null}
+    </>
   );
 }
 
@@ -66,20 +70,23 @@ function MockLayout() {
   }, []);
 
   return (
-    <Stack
-      screenOptions={{
-        headerShown: false,
-        animation: "slide_from_right",
-        animationDuration: 220,
-        contentStyle: { backgroundColor: theme.colors.bg },
-      }}
-    >
-      <Stack.Screen name="(tabs)" options={{ animation: "fade" }} />
-      <Stack.Screen name="capture" options={{ animation: "slide_from_bottom" }} />
-      <Stack.Screen name="listing/[id]" options={{ animation: "slide_from_right" }} />
-      <Stack.Screen name="connect/[platform]" options={{ animation: "slide_from_right" }} />
-      <Stack.Screen name="(auth)/sign-in" options={{ animation: "fade" }} />
-    </Stack>
+    <>
+      <Stack
+        screenOptions={{
+          headerShown: false,
+          animation: "slide_from_right",
+          animationDuration: 220,
+          contentStyle: { backgroundColor: theme.colors.bg },
+        }}
+      >
+        <Stack.Screen name="(tabs)" options={{ animation: "fade" }} />
+        <Stack.Screen name="capture" options={{ animation: "slide_from_bottom" }} />
+        <Stack.Screen name="listing/[id]" options={{ animation: "slide_from_right" }} />
+        <Stack.Screen name="connect/[platform]" options={{ animation: "slide_from_right" }} />
+        <Stack.Screen name="(auth)/sign-in" options={{ animation: "fade" }} />
+      </Stack>
+      <BackgroundTokenRefresh />
+    </>
   );
 }
 
