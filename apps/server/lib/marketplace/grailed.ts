@@ -255,6 +255,22 @@ async function uploadPhotoFromUrl(
   return imageUrl;
 }
 
+async function uploadPhotos(
+  photoUrls: string[],
+  csrfToken: string,
+  cookies: string
+): Promise<string[]> {
+  const uploadedPhotoUrls: string[] = [];
+  for (const [i, url] of photoUrls.slice(0, 8).entries()) {
+    const imageUrl = await runGrailedPublishStep(
+      `uploading photo ${i + 1}`,
+      () => uploadPhotoFromUrl(url, csrfToken, cookies)
+    );
+    uploadedPhotoUrls.push(imageUrl);
+  }
+  return uploadedPhotoUrls;
+}
+
 // ─── User info ────────────────────────────────────────────────────────────────
 
 async function getMe(csrfToken: string, cookies: string) {
@@ -286,6 +302,17 @@ async function searchBrand(query: string, department = "menswear"): Promise<Grai
   const data = await res.json() as { hits?: Array<{ id: number; name: string; slug: string }> };
   if (!data.hits?.length) return null;
   return data.hits.map((hit) => ({ id: hit.id, name: hit.name, slug: hit.slug }));
+}
+
+async function resolveDesigners(brand: string | null | undefined): Promise<GrailedDesigner[]> {
+  if (!brand) return [];
+  try {
+    const matches = await searchBrand(brand, "menswear");
+    const match = matches?.[0];
+    return match ? [match] : [{ name: brand }];
+  } catch {
+    return [{ name: brand }];
+  }
 }
 
 function mapDraftCondition(condition: string | null): string {
@@ -383,26 +410,10 @@ export async function publishToGrailed(
 
   try {
     // 1. Upload photos
-    const uploadedPhotoUrls: string[] = [];
-    for (const [i, url] of listing.photos.slice(0, 8).entries()) {
-      const imageUrl = await runGrailedPublishStep(
-        `uploading photo ${i + 1}`,
-        () => uploadPhotoFromUrl(url, csrf_token, cookies)
-      );
-      uploadedPhotoUrls.push(imageUrl);
-    }
+    const uploadedPhotoUrls = await uploadPhotos(listing.photos, csrf_token, cookies);
 
     // 2. Resolve designer when possible
-    let designers: GrailedDesigner[] = [];
-    if (listing.brand) {
-      try {
-        const matches = await searchBrand(listing.brand, "menswear");
-        const match = matches?.[0];
-        designers = match ? [match] : [{ name: listing.brand }];
-      } catch {
-        designers = [{ name: listing.brand }];
-      }
-    }
+    const designers = await resolveDesigners(listing.brand);
 
     const draftPayloadResult = buildGrailedDraftPayload(
       listing,
