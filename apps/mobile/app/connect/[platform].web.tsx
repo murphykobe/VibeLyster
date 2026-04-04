@@ -2,7 +2,7 @@ import { useState } from "react";
 import { View, Text, StyleSheet, Pressable, ActivityIndicator, Alert } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { saveConnection } from "@/lib/api";
+import { saveConnection, saveEbayConnection } from "@/lib/api";
 import type { Platform } from "@/lib/types";
 import { theme } from "@/lib/theme";
 
@@ -11,6 +11,9 @@ const TITLES: Record<Platform, string> = {
   depop: "Connect Depop",
   ebay: "Connect eBay",
 };
+
+const MOCK_EBAY_AUTHORIZATION_CODE = "mock-ebay-authorization-code";
+const MOCK_EBAY_RU_NAME = "mock-ebay-ru-name";
 
 const MOCK_MODE = ["1", "true", "yes", "on"].includes((process.env.EXPO_PUBLIC_MOCK_MODE ?? "").toLowerCase());
 
@@ -33,16 +36,23 @@ export default function ConnectPlatformWebScreen() {
   async function connectMock() {
     setSaving(true);
     try {
-      const tokens =
-        typedPlatform === "grailed"
-          ? { csrf_token: "mock-csrf-token", cookies: "csrf_token=mock-csrf-token; _session=mock" }
-          : { access_token: "mock-access-token" };
+      if (typedPlatform === "ebay") {
+        await saveEbayConnection({
+          authorizationCode: MOCK_EBAY_AUTHORIZATION_CODE,
+          ruName: MOCK_EBAY_RU_NAME,
+        });
+      } else {
+        const tokens =
+          typedPlatform === "grailed"
+            ? { csrf_token: "mock-csrf-token", cookies: "csrf_token=mock-csrf-token; _session=mock" }
+            : { access_token: "mock-access-token" };
 
-      await saveConnection({
-        platform: typedPlatform,
-        tokens,
-        platformUsername: `mock-${typedPlatform}-user`,
-      });
+        await saveConnection({
+          platform: typedPlatform,
+          tokens,
+          platformUsername: `mock-${typedPlatform}-user`,
+        });
+      }
 
       Alert.alert("Connected", `${title} saved (mock).`, [{ text: "OK", onPress: () => router.back() }]);
     } catch (err) {
