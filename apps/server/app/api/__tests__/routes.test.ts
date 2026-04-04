@@ -417,7 +417,10 @@ async function loadRealEbayConnectRoute(options: {
     encryptTokens: (tokens: Record<string, unknown>) => tokens,
   }));
   if (options.ebayModule) {
-    vi.doMock("@/lib/marketplace/ebay", () => options.ebayModule);
+    const ebayModule = options.ebayModule;
+    vi.doMock("@/lib/marketplace/ebay", () => ebayModule);
+  } else {
+    vi.doUnmock("@/lib/marketplace/ebay");
   }
 
   const route = await import("../connect/route");

@@ -302,7 +302,7 @@ export async function upsertConnection(
   userId: string,
   platform: string,
   encryptedTokens: Record<string, unknown>,
-  platformUsername?: string,
+  platformUsername?: string | null,
   expiresAt?: string,
   opts?: { replacePlatformUsername?: boolean }
 ) {

@@ -7,6 +7,7 @@ import { verifyGrailedConnection } from "@/lib/marketplace/grailed";
 import { verifyDepopConnection } from "@/lib/marketplace/depop";
 import {
   EbayTokenExchangeError,
+  type EbayConnectionVerificationResult,
   exchangeEbayAuthorizationCode,
   verifyEbayConnectionFromTokens,
 } from "@/lib/marketplace/ebay";
@@ -49,12 +50,13 @@ export async function POST(req: NextRequest) {
     let connectionPlatformUsername: string | null | undefined;
     let connectionExpiresAt: string | undefined;
     let verification: ConnectionProbeResult;
+    let ebayVerification: EbayConnectionVerificationResult | undefined;
 
     if (platform === "ebay") {
       if (isMockMode()) {
         const mockTokens = buildMockEbayTokens();
         encryptedTokens = encryptTokens(mockTokens);
-        verification = { ok: true, platformUsername: "mock-ebay-user" };
+        ebayVerification = { ok: true, ebayUserId: "mock-ebay-user-id", platformUsername: "mock-ebay-user" };
         connectionPlatformUsername = "mock-ebay-user";
         connectionExpiresAt = mockTokens.expires_at;
       } else {
@@ -81,9 +83,9 @@ export async function POST(req: NextRequest) {
           }
           throw err;
         }
-        verification = await verifyEbayConnectionFromTokens({ accessToken: exchange.accessToken });
-        if (!verification.ok) {
-          return Response.json({ error: verification.error }, { status: 400 });
+        ebayVerification = await verifyEbayConnectionFromTokens({ accessToken: exchange.accessToken });
+        if (!ebayVerification.ok) {
+          return Response.json({ error: ebayVerification.error }, { status: 400 });
         }
 
         const expiresAtIso = new Date(Date.now() + exchange.expiresIn * 1000).toISOString();
@@ -91,13 +93,13 @@ export async function POST(req: NextRequest) {
           access_token: exchange.accessToken,
           refresh_token: exchange.refreshToken,
           token_type: exchange.tokenType,
-          ebay_user_id: verification.ebayUserId,
+          ebay_user_id: ebayVerification.ebayUserId,
           expires_at: expiresAtIso,
           ...(exchange.refreshTokenExpiresIn === undefined
             ? {}
             : { refresh_token_expires_in: exchange.refreshTokenExpiresIn }),
         });
-        connectionPlatformUsername = verification.platformUsername ?? null;
+        connectionPlatformUsername = ebayVerification.platformUsername ?? null;
         connectionExpiresAt = expiresAtIso;
       }
     } else {

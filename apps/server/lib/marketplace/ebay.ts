@@ -22,7 +22,7 @@ type EbayTokenResponse = {
   refresh_token_expires_in?: number | string;
 };
 
-type EbayConnectionVerificationResult =
+export type EbayConnectionVerificationResult =
   | { ok: true; ebayUserId: string; platformUsername?: string }
   | { ok: false; error: string };
 
