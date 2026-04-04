@@ -1,6 +1,9 @@
 import { expect, type APIRequestContext, type Page } from "@playwright/test";
 
 const API_URL = process.env.E2E_API_URL ?? (process.env.E2E_BASE_URL ? new URL(process.env.E2E_BASE_URL).origin : undefined);
+const EBAY_SANDBOX = ["1", "true", "yes", "on"].includes((process.env.E2E_EBAY_SANDBOX ?? "true").toLowerCase());
+const EBAY_AUTH_HOST = EBAY_SANDBOX ? "https://auth.sandbox.ebay.com" : "https://auth.ebay.com";
+const EBAY_SCOPE = "https://api.ebay.com/oauth/api_scope/commerce.identity.readonly";
 
 if (!API_URL) {
   throw new Error("E2E_BASE_URL is required for live helpers.");
@@ -102,4 +105,98 @@ export async function generateListingDraft(
   }
 
   return (await res.json()) as { listing: Listing };
+}
+
+function required(name: string) {
+  const value = process.env[name];
+  if (!value) throw new Error(`${name} is required for live eBay OAuth tests.`);
+  return value;
+}
+
+function buildEbayAuthorizeUrl(state: string) {
+  const clientId = process.env.E2E_EBAY_CLIENT_ID ?? process.env.EXPO_PUBLIC_EBAY_CLIENT_ID;
+  const ruName = process.env.E2E_EBAY_RU_NAME ?? process.env.EXPO_PUBLIC_EBAY_RU_NAME;
+  if (!clientId || !ruName) {
+    throw new Error("E2E_EBAY_CLIENT_ID/E2E_EBAY_RU_NAME (or EXPO_PUBLIC_* equivalents) are required.");
+  }
+
+  const url = new URL(`${EBAY_AUTH_HOST}/oauth2/authorize`);
+  url.searchParams.set("client_id", clientId);
+  url.searchParams.set("redirect_uri", ruName);
+  url.searchParams.set("response_type", "code");
+  url.searchParams.set("scope", EBAY_SCOPE);
+  url.searchParams.set("state", state);
+  return { url: url.toString(), ruName };
+}
+
+export async function captureEbaySandboxAuthorizationCode(page: Page) {
+  const providedAuthorizationCode = process.env.E2E_EBAY_AUTH_CODE;
+  const { ruName } = buildEbayAuthorizeUrl(`pw-ebay-${Date.now()}`);
+  if (providedAuthorizationCode) {
+    return { authorizationCode: providedAuthorizationCode, ruName };
+  }
+
+  const username = required("E2E_EBAY_SANDBOX_USERNAME");
+  const password = required("E2E_EBAY_SANDBOX_PASSWORD");
+  const state = `pw-ebay-${Date.now()}`;
+  const { url } = buildEbayAuthorizeUrl(state);
+
+  const callbackResponsePromise = page.waitForResponse(
+    (response) => response.url().includes("/api/ebay/callback") && response.request().method() === "GET",
+    { timeout: 60_000 },
+  );
+
+  await page.goto(url);
+  await page.getByLabel(/email or username/i).fill(username);
+  await page.getByRole("button", { name: /continue/i }).click();
+  await page.getByLabel(/password/i).fill(password);
+  await page.getByRole("button", { name: /^sign in$/i }).click();
+
+  const callbackResponse = await callbackResponsePromise;
+  const location = callbackResponse.headers()["location"];
+  expect(location).toBeTruthy();
+
+  const deepLink = new URL(location as string);
+  const authorizationCode = deepLink.searchParams.get("code");
+  expect(authorizationCode).toBeTruthy();
+  expect(deepLink.searchParams.get("state")).toBe(state);
+
+  return { authorizationCode: authorizationCode as string, ruName };
+}
+
+export async function connectEbayThroughApi(
+  page: Page,
+  request: APIRequestContext,
+  input: { authorizationCode: string; ruName: string },
+) {
+  const token = await getClerkToken(page);
+  return api<{
+    platform: "ebay";
+    platform_username: string | null;
+    expires_at: string | null;
+  }>(request, token, "POST", "/api/connect", {
+    platform: "ebay",
+    authorizationCode: input.authorizationCode,
+    ruName: input.ruName,
+  });
+}
+
+export async function getConnectionsViaApi(page: Page, request: APIRequestContext) {
+  const token = await getClerkToken(page);
+  return api<Array<{ platform: string; platform_username: string | null }>>(request, token, "GET", "/api/connections");
+}
+
+export async function disconnectPlatformViaApi(page: Page, request: APIRequestContext, platform: "ebay") {
+  const token = await getClerkToken(page);
+
+  const response = await request.fetch(`${API_URL}/api/connect?platform=${platform}`, {
+    method: "DELETE",
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+  });
+
+  if (!response.ok() && response.status() !== 404) {
+    throw new Error(`DELETE /api/connect failed: ${response.status()} ${await response.text()}`);
+  }
 }
