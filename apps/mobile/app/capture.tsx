@@ -16,12 +16,14 @@ import { Ionicons } from "@expo/vector-icons";
 import VoiceRecorder from "@/components/VoiceRecorder";
 import { uploadPhoto, generateListing } from "@/lib/api";
 import { theme } from "@/lib/theme";
+import { useToast } from "@/lib/toast";
 
 type State = "idle" | "uploading" | "generating";
 type SelectedPhoto = Pick<ImagePicker.ImagePickerAsset, "uri" | "fileName" | "mimeType" | "file">;
 
 export default function CaptureScreen() {
   const router = useRouter();
+  const { showToast } = useToast();
   const [photos, setPhotos] = useState<SelectedPhoto[]>([]);
   const [audioUri, setAudioUri] = useState<string | null>(null);
   const [state, setState] = useState<State>("idle");
@@ -58,7 +60,7 @@ export default function CaptureScreen() {
       }
     } catch (err) {
       console.error("pickPhotos", err);
-      Alert.alert("Photo selection failed", "Please try a different image.");
+      showToast("Photo selection failed. Try a different image.");
     }
   }
 
@@ -76,7 +78,7 @@ export default function CaptureScreen() {
       }
     } catch (err) {
       console.error("takePhoto", err);
-      Alert.alert("Camera failed", "Please try taking the photo again.");
+      showToast("Camera failed. Please try again.");
     }
   }
 
@@ -118,7 +120,7 @@ export default function CaptureScreen() {
       setState("idle");
     } catch (err) {
       console.error(err);
-      Alert.alert("Generation failed", err instanceof Error ? err.message : "Try again.");
+      showToast(err instanceof Error ? err.message : "Generation failed. Try again.");
       setState("idle");
     }
   }
@@ -373,7 +375,7 @@ const styles = StyleSheet.create({
   statusBox: {
     borderRadius: theme.radius.md,
     borderWidth: 1,
-    borderColor: "#F8CBB7",
+    borderColor: theme.colors.accent,
     backgroundColor: theme.colors.accentSoft,
     flexDirection: "row",
     alignItems: "center",

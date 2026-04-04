@@ -6,6 +6,7 @@ import { getConnections, disconnectPlatform } from "@/lib/api";
 import type { MarketplaceConnection, Platform } from "@/lib/types";
 import { getPublishMode, setPublishMode, type PublishMode } from "@/lib/publish-mode";
 import { theme } from "@/lib/theme";
+import { useToast } from "@/lib/toast";
 
 const PLATFORMS: { key: Platform; label: string }[] = [
   { key: "grailed", label: "Grailed" },
@@ -50,6 +51,7 @@ function useSessionState() {
 export default function SettingsScreen() {
   const { signOut, email, canSignOut } = useSessionState();
   const router = useRouter();
+  const { showToast } = useToast();
   const [connections, setConnections] = useState<MarketplaceConnection[]>([]);
   const [loading, setLoading] = useState(true);
   const [disconnecting, setDisconnecting] = useState<Platform | null>(null);
@@ -61,18 +63,20 @@ export default function SettingsScreen() {
       setConnections(data);
     } catch (err) {
       console.error(err);
+      showToast("Failed to load connections.");
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [showToast]);
 
   const loadPublishMode = useCallback(async () => {
     try {
       setPublishModeState(await getPublishMode());
     } catch (err) {
       console.error(err);
+      showToast("Failed to load publish preference.");
     }
-  }, []);
+  }, [showToast]);
 
   useFocusEffect(
     useCallback(() => {
@@ -102,7 +106,7 @@ export default function SettingsScreen() {
       await disconnectPlatform(platform);
       await loadConnections();
     } catch (err) {
-      Alert.alert("Error", "Failed to disconnect. Try again.");
+      showToast("Failed to disconnect. Try again.");
     } finally {
       setDisconnecting(null);
     }
@@ -114,7 +118,7 @@ export default function SettingsScreen() {
       setPublishModeState(nextMode);
     } catch (err) {
       console.error(err);
-      Alert.alert("Error", "Failed to update publish preference. Try again.");
+      showToast("Failed to update publish preference.");
     }
   }
 

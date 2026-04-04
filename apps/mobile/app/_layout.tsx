@@ -5,6 +5,7 @@ import { SafeAreaProvider } from "react-native-safe-area-context";
 import { useFonts, Inter_400Regular, Inter_600SemiBold } from "@expo-google-fonts/inter";
 import { SpaceGrotesk_700Bold } from "@expo-google-fonts/space-grotesk";
 import { setTokenProvider } from "@/lib/api";
+import { ToastProvider } from "@/lib/toast";
 import { theme } from "@/lib/theme";
 
 const mockMode = ["1", "true", "yes", "on"].includes((process.env.EXPO_PUBLIC_MOCK_MODE ?? "").toLowerCase());
@@ -95,7 +96,9 @@ export default function RootLayout() {
   if (mockMode) {
     return (
       <SafeAreaProvider>
-        <MockLayout />
+        <ToastProvider>
+          <MockLayout />
+        </ToastProvider>
       </SafeAreaProvider>
     );
   }
@@ -110,7 +113,9 @@ export default function RootLayout() {
   return (
     <SafeAreaProvider>
       <ClerkProvider publishableKey={publishableKey} tokenCache={tokenCache}>
-        <AuthGuard />
+        <ToastProvider>
+          <AuthGuard />
+        </ToastProvider>
       </ClerkProvider>
     </SafeAreaProvider>
   );

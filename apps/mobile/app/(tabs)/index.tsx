@@ -17,6 +17,7 @@ import { getPublishMode, type PublishMode } from "@/lib/publish-mode";
 import { getDisplayStatus } from "@/lib/types";
 import ListingCard from "@/components/ListingCard";
 import { theme } from "@/lib/theme";
+import { useToast } from "@/lib/toast";
 import { useFadeSlideIn, usePressScale } from "@/lib/motion";
 
 type FilterTab = "all" | "draft" | "live" | "sold";
@@ -25,6 +26,7 @@ const FILTER_TABS: FilterTab[] = ["all", "draft", "live", "sold"];
 
 export default function DashboardScreen() {
   const router = useRouter();
+  const { showToast } = useToast();
   const [listings, setListings] = useState<Listing[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -45,19 +47,21 @@ export default function DashboardScreen() {
       setListings(data);
     } catch (err) {
       console.error(err);
+      showToast("Failed to load listings. Pull to retry.");
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
-  }, []);
+  }, [showToast]);
 
   const loadPublishMode = useCallback(async () => {
     try {
       setPublishMode(await getPublishMode());
     } catch (err) {
       console.error(err);
+      showToast("Failed to load publish preference.");
     }
-  }, []);
+  }, [showToast]);
 
   useFocusEffect(
     useCallback(() => {
@@ -115,6 +119,7 @@ export default function DashboardScreen() {
       await loadListings();
     } catch (err) {
       console.error(err);
+      showToast("Bulk publish failed. Try again.");
     } finally {
       setPublishing(false);
     }
