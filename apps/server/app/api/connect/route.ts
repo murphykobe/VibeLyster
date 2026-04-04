@@ -73,7 +73,7 @@ export async function POST(req: NextRequest) {
             authorizationCode: parsed.data.authorizationCode,
           });
         } catch (err) {
-          if (err instanceof EbayTokenExchangeError && err.statusCode >= 400 && err.statusCode < 500) {
+          if (err instanceof EbayTokenExchangeError && err.statusCode === 400) {
             return Response.json(
               { error: "Invalid eBay authorization code. Please reconnect your account." },
               { status: 400 },
@@ -93,7 +93,9 @@ export async function POST(req: NextRequest) {
           token_type: exchange.tokenType,
           ebay_user_id: verification.ebayUserId,
           expires_at: expiresAtIso,
-          refresh_token_expires_in: exchange.refreshTokenExpiresIn,
+          ...(exchange.refreshTokenExpiresIn === undefined
+            ? {}
+            : { refresh_token_expires_in: exchange.refreshTokenExpiresIn }),
         });
         connectionPlatformUsername = verification.platformUsername ?? null;
         connectionExpiresAt = expiresAtIso;

@@ -108,6 +108,21 @@ describe("eBay marketplace helper", () => {
     });
   });
 
+  it("tags 401 token exchange failures as app misconfiguration", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("unauthorized", { status: 401 })));
+
+    await expect(
+      exchangeEbayAuthorizationCode({
+        clientId: "client-123",
+        clientSecret: "secret-456",
+        ruName: "vibelyster-app-EBAY-US",
+        authorizationCode: "code-789",
+      })
+    ).rejects.toMatchObject({
+      statusCode: 401,
+    });
+  });
+
   it("tags network failures as retryable server errors", async () => {
     vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("network down")));
 
@@ -121,6 +136,32 @@ describe("eBay marketplace helper", () => {
     ).rejects.toMatchObject({
       statusCode: 0,
     });
+  });
+
+  it("preserves missing refresh_token_expires_in as undefined", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            access_token: "access-123",
+            refresh_token: "refresh-456",
+            token_type: "User Token",
+            expires_in: 7200,
+          }),
+          { status: 200 }
+        )
+      )
+    );
+
+    const result = await exchangeEbayAuthorizationCode({
+      clientId: "client-123",
+      clientSecret: "secret-456",
+      ruName: "vibelyster-app-EBAY-US",
+      authorizationCode: "code-789",
+    });
+
+    expect(result.refreshTokenExpiresIn).toBeUndefined();
   });
 
   it("verifies an eBay connection from tokens and returns platformUsername when present", async () => {

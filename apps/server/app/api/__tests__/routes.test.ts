@@ -5,7 +5,7 @@
  * so no Neon, Clerk, or marketplace APIs are needed. The in-memory mock DB
  * is reset before each test via vitest.setup.ts.
  */
-import { describe, it, expect, vi } from "vitest";
+import { afterEach, describe, it, expect, vi } from "vitest";
 import { NextRequest } from "next/server";
 import { GET as listListings, POST as createListing } from "../listings/route";
 import { GET as getListing, PUT as updateListing, DELETE as deleteListing } from "../listings/[id]/route";
@@ -66,6 +66,12 @@ const VALID_LISTING = {
   category: "sneakers",
   photos: ["https://blob.vercel-storage.com/photo.jpg"],
 };
+
+afterEach(() => {
+  vi.restoreAllMocks();
+  vi.unstubAllGlobals();
+  vi.unstubAllEnvs();
+});
 
 // ─── Listings CRUD ────────────────────────────────────────────────────────────
 
@@ -430,7 +436,6 @@ describe("POST /api/connect real eBay behavior", () => {
         platform: "ebay",
         authorizationCode: "bad-code",
         ruName: "vibelyster-accept",
-        state: "state-1",
       },
     }));
 
@@ -439,7 +444,28 @@ describe("POST /api/connect real eBay behavior", () => {
     expect(data.error).toMatch(/authorization code|invalid/i);
   });
 
+  it("returns 500 for eBay auth misconfiguration failures", async () => {
+    vi.stubEnv("EBAY_CLIENT_ID", "client-123");
+    vi.stubEnv("EBAY_CLIENT_SECRET", "secret-456");
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("forbidden", { status: 403 })));
+
+    const { POST } = await loadRealEbayConnectRoute();
+    const res = await POST(req("POST", "/api/connect", {
+      body: {
+        platform: "ebay",
+        authorizationCode: "bad-code",
+        ruName: "vibelyster-accept",
+      },
+    }));
+
+    expect(res.status).toBe(500);
+    const data = await res.json();
+    expect(data.error).toBe("Internal server error");
+  });
+
   it("clears a stale eBay username when verification returns none", async () => {
+    vi.stubEnv("EBAY_CLIENT_ID", "client-123");
+    vi.stubEnv("EBAY_CLIENT_SECRET", "secret-456");
     const exchange = vi.fn().mockResolvedValue({
       accessToken: "access-1",
       refreshToken: "refresh-1",
@@ -463,7 +489,6 @@ describe("POST /api/connect real eBay behavior", () => {
         platform: "ebay",
         authorizationCode: "code-1",
         ruName: "vibelyster-accept",
-        state: "state-1",
       },
     }));
     expect(first.status).toBe(201);
@@ -473,13 +498,44 @@ describe("POST /api/connect real eBay behavior", () => {
         platform: "ebay",
         authorizationCode: "code-2",
         ruName: "vibelyster-accept",
-        state: "state-2",
       },
     }));
 
     expect(second.status).toBe(201);
     const data = await second.json();
     expect(data.platform_username).toBeNull();
+  });
+
+  it("returns 400 when eBay verification fails", async () => {
+    vi.stubEnv("EBAY_CLIENT_ID", "client-123");
+    vi.stubEnv("EBAY_CLIENT_SECRET", "secret-456");
+    const exchange = vi.fn().mockResolvedValue({
+      accessToken: "access-1",
+      refreshToken: "refresh-1",
+      tokenType: "Bearer",
+      expiresIn: 3600,
+      refreshTokenExpiresIn: 86400,
+    });
+    const verify = vi.fn().mockResolvedValue({ ok: false, error: "eBay verification failed with status 401" });
+
+    const { POST } = await loadRealEbayConnectRoute({
+      ebayModule: {
+        exchangeEbayAuthorizationCode: exchange,
+        verifyEbayConnectionFromTokens: verify,
+      },
+    });
+
+    const res = await POST(req("POST", "/api/connect", {
+      body: {
+        platform: "ebay",
+        authorizationCode: "code-1",
+        ruName: "vibelyster-accept",
+      },
+    }));
+
+    expect(res.status).toBe(400);
+    const data = await res.json();
+    expect(data.error).toMatch(/verification failed/i);
   });
 });
 

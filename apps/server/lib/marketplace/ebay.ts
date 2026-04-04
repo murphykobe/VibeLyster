@@ -85,7 +85,7 @@ export async function exchangeEbayAuthorizationCode({
   refreshToken: string;
   tokenType: string;
   expiresIn: number;
-  refreshTokenExpiresIn: number;
+  refreshTokenExpiresIn?: number;
 }> {
   let response: Response;
   try {
@@ -120,7 +120,7 @@ export async function exchangeEbayAuthorizationCode({
     refreshToken: requireString(data.refresh_token, "refresh_token"),
     tokenType: requireString(data.token_type, "token_type"),
     expiresIn: requireNumber(data.expires_in, "expires_in"),
-    refreshTokenExpiresIn: toNumber(data.refresh_token_expires_in) ?? 0,
+    refreshTokenExpiresIn: toNumber(data.refresh_token_expires_in),
   };
 }
 
