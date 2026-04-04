@@ -5,7 +5,7 @@
  * Depop: captures access_token either from redirect URL params or native cookie store.
  */
 
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { View, Text, StyleSheet, Pressable, ActivityIndicator, Alert, Platform as RNPlatform, TextInput } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -180,6 +180,12 @@ export default function ConnectScreen() {
     return debugEvents.map((event) => event.message).join("\n");
   }, [debugEvents, showDebug]);
 
+  useEffect(() => {
+    if (!sourceUri) {
+      setLoading(false);
+    }
+  }, [sourceUri]);
+
   if (!config) {
     return (
       <View style={styles.container}>
@@ -278,6 +284,7 @@ export default function ConnectScreen() {
 
   async function handleEbayCallback(url: string) {
     if (saveAttemptedRef.current) return;
+    setLoading(false);
 
     let parsed: URL;
     try {
