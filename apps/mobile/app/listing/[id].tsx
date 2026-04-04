@@ -19,6 +19,7 @@ import { getPublishMode, type PublishMode } from "@/lib/publish-mode";
 import PhotoCarousel from "@/components/PhotoCarousel";
 import PlatformRow from "@/components/PlatformRow";
 import { theme } from "@/lib/theme";
+import { useToast } from "@/lib/toast";
 
 const CONDITIONS = ["new", "gently_used", "used", "heavily_used"];
 const MVP_PLATFORMS: Platform[] = ["grailed", "depop"];
@@ -59,6 +60,7 @@ function getMergedPlatformRows(listing: Listing): PlatformListing[] {
 export default function ListingDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
+  const { showToast } = useToast();
   const [listing, setListing] = useState<Listing | null>(null);
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
@@ -106,10 +108,11 @@ export default function ListingDetailScreen() {
       hydrateListing(data);
     } catch (err) {
       console.error(err);
+      showToast("Failed to load listing.");
     } finally {
       setLoading(false);
     }
-  }, [id]);
+  }, [id, showToast]);
 
   const loadConnections = useCallback(async () => {
     try {
@@ -117,8 +120,9 @@ export default function ListingDetailScreen() {
       setConnections(data);
     } catch (err) {
       console.error(err);
+      showToast("Failed to load connections.");
     }
-  }, []);
+  }, [showToast]);
 
   const loadPublishMode = useCallback(async () => {
     try {
@@ -178,7 +182,7 @@ export default function ListingDetailScreen() {
       });
       await load();
     } catch {
-      Alert.alert("Error", "Failed to save. Try again.");
+      showToast("Failed to save. Try again.");
     } finally {
       setSaving(false);
     }
@@ -192,6 +196,7 @@ export default function ListingDetailScreen() {
       await load();
     } catch (err) {
       console.error(err);
+      showToast("Sync failed.");
     } finally {
       setSyncing(false);
     }
@@ -207,13 +212,13 @@ export default function ListingDetailScreen() {
         remoteState?: "live" | "draft";
       };
       if (!platformResult.ok) {
-        Alert.alert("Publish failed", platformResult.error ?? "Unknown error");
+        showToast(platformResult.error ?? "Publish failed.");
       } else if (platformResult.remoteState === "draft") {
-        Alert.alert("Draft saved", `${platform} draft created. Switch back to Live mode whenever you want to publish it.`);
+        showToast(`${platform} draft created.`, "success");
       }
       await load();
     } catch {
-      Alert.alert("Error", "Publish failed. Try again.");
+      showToast("Publish failed. Try again.");
     } finally {
       setPublishing(null);
     }
@@ -231,7 +236,7 @@ export default function ListingDetailScreen() {
       await publishListing(id, connectedPlatforms, publishMode);
       await load();
     } catch {
-      Alert.alert("Error", "Publish failed. Try again.");
+      showToast("Publish failed. Try again.");
     } finally {
       setPublishingAll(false);
     }
@@ -250,7 +255,7 @@ export default function ListingDetailScreen() {
       }
       await load();
     } catch {
-      Alert.alert("Error", "Delist all failed.");
+      showToast("Delist all failed.");
     }
   }
 
@@ -267,7 +272,7 @@ export default function ListingDetailScreen() {
       await delistListing(id, platform);
       await load();
     } catch {
-      Alert.alert("Error", "Delist failed.");
+      showToast("Delist failed.");
     } finally {
       setDelisting(null);
     }
@@ -286,7 +291,7 @@ export default function ListingDetailScreen() {
       router.back();
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "Unknown error";
-      Alert.alert("Error", msg.includes("Delist") ? msg : "Delete failed.");
+      showToast(msg.includes("Delist") ? msg : "Delete failed.");
     }
   }
 
