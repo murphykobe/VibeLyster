@@ -42,22 +42,19 @@ export async function POST(req: NextRequest) {
     const user = await requireAuth(req);
     const parsed = parseBody(ConnectBody, await req.json());
     if ("error" in parsed) return parsed.error;
-    const { platform, platformUsername, expiresAt } = parsed.data;
+    const { platform } = parsed.data;
 
     let encryptedTokens: Record<string, unknown>;
-    let connectionPlatformUsername = platformUsername;
-    let connectionExpiresAt = expiresAt;
+    let connectionPlatformUsername: string | undefined;
+    let connectionExpiresAt: string | undefined;
     let verification: ConnectionProbeResult;
 
     if (platform === "ebay") {
       if (isMockMode()) {
         const mockTokens = buildMockEbayTokens();
         encryptedTokens = encryptTokens(mockTokens);
-        verification = {
-          ok: true,
-          platformUsername: platformUsername ?? "mock-ebay-user",
-        };
-        connectionPlatformUsername = verification.platformUsername;
+        verification = { ok: true, platformUsername: "mock-ebay-user" };
+        connectionPlatformUsername = "mock-ebay-user";
         connectionExpiresAt = mockTokens.expires_at;
       } else {
         const clientId = process.env.EBAY_CLIENT_ID;
@@ -90,14 +87,15 @@ export async function POST(req: NextRequest) {
         connectionExpiresAt = expiresAtIso;
       }
     } else {
+      const { tokens, platformUsername, expiresAt } = parsed.data;
       verification = isMockMode()
         ? { ok: true, platformUsername: platformUsername ?? `mock-${platform}-user` }
-        : await verifyConnection(platform, parsed.data.tokens as Record<string, unknown>);
+        : await verifyConnection(platform, tokens as Record<string, unknown>);
       if (!verification.ok) {
         return Response.json({ error: verification.error }, { status: 400 });
       }
 
-      encryptedTokens = encryptTokens(parsed.data.tokens as Record<string, unknown>);
+      encryptedTokens = encryptTokens(tokens as Record<string, unknown>);
       connectionPlatformUsername = platformUsername ?? verification.platformUsername;
       connectionExpiresAt = expiresAt ?? verification.expiresAt;
     }

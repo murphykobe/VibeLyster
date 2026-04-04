@@ -69,8 +69,6 @@ const ConnectEbayBody = z.object({
   authorizationCode: z.string().min(1, "authorizationCode is required"),
   ruName: z.string().min(1, "ruName is required"),
   state: z.string().min(1, "state is required"),
-  platformUsername: z.string().max(100).optional(),
-  expiresAt: z.string().datetime().optional(),
 });
 
 export const ConnectBody = z.discriminatedUnion("platform", [
