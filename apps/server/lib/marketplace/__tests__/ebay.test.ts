@@ -93,6 +93,36 @@ describe("eBay marketplace helper", () => {
     ).rejects.toThrow("eBay token exchange response missing refresh_token");
   });
 
+  it("tags 400 token exchange failures as user-correctable", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({ error: "invalid_grant" }), { status: 400 })));
+
+    await expect(
+      exchangeEbayAuthorizationCode({
+        clientId: "client-123",
+        clientSecret: "secret-456",
+        ruName: "vibelyster-app-EBAY-US",
+        authorizationCode: "code-789",
+      })
+    ).rejects.toMatchObject({
+      statusCode: 400,
+    });
+  });
+
+  it("tags network failures as retryable server errors", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("network down")));
+
+    await expect(
+      exchangeEbayAuthorizationCode({
+        clientId: "client-123",
+        clientSecret: "secret-456",
+        ruName: "vibelyster-app-EBAY-US",
+        authorizationCode: "code-789",
+      })
+    ).rejects.toMatchObject({
+      statusCode: 0,
+    });
+  });
+
   it("verifies an eBay connection from tokens and returns platformUsername when present", async () => {
     const fetchMock = vi.fn().mockResolvedValue(
       new Response(JSON.stringify({ userId: "ebay-user-123", username: "ebay-handle" }), { status: 200 })

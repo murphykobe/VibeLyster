@@ -275,9 +275,23 @@ export async function upsertConnection(
   platform: string,
   encryptedTokens: Record<string, unknown>,
   platformUsername?: string,
-  expiresAt?: string
+  expiresAt?: string,
+  opts?: { replacePlatformUsername?: boolean }
 ) {
-  if (MOCK_MODE) return mockDb.upsertConnection(userId, platform, encryptedTokens, platformUsername, expiresAt);
+  if (MOCK_MODE) return mockDb.upsertConnection(userId, platform, encryptedTokens, platformUsername, expiresAt, opts);
+  if (opts?.replacePlatformUsername) {
+    const rows = await sql`
+      INSERT INTO marketplace_connections (user_id, platform, encrypted_tokens, platform_username, expires_at)
+      VALUES (${userId}, ${platform}, ${JSON.stringify(encryptedTokens)}, ${platformUsername ?? null}, ${expiresAt ?? null})
+      ON CONFLICT (user_id, platform) DO UPDATE SET
+        encrypted_tokens = EXCLUDED.encrypted_tokens,
+        platform_username = EXCLUDED.platform_username,
+        connected_at = now(),
+        expires_at = EXCLUDED.expires_at
+      RETURNING id, user_id, platform, platform_username, connected_at, expires_at
+    `;
+    return rows[0] as Omit<MarketplaceConnectionRow, "encrypted_tokens">;
+  }
   const rows = await sql`
     INSERT INTO marketplace_connections (user_id, platform, encrypted_tokens, platform_username, expires_at)
     VALUES (${userId}, ${platform}, ${JSON.stringify(encryptedTokens)}, ${platformUsername ?? null}, ${expiresAt ?? null})

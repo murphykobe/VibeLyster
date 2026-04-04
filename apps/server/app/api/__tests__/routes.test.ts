@@ -5,7 +5,7 @@
  * so no Neon, Clerk, or marketplace APIs are needed. The in-memory mock DB
  * is reset before each test via vitest.setup.ts.
  */
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { NextRequest } from "next/server";
 import { GET as listListings, POST as createListing } from "../listings/route";
 import { GET as getListing, PUT as updateListing, DELETE as deleteListing } from "../listings/[id]/route";
@@ -302,7 +302,6 @@ describe("POST /api/connect", () => {
         platform: "ebay",
         authorizationCode: "ebay-code-1",
         ruName: "vibelyster-accept",
-        state: "state-1",
       },
     }));
 
@@ -340,6 +339,147 @@ describe("POST /api/connect", () => {
       body: { platform: "ebay", authorizationCode: "ebay-code-1" },
     }));
     expect(res.status).toBe(400);
+  });
+});
+
+async function loadRealEbayConnectRoute(options: {
+  ebayModule?: {
+    exchangeEbayAuthorizationCode: ReturnType<typeof vi.fn>;
+    verifyEbayConnectionFromTokens: ReturnType<typeof vi.fn>;
+  };
+} = {}) {
+  vi.resetModules();
+
+  const connections: Array<{
+    id: string;
+    user_id: string;
+    platform: string;
+    encrypted_tokens: Record<string, unknown>;
+    platform_username: string | null;
+    connected_at: string;
+    expires_at: string | null;
+  }> = [];
+
+  const upsertConnection = vi.fn(async (
+    userId: string,
+    platform: string,
+    encryptedTokens: Record<string, unknown>,
+    platformUsername?: string | null,
+    expiresAt?: string,
+    opts?: { replacePlatformUsername?: boolean }
+  ) => {
+    const existing = connections.find((c) => c.user_id === userId && c.platform === platform);
+    const now = "2026-04-03T00:00:00.000Z";
+    if (existing) {
+      existing.encrypted_tokens = { ...encryptedTokens };
+      if (opts?.replacePlatformUsername) {
+        existing.platform_username = platformUsername ?? null;
+      } else {
+        existing.platform_username = platformUsername ?? existing.platform_username;
+      }
+      existing.connected_at = now;
+      existing.expires_at = expiresAt ?? null;
+      return { ...existing };
+    }
+
+    const row = {
+      id: `conn-${connections.length + 1}`,
+      user_id: userId,
+      platform,
+      encrypted_tokens: { ...encryptedTokens },
+      platform_username: platformUsername ?? null,
+      connected_at: now,
+      expires_at: expiresAt ?? null,
+    };
+    connections.push(row);
+    return { ...row };
+  });
+
+  vi.doMock("@/lib/mock", () => ({
+    isMockMode: () => false,
+  }));
+  vi.doMock("@/lib/auth", () => ({
+    requireAuth: vi.fn().mockResolvedValue({ id: "user-a" }),
+    AuthError: class AuthError extends Error {},
+    authErrorResponse: vi.fn((err: Error) => Response.json({ error: err.message }, { status: 401 })),
+  }));
+  vi.doMock("@/lib/db", () => ({
+    upsertConnection,
+    deleteConnection: vi.fn(),
+  }));
+  vi.doMock("@/lib/crypto", () => ({
+    encryptTokens: (tokens: Record<string, unknown>) => tokens,
+  }));
+  if (options.ebayModule) {
+    vi.doMock("@/lib/marketplace/ebay", () => options.ebayModule);
+  }
+
+  const route = await import("../connect/route");
+  return { ...route, connections, upsertConnection };
+}
+
+describe("POST /api/connect real eBay behavior", () => {
+  it("returns 400 for invalid eBay authorization codes", async () => {
+    vi.stubEnv("EBAY_CLIENT_ID", "client-123");
+    vi.stubEnv("EBAY_CLIENT_SECRET", "secret-456");
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("invalid_grant", { status: 400 })));
+
+    const { POST } = await loadRealEbayConnectRoute();
+    const res = await POST(req("POST", "/api/connect", {
+      body: {
+        platform: "ebay",
+        authorizationCode: "bad-code",
+        ruName: "vibelyster-accept",
+        state: "state-1",
+      },
+    }));
+
+    expect(res.status).toBe(400);
+    const data = await res.json();
+    expect(data.error).toMatch(/authorization code|invalid/i);
+  });
+
+  it("clears a stale eBay username when verification returns none", async () => {
+    const exchange = vi.fn().mockResolvedValue({
+      accessToken: "access-1",
+      refreshToken: "refresh-1",
+      tokenType: "Bearer",
+      expiresIn: 3600,
+      refreshTokenExpiresIn: 86400,
+    });
+    const verify = vi.fn()
+      .mockResolvedValueOnce({ ok: true, ebayUserId: "ebay-user-1", platformUsername: "old-handle" })
+      .mockResolvedValueOnce({ ok: true, ebayUserId: "ebay-user-1" });
+
+    const { POST } = await loadRealEbayConnectRoute({
+      ebayModule: {
+        exchangeEbayAuthorizationCode: exchange,
+        verifyEbayConnectionFromTokens: verify,
+      },
+    });
+
+    const first = await POST(req("POST", "/api/connect", {
+      body: {
+        platform: "ebay",
+        authorizationCode: "code-1",
+        ruName: "vibelyster-accept",
+        state: "state-1",
+      },
+    }));
+    expect(first.status).toBe(201);
+
+    const second = await POST(req("POST", "/api/connect", {
+      body: {
+        platform: "ebay",
+        authorizationCode: "code-2",
+        ruName: "vibelyster-accept",
+        state: "state-2",
+      },
+    }));
+
+    expect(second.status).toBe(201);
+    const data = await second.json();
+    expect(data.platform_username).toBeNull();
   });
 });
 

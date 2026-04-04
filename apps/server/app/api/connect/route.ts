@@ -6,6 +6,7 @@ import { ConnectBody, DisconnectQuery, parseBody } from "@/lib/validation";
 import { verifyGrailedConnection } from "@/lib/marketplace/grailed";
 import { verifyDepopConnection } from "@/lib/marketplace/depop";
 import {
+  EbayTokenExchangeError,
   exchangeEbayAuthorizationCode,
   verifyEbayConnectionFromTokens,
 } from "@/lib/marketplace/ebay";
@@ -45,7 +46,7 @@ export async function POST(req: NextRequest) {
     const { platform } = parsed.data;
 
     let encryptedTokens: Record<string, unknown>;
-    let connectionPlatformUsername: string | undefined;
+    let connectionPlatformUsername: string | null | undefined;
     let connectionExpiresAt: string | undefined;
     let verification: ConnectionProbeResult;
 
@@ -63,12 +64,23 @@ export async function POST(req: NextRequest) {
           throw new Error("EBAY_CLIENT_ID and EBAY_CLIENT_SECRET are required");
         }
 
-        const exchange = await exchangeEbayAuthorizationCode({
-          clientId,
-          clientSecret,
-          ruName: parsed.data.ruName,
-          authorizationCode: parsed.data.authorizationCode,
-        });
+        let exchange: Awaited<ReturnType<typeof exchangeEbayAuthorizationCode>>;
+        try {
+          exchange = await exchangeEbayAuthorizationCode({
+            clientId,
+            clientSecret,
+            ruName: parsed.data.ruName,
+            authorizationCode: parsed.data.authorizationCode,
+          });
+        } catch (err) {
+          if (err instanceof EbayTokenExchangeError && err.statusCode >= 400 && err.statusCode < 500) {
+            return Response.json(
+              { error: "Invalid eBay authorization code. Please reconnect your account." },
+              { status: 400 },
+            );
+          }
+          throw err;
+        }
         verification = await verifyEbayConnectionFromTokens({ accessToken: exchange.accessToken });
         if (!verification.ok) {
           return Response.json({ error: verification.error }, { status: 400 });
@@ -83,7 +95,7 @@ export async function POST(req: NextRequest) {
           expires_at: expiresAtIso,
           refresh_token_expires_in: exchange.refreshTokenExpiresIn,
         });
-        connectionPlatformUsername = verification.platformUsername;
+        connectionPlatformUsername = verification.platformUsername ?? null;
         connectionExpiresAt = expiresAtIso;
       }
     } else {
@@ -105,7 +117,8 @@ export async function POST(req: NextRequest) {
       platform,
       encryptedTokens,
       connectionPlatformUsername,
-      connectionExpiresAt
+      connectionExpiresAt,
+      platform === "ebay" ? { replacePlatformUsername: true } : undefined
     );
 
     return Response.json(connection, { status: 201 });

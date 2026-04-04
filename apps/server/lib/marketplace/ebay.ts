@@ -26,6 +26,16 @@ type EbayConnectionVerificationResult =
   | { ok: true; ebayUserId: string; platformUsername?: string }
   | { ok: false; error: string };
 
+export class EbayTokenExchangeError extends Error {
+  constructor(
+    public readonly statusCode: number,
+    message: string,
+  ) {
+    super(`eBay token exchange failed with status ${statusCode}: ${message}`);
+    this.name = "EbayTokenExchangeError";
+  }
+}
+
 function pickString(value: unknown): string | undefined {
   return typeof value === "string" && value.trim() ? value : undefined;
 }
@@ -77,21 +87,31 @@ export async function exchangeEbayAuthorizationCode({
   expiresIn: number;
   refreshTokenExpiresIn: number;
 }> {
-  const response = await fetch("https://api.ebay.com/identity/v1/oauth2/token", {
-    method: "POST",
-    headers: {
-      Authorization: buildBasicAuthHeader(clientId, clientSecret),
-      "Content-Type": "application/x-www-form-urlencoded",
-    },
-    body: new URLSearchParams({
-      grant_type: "authorization_code",
-      code: authorizationCode,
-      redirect_uri: ruName,
-    }).toString(),
-  });
+  let response: Response;
+  try {
+    response = await fetch("https://api.ebay.com/identity/v1/oauth2/token", {
+      method: "POST",
+      headers: {
+        Authorization: buildBasicAuthHeader(clientId, clientSecret),
+        "Content-Type": "application/x-www-form-urlencoded",
+      },
+      body: new URLSearchParams({
+        grant_type: "authorization_code",
+        code: authorizationCode,
+        redirect_uri: ruName,
+      }).toString(),
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    throw new EbayTokenExchangeError(0, message || "network error");
+  }
 
   if (!response.ok) {
-    throw new Error(`eBay token exchange failed with status ${response.status}`);
+    const detail = await response.text().catch(() => "");
+    throw new EbayTokenExchangeError(
+      response.status,
+      detail || "upstream error",
+    );
   }
 
   const data = (await response.json()) as EbayTokenResponse;
