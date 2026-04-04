@@ -30,6 +30,25 @@ Preview mode runs:
 1. `tests/auth.setup.ts` to sign in and persist auth state
 2. `*.live.spec.ts` smoke tests against the deployed app
 
+## Live eBay OAuth test
+
+This is opt-in live coverage for the callback route plus real eBay sandbox code exchange.
+
+```bash
+cd apps/e2e
+E2E_BASE_URL=https://mobile-one-theta.vercel.app \
+E2E_API_URL=https://vibelyster.vercel.app \
+E2E_EMAIL=your-clerk-test-user@example.com \
+E2E_PASSWORD='your-password' \
+E2E_EBAY_TEST=1 \
+E2E_EBAY_SANDBOX=true \
+E2E_EBAY_CLIENT_ID=your-ebay-client-id \
+E2E_EBAY_RU_NAME=your-ebay-ru-name \
+E2E_EBAY_SANDBOX_USERNAME=your-ebay-sandbox-username \
+E2E_EBAY_SANDBOX_PASSWORD='your-ebay-sandbox-password' \
+npm run test:preview:ebay
+```
+
 ## Manual AI generate test
 
 This suite is excluded by default so it does not run in CI or normal preview smoke runs.

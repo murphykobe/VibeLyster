@@ -1,6 +1,11 @@
 export const EBAY_IDENTITY_SCOPE =
   "https://api.ebay.com/oauth/api_scope/commerce.identity.readonly";
 
+const EBAY_SANDBOX = process.env.EBAY_SANDBOX === "true";
+const EBAY_AUTH_HOST = EBAY_SANDBOX ? "https://auth.sandbox.ebay.com" : "https://auth.ebay.com";
+const EBAY_API_HOST = EBAY_SANDBOX ? "https://api.sandbox.ebay.com" : "https://api.ebay.com";
+const EBAY_APIZ_HOST = EBAY_SANDBOX ? "https://apiz.sandbox.ebay.com" : "https://apiz.ebay.com";
+
 type EbayAuthorizeUrlInput = {
   clientId: string;
   ruName: string;
@@ -67,7 +72,7 @@ function requireNumber(value: unknown, fieldName: string): number {
 }
 
 export function buildEbayAuthorizeUrl({ clientId, ruName, state }: EbayAuthorizeUrlInput): string {
-  const url = new URL("https://auth.ebay.com/oauth2/authorize");
+  const url = new URL(`${EBAY_AUTH_HOST}/oauth2/authorize`);
   url.searchParams.set("client_id", clientId);
   url.searchParams.set("redirect_uri", ruName);
   url.searchParams.set("response_type", "code");
@@ -90,7 +95,7 @@ export async function exchangeEbayAuthorizationCode({
 }> {
   let response: Response;
   try {
-    response = await fetch("https://api.ebay.com/identity/v1/oauth2/token", {
+    response = await fetch(`${EBAY_API_HOST}/identity/v1/oauth2/token`, {
       method: "POST",
       headers: {
         Authorization: buildBasicAuthHeader(clientId, clientSecret),
@@ -151,7 +156,7 @@ export async function verifyEbayConnectionFromTokens({
   accessToken: string;
 }): Promise<EbayConnectionVerificationResult> {
   try {
-    const response = await fetch("https://apiz.ebay.com/commerce/identity/v1/user/", {
+    const response = await fetch(`${EBAY_APIZ_HOST}/commerce/identity/v1/user/`, {
       headers: { Authorization: `Bearer ${accessToken}` },
     });
 

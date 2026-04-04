@@ -20,6 +20,10 @@ const EBAY_SCOPE = "https://api.ebay.com/oauth/api_scope/commerce.identity.reado
 const EBAY_CALLBACK_PREFIX = "vibelyster://connect/ebay";
 const EBAY_CLIENT_ID = pickString(process.env.EXPO_PUBLIC_EBAY_CLIENT_ID);
 const EBAY_RU_NAME = pickString(process.env.EXPO_PUBLIC_EBAY_RU_NAME);
+const EBAY_SANDBOX = process.env.EXPO_PUBLIC_EBAY_SANDBOX === "true";
+const EBAY_AUTH_HOST = EBAY_SANDBOX ? "https://auth.sandbox.ebay.com" : "https://auth.ebay.com";
+const EBAY_E2E_MODE = ["1", "true", "yes", "on"].includes((process.env.EXPO_PUBLIC_EBAY_E2E_MODE ?? "").toLowerCase());
+const EBAY_E2E_STATE = pickString(process.env.EXPO_PUBLIC_EBAY_TEST_STATE);
 
 const CONFIG: Record<Platform, { title: string }> = {
   grailed: {
@@ -100,11 +104,15 @@ function extractAccessTokenFromUrl(value: string) {
 }
 
 function createOauthState() {
+  if (typeof __DEV__ !== "undefined" && __DEV__ && EBAY_E2E_MODE && EBAY_E2E_STATE) {
+    return EBAY_E2E_STATE;
+  }
+
   return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
 }
 
 function buildEbayAuthorizeUrl(params: { clientId: string; ruName: string; state: string }) {
-  const url = new URL("https://auth.ebay.com/oauth2/authorize");
+  const url = new URL(`${EBAY_AUTH_HOST}/oauth2/authorize`);
   url.searchParams.set("client_id", params.clientId);
   url.searchParams.set("redirect_uri", params.ruName);
   url.searchParams.set("response_type", "code");
@@ -137,10 +145,23 @@ function getGrailedAuthPayload(cookieMap: Record<string, { value?: string }>) {
 }
 
 export default function ConnectScreen() {
-  const { platform } = useLocalSearchParams<{ platform: string }>();
+  const {
+    platform,
+    code,
+    state: incomingState,
+    error: incomingError,
+    error_description: incomingErrorDescription,
+  } = useLocalSearchParams<{
+    platform: string;
+    code?: string | string[];
+    state?: string | string[];
+    error?: string | string[];
+    error_description?: string | string[];
+  }>();
   const router = useRouter();
   const webviewRef = useRef<WebView>(null);
   const saveAttemptedRef = useRef(false);
+  const initialDeepLinkHandledRef = useRef(false);
   const debugIdRef = useRef(1);
   const ebayStateRef = useRef(createOauthState());
   const [loading, setLoading] = useState(true);
@@ -345,6 +366,27 @@ export default function ConnectScreen() {
       setSaving(false);
     }
   }
+
+  useEffect(() => {
+    if (typedPlatform !== "ebay" || initialDeepLinkHandledRef.current) return;
+
+    const deepLinkCode = pickString(code);
+    const deepLinkState = pickString(incomingState);
+    const deepLinkError = pickString(incomingError);
+    const deepLinkErrorDescription = pickString(incomingErrorDescription);
+
+    if (!deepLinkError && !(deepLinkCode && deepLinkState)) return;
+
+    const deepLink = new URL(EBAY_CALLBACK_PREFIX);
+    if (deepLinkCode) deepLink.searchParams.set("code", deepLinkCode);
+    if (deepLinkState) deepLink.searchParams.set("state", deepLinkState);
+    if (deepLinkError) deepLink.searchParams.set("error", deepLinkError);
+    if (deepLinkErrorDescription) deepLink.searchParams.set("error_description", deepLinkErrorDescription);
+
+    initialDeepLinkHandledRef.current = true;
+    pushDebug(`eBay deep link received via router: ${deepLink.toString()}`);
+    void handleEbayCallback(deepLink.toString());
+  }, [code, incomingError, incomingErrorDescription, incomingState, pushDebug, typedPlatform]);
 
   async function tryCaptureDepopTokenFromCookies(reason: string) {
     if (typedPlatform !== "depop" || saveAttemptedRef.current) return;

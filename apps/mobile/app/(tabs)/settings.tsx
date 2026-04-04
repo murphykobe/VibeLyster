@@ -198,6 +198,7 @@ export default function SettingsScreen() {
 
                     {connection ? (
                       <Pressable
+                        testID={`platform-disconnect-${key}`}
                         onPress={() => handleDisconnect(key)}
                         style={styles.disconnectBtn}
                         disabled={disconnecting === key}
@@ -209,7 +210,7 @@ export default function SettingsScreen() {
                         )}
                       </Pressable>
                     ) : (
-                      <Pressable onPress={() => handleConnect(key)} style={styles.connectBtn}>
+                      <Pressable testID={`platform-connect-${key}`} onPress={() => handleConnect(key)} style={styles.connectBtn}>
                         <Text style={styles.connectText}>Connect</Text>
                       </Pressable>
                     )}

@@ -1,0 +1,12 @@
+appId: com.vibelyster.app
+---
+- launchApp:
+    clearState: true
+- tapOn: "Settings"
+- assertVisible: "Account & Connections"
+- tapOn:
+    id: "platform-connect-ebay"
+- assertVisible: "Connect eBay"
+- openLink: "vibelyster://connect/ebay?code=mock-ebay-authorization-code&state=maestro-ebay-state"
+- assertVisible:
+    id: "platform-disconnect-ebay"
