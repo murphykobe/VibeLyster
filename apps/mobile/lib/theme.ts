@@ -1,36 +1,36 @@
 import { Platform } from "react-native";
 
 const fontSans = Platform.select({
-  ios: "Avenir Next",
-  android: "sans-serif",
-  default: "Avenir Next",
+  ios: "Inter",
+  android: "Inter",
+  default: "Inter",
 });
 
 const fontSansBold = Platform.select({
-  ios: "Avenir Next Demi Bold",
-  android: "sans-serif-medium",
-  default: "Avenir Next Demi Bold",
+  ios: "Inter-SemiBold",
+  android: "Inter-SemiBold",
+  default: "Inter-SemiBold",
 });
 
 const fontDisplay = Platform.select({
-  ios: "Georgia",
-  android: "serif",
-  default: "Georgia",
+  ios: "SpaceGrotesk-Bold",
+  android: "SpaceGrotesk-Bold",
+  default: "SpaceGrotesk-Bold",
 });
 
 export const theme = {
   colors: {
-    bg: "#F6F1E8",
-    surface: "#FFFDF8",
-    surfaceStrong: "#F2EADF",
-    text: "#1F2430",
-    textMuted: "#6B7280",
-    border: "#E5DCCF",
-    accent: "#F05D23",
-    accentSoft: "#FFE6DA",
-    success: "#2E7D32",
+    bg: "#FAFAFA",
+    surface: "#FFFFFF",
+    surfaceStrong: "#F0F0F0",
+    text: "#111111",
+    textMuted: "#717171",
+    border: "#E0E0E0",
+    accent: "#5B3DF5",
+    accentSoft: "#EDE8FF",
+    success: "#16A34A",
     warning: "#D97706",
-    danger: "#C62828",
+    danger: "#DC2626",
     info: "#0F766E",
     white: "#FFFFFF",
   },
@@ -54,10 +54,10 @@ export const theme = {
   },
   shadow: {
     card: {
-      shadowColor: "#4A3628",
-      shadowOpacity: 0.08,
-      shadowRadius: 14,
-      shadowOffset: { width: 0, height: 6 },
+      shadowColor: "#000000",
+      shadowOpacity: 0.05,
+      shadowRadius: 10,
+      shadowOffset: { width: 0, height: 4 },
       elevation: 3,
     },
   },

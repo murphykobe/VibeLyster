@@ -5,7 +5,7 @@ import { decryptTokens } from "@/lib/crypto";
 import { publishToGrailed } from "@/lib/marketplace/grailed";
 import { publishToDepop } from "@/lib/marketplace/depop";
 import { PublishBody, parseBody } from "@/lib/validation";
-import type { GrailedTokens, DepopTokens, Platform, CanonicalListing } from "@/lib/marketplace/types";
+import type { GrailedTokens, DepopTokens, Platform, CanonicalListing, PublishMode } from "@/lib/marketplace/types";
 import { isMockMode, mockPlatformListingId } from "@/lib/mock";
 
 const RETRY_DELAY_MS = 2000;
@@ -17,7 +17,12 @@ async function sleep(ms: number) {
 async function publishWithRetry(
   listing: CanonicalListing,
   platform: Platform,
-  tokens: Record<string, unknown>
+  tokens: Record<string, unknown>,
+  options: {
+    mode: PublishMode;
+    existingPlatformListingId?: string | null;
+    existingPlatformData?: Record<string, unknown> | null;
+  }
 ) {
   if (platform !== "grailed" && platform !== "depop") {
     return { result: { ok: false as const, error: "eBay not yet supported", retryable: false }, attempts: 0 };
@@ -27,8 +32,8 @@ async function publishWithRetry(
   for (let attempt = 1; attempt <= 2; attempt++) {
     attempts = attempt;
     const result = platform === "grailed"
-      ? await publishToGrailed(listing, tokens as GrailedTokens)
-      : await publishToDepop(listing, tokens as DepopTokens);
+      ? await publishToGrailed(listing, tokens as GrailedTokens, options)
+      : await publishToDepop(listing, tokens as DepopTokens, options);
 
     if (result.ok || !result.retryable || attempt === 2) return { result, attempts };
     await sleep(RETRY_DELAY_MS);
@@ -38,7 +43,7 @@ async function publishWithRetry(
 
 /**
  * POST /api/publish
- * Body: { listingId: string, platforms: string[] }
+ * Body: { listingId: string, platforms: string[], mode?: "live" | "draft" }
  * Publishes a listing to one or more platforms synchronously.
  */
 export async function POST(req: NextRequest) {
@@ -46,7 +51,7 @@ export async function POST(req: NextRequest) {
     const user = await requireAuth(req);
     const parsed = parseBody(PublishBody, await req.json());
     if ("error" in parsed) return parsed.error;
-    const { listingId, platforms } = parsed.data;
+    const { listingId, platforms, mode } = parsed.data;
 
     const dbListing = await getListingById(user.id, listingId);
     if (!dbListing) return Response.json({ error: "Listing not found" }, { status: 404 });
@@ -68,6 +73,7 @@ export async function POST(req: NextRequest) {
 
     for (const platform of platforms as Platform[]) {
       const conn = await getConnection(user.id, platform);
+      const existingPlatformListing = (dbListing.platform_listings ?? []).find((pl) => pl.platform === platform);
       if (!conn) {
         results[platform] = { ok: false, error: `Not connected to ${platform}` };
         continue;
@@ -77,19 +83,30 @@ export async function POST(req: NextRequest) {
       await upsertPlatformListing(listingId, platform, { status: "publishing" });
 
       if (isMockMode()) {
-        const platformListingId = mockPlatformListingId(platform);
-        await updatePlatformListingStatus(listingId, platform, "live", {
+        const platformListingId = existingPlatformListing?.platform_listing_id ?? mockPlatformListingId(platform, mode);
+        const platformData = {
+          ...(existingPlatformListing?.platform_data ?? {}),
+          remote_state: mode,
+          mode_requested: mode,
+          mode_used: mode,
+        };
+        await updatePlatformListingStatus(listingId, platform, mode === "draft" ? "pending" : "live", {
           platformListingId,
           incrementAttempt: true,
+          platformData,
         });
-        results[platform] = { ok: true, platformListingId, mock: true };
+        results[platform] = { ok: true, platformListingId, modeRequested: mode, modeUsed: mode, remoteState: mode, mock: true };
         continue;
       }
 
       const tokens = decryptTokens(conn.encrypted_tokens);
 
       const startMs = Date.now();
-      const { result, attempts } = await publishWithRetry(canonical, platform, tokens);
+      const { result, attempts } = await publishWithRetry(canonical, platform, tokens, {
+        mode,
+        existingPlatformListingId: existingPlatformListing?.platform_listing_id,
+        existingPlatformData: existingPlatformListing?.platform_data ?? null,
+      });
       const latencyMs = Date.now() - startMs;
 
       console.log(JSON.stringify({
@@ -102,11 +119,24 @@ export async function POST(req: NextRequest) {
       }));
 
       if (result.ok) {
-        await updatePlatformListingStatus(listingId, platform, "live", {
+        const nextStatus = result.remoteState === "draft" ? "pending" : "live";
+        await updatePlatformListingStatus(listingId, platform, nextStatus, {
           platformListingId: result.platformListingId,
           incrementAttempt: true,
+          platformData: {
+            ...result.platformData,
+            remote_state: result.remoteState,
+            mode_requested: mode,
+            mode_used: result.modeUsed,
+          },
         });
-        results[platform] = { ok: true, platformListingId: result.platformListingId };
+        results[platform] = {
+          ok: true,
+          platformListingId: result.platformListingId,
+          modeRequested: mode,
+          modeUsed: result.modeUsed,
+          remoteState: result.remoteState,
+        };
       } else {
         await updatePlatformListingStatus(listingId, platform, "failed", {
           lastError: result.error,

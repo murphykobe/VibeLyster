@@ -12,7 +12,7 @@ const RATE_LIMIT_DELAY_MS = 2000; // 1 publish per platform per 2 seconds
 
 /**
  * POST /api/publish/bulk
- * Body: { listingIds: string[], platforms: string[] }
+ * Body: { listingIds: string[], platforms: string[], mode?: "live" | "draft" }
  * Marks all as 'publishing' and processes asynchronously.
  * Mobile app polls /api/listings to see updated statuses.
  */
@@ -21,7 +21,7 @@ export async function POST(req: NextRequest) {
     const user = await requireAuth(req);
     const parsed = parseBody(BulkPublishBody, await req.json());
     if ("error" in parsed) return parsed.error;
-    const { listingIds, platforms } = parsed.data;
+    const { listingIds, platforms, mode } = parsed.data;
 
     // Verify all listings belong to user and mark as publishing
     for (const listingId of listingIds) {
@@ -33,14 +33,14 @@ export async function POST(req: NextRequest) {
     }
 
     if (isMockMode()) {
-      await processMockInBackground(user.id, listingIds, platforms as Platform[]);
+      await processMockInBackground(user.id, listingIds, platforms as Platform[], mode);
       return Response.json({ acknowledged: true, count: listingIds.length, mock: true });
     }
 
     // Use Next.js `after()` to extend the serverless function lifecycle past the response.
     // This guarantees the background work runs even after the response is sent.
     // Requires Next.js 15+ and `experimental.after: true` in next.config.ts.
-    after(processInBackground(user.id, listingIds, platforms as Platform[]));
+    after(processInBackground(user.id, listingIds, platforms as Platform[], mode));
 
     return Response.json({ acknowledged: true, count: listingIds.length });
   } catch (err) {
@@ -50,7 +50,7 @@ export async function POST(req: NextRequest) {
   }
 }
 
-async function processInBackground(userId: string, listingIds: string[], platforms: Platform[]) {
+async function processInBackground(userId: string, listingIds: string[], platforms: Platform[], mode: "live" | "draft") {
   // Fetch tokens once per platform
   const tokenMap: Partial<Record<Platform, Record<string, unknown>>> = {};
   for (const platform of platforms) {
@@ -79,6 +79,7 @@ async function processInBackground(userId: string, listingIds: string[], platfor
     await Promise.all(
       platforms.map(async (platform) => {
         const tokens = tokenMap[platform];
+        const existingPlatformListing = (dbListing.platform_listings ?? []).find((pl) => pl.platform === platform);
         if (!tokens) {
           await updatePlatformListingStatus(listingId, platform, "failed", {
             lastError: `Not connected to ${platform}`,
@@ -89,9 +90,17 @@ async function processInBackground(userId: string, listingIds: string[], platfor
         let result;
         try {
           if (platform === "grailed") {
-            result = await publishToGrailed(canonical, tokens as GrailedTokens);
+            result = await publishToGrailed(canonical, tokens as GrailedTokens, {
+              mode,
+              existingPlatformListingId: existingPlatformListing?.platform_listing_id,
+              existingPlatformData: existingPlatformListing?.platform_data ?? null,
+            });
           } else if (platform === "depop") {
-            result = await publishToDepop(canonical, tokens as DepopTokens);
+            result = await publishToDepop(canonical, tokens as DepopTokens, {
+              mode,
+              existingPlatformListingId: existingPlatformListing?.platform_listing_id,
+              existingPlatformData: existingPlatformListing?.platform_data ?? null,
+            });
           } else {
             result = { ok: false as const, error: "eBay not yet supported", retryable: false };
           }
@@ -107,8 +116,14 @@ async function processInBackground(userId: string, listingIds: string[], platfor
         }));
 
         if (result.ok) {
-          await updatePlatformListingStatus(listingId, platform, "live", {
+          await updatePlatformListingStatus(listingId, platform, result.remoteState === "draft" ? "pending" : "live", {
             platformListingId: result.platformListingId,
+            platformData: {
+              ...result.platformData,
+              remote_state: result.remoteState,
+              mode_requested: mode,
+              mode_used: result.modeUsed,
+            },
           });
         } else {
           await updatePlatformListingStatus(listingId, platform, "failed", {
@@ -126,7 +141,7 @@ async function processInBackground(userId: string, listingIds: string[], platfor
   }
 }
 
-async function processMockInBackground(userId: string, listingIds: string[], platforms: Platform[]) {
+async function processMockInBackground(userId: string, listingIds: string[], platforms: Platform[], mode: "live" | "draft") {
   for (const listingId of listingIds) {
     const dbListing = await getListingById(userId, listingId).catch(() => null);
     if (!dbListing) continue;
@@ -134,6 +149,7 @@ async function processMockInBackground(userId: string, listingIds: string[], pla
     await Promise.all(
       platforms.map(async (platform) => {
         const conn = await getConnection(userId, platform).catch(() => null);
+        const existingPlatformListing = (dbListing.platform_listings ?? []).find((pl) => pl.platform === platform);
         if (!conn) {
           await updatePlatformListingStatus(listingId, platform, "failed", {
             lastError: `Not connected to ${platform}`,
@@ -141,9 +157,15 @@ async function processMockInBackground(userId: string, listingIds: string[], pla
           return;
         }
 
-        await updatePlatformListingStatus(listingId, platform, "live", {
-          platformListingId: mockPlatformListingId(platform),
+        await updatePlatformListingStatus(listingId, platform, mode === "draft" ? "pending" : "live", {
+          platformListingId: existingPlatformListing?.platform_listing_id ?? mockPlatformListingId(platform, mode),
           incrementAttempt: true,
+          platformData: {
+            ...(existingPlatformListing?.platform_data ?? {}),
+            remote_state: mode,
+            mode_requested: mode,
+            mode_used: mode,
+          },
         });
       })
     );

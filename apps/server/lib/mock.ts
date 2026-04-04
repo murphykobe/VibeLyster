@@ -6,6 +6,6 @@ export function isMockMode(): boolean {
   return TRUE_VALUES.has(raw.trim().toLowerCase());
 }
 
-export function mockPlatformListingId(platform: string): string {
-  return `mock-${platform}-${Date.now()}`;
+export function mockPlatformListingId(platform: string, mode: "live" | "draft" = "live"): string {
+  return `mock-${platform}-${mode}-${Date.now()}`;
 }

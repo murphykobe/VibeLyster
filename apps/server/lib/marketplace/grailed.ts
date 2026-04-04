@@ -13,14 +13,31 @@ import type {
   DelistResult,
   StatusResult,
   ConnectionProbeResult,
+  PublishOptions,
 } from "./types";
 import { mapCanonicalCategoryToGrailed } from "../categories";
+import GRAILED_DRAFT_CATEGORY_MAP from "./grailed-draft-category-map.json";
+
+const GRAILED_DRAFT_CATEGORY_LOOKUP = GRAILED_DRAFT_CATEGORY_MAP as Record<string, string>;
 
 const GRAILED_API = "https://www.grailed.com/api";
 const GRAILED_S3 = "https://grailed-media.s3.amazonaws.com/";
+const ALGOLIA_URL = "https://mnrwefss2q-dsn.algolia.net/1/indexes/Designer_production/query";
+const ALGOLIA_PARAMS =
+  "x-algolia-agent=Algolia&x-algolia-application-id=MNRWEFSS2Q&x-algolia-api-key=bc9ee1c014521ccf312525a4ef324a16";
 
 export function mapCategory(category: string | null): string {
   return mapCanonicalCategoryToGrailed(category) ?? "tops.t_shirts";
+}
+
+function isRetryableGrailedError(err: unknown) {
+  if (err instanceof GrailedPublishStepError) {
+    return err.statusCode !== undefined ? err.statusCode >= 500 || err.statusCode === 429 : true;
+  }
+  if (err instanceof GrailedError) {
+    return err.statusCode >= 500 || err.statusCode === 429;
+  }
+  return true;
 }
 
 // ─── Condition mapping ────────────────────────────────────────────────────────
@@ -69,6 +86,7 @@ const COLOR_ALIASES: Record<string, typeof GRAILED_ALLOWED_COLORS[number]> = {
 };
 
 type GrailedTrait = { name: "color" | "country_of_origin"; value: string };
+type GrailedDesigner = { id?: number; name: string; slug?: string };
 
 export function mapCondition(condition: string | null): string {
   if (!condition) return "is_gently_used";
@@ -103,6 +121,29 @@ class GrailedError extends Error {
   constructor(public readonly statusCode: number, message: string) {
     super(`Grailed API error ${statusCode}: ${message}`);
     this.name = "GrailedError";
+  }
+}
+
+class GrailedPublishStepError extends Error {
+  constructor(
+    public readonly step: string,
+    message: string,
+    public readonly statusCode?: number,
+  ) {
+    super(`Grailed publish failed while ${step}: ${message}`);
+    this.name = "GrailedPublishStepError";
+  }
+}
+
+async function runGrailedPublishStep<T>(step: string, run: () => Promise<T>): Promise<T> {
+  try {
+    return await run();
+  } catch (err) {
+    if (err instanceof GrailedError) {
+      throw new GrailedPublishStepError(step, err.message, err.statusCode);
+    }
+    const message = err instanceof Error ? err.message : String(err);
+    throw new GrailedPublishStepError(step, message);
   }
 }
 
@@ -226,6 +267,85 @@ async function getAddresses(userId: number | string, csrfToken: string, cookies:
   });
 }
 
+async function searchBrand(query: string, department = "menswear"): Promise<GrailedDesigner[] | null> {
+  const res = await fetch(`${ALGOLIA_URL}?${ALGOLIA_PARAMS}`, {
+    method: "POST",
+    headers: {
+      Accept: "application/json",
+      "Content-Type": "application/x-www-form-urlencoded",
+    },
+    body: JSON.stringify({
+      params: `query=${encodeURIComponent(query)}&page=0&hitsPerPage=5&filters=departments:${department}`,
+    }),
+  });
+
+  if (!res.ok) {
+    throw new Error(`Grailed brand search failed ${res.status}`);
+  }
+
+  const data = await res.json() as { hits?: Array<{ id: number; name: string; slug: string }> };
+  if (!data.hits?.length) return null;
+  return data.hits.map((hit) => ({ id: hit.id, name: hit.name, slug: hit.slug }));
+}
+
+function mapDraftCondition(condition: string | null): string {
+  if (!condition) return "is_gently_used";
+  const lower = condition.toLowerCase().replace(/\s+/g, "_");
+  if (lower === "new" || lower === "brand_new" || lower === "nwt") return "is_new";
+  if (lower === "used") return "is_used";
+  if (lower === "heavily_used") return "is_worn";
+  return "is_gently_used";
+}
+
+function mapGrailedDraftCategory(category: string | null) {
+  if (!category) return null;
+  return GRAILED_DRAFT_CATEGORY_LOOKUP[category] ?? null;
+}
+
+function buildDraftPhotos(urls: string[]) {
+  return urls.map((url, position) => ({
+    url,
+    width: 1080,
+    height: 1080,
+    rotate: 0,
+    position,
+  }));
+}
+
+function buildGrailedDraftPayload(listing: CanonicalListing, photos: string[], designers: GrailedDesigner[], traits: GrailedTrait[]) {
+  const categoryPath = mapGrailedDraftCategory(listing.category);
+  if (!categoryPath) {
+    return { ok: false as const, error: "Grailed does not support this category yet." };
+  }
+
+  return {
+    ok: true as const,
+    payload: {
+      title: listing.title,
+      description: listing.description,
+      price: Number(listing.price),
+      category_path: categoryPath,
+      designers,
+      condition: mapDraftCondition(listing.condition),
+      traits,
+      size: listing.size ?? "one size",
+      department: "menswear",
+      make_offer: true,
+      buy_now: true,
+      photos: buildDraftPhotos(photos),
+      shipping: {
+        us: { amount: 15, enabled: true },
+        ca: { amount: 0, enabled: false },
+        uk: { amount: 0, enabled: false },
+        eu: { amount: 0, enabled: false },
+        asia: { amount: 0, enabled: false },
+        au: { amount: 0, enabled: false },
+        other: { amount: 0, enabled: false },
+      },
+    },
+  };
+}
+
 // ─── Public API ───────────────────────────────────────────────────────────────
 
 export async function verifyGrailedConnection(tokens: GrailedTokens): Promise<ConnectionProbeResult> {
@@ -251,87 +371,128 @@ export async function verifyGrailedConnection(tokens: GrailedTokens): Promise<Co
 
 export async function publishToGrailed(
   listing: CanonicalListing,
-  tokens: GrailedTokens
+  tokens: GrailedTokens,
+  options: PublishOptions = {}
 ): Promise<PublishResult> {
   const { csrf_token, cookies } = tokens;
+  const mode = options.mode ?? "live";
   const normalizedTraits = normalizeGrailedTraits(listing);
   if (!normalizedTraits.ok) {
     return { ok: false, error: normalizedTraits.error, retryable: false };
   }
-  const grailedCategory = mapCanonicalCategoryToGrailed(listing.category);
-  if (!grailedCategory) {
-    return { ok: false, error: "Grailed does not support this category yet.", retryable: false };
-  }
 
   try {
-    // 1. Get user ID + return address
-    const me = await getMe(csrf_token, cookies);
-    const userId = (me as { data: { id: number } }).data.id;
-    const addrsData = await getAddresses(userId, csrf_token, cookies);
-    const returnAddressId = ((addrsData as { data: { id: number }[] }).data ?? [])[0]?.id;
-    if (!returnAddressId) throw new Error("No return address on Grailed account");
-
-    // 2. Upload photos
-    const uploadedPhotos: {
-      url: string;
-      width: number;
-      height: number;
-      rotate: number;
-      position: number;
-    }[] = [];
+    // 1. Upload photos
+    const uploadedPhotoUrls: string[] = [];
     for (const [i, url] of listing.photos.slice(0, 8).entries()) {
-      const imageUrl = await uploadPhotoFromUrl(url, csrf_token, cookies);
-      uploadedPhotos.push({ url: imageUrl, width: 1080, height: 1080, rotate: 0, position: i });
+      const imageUrl = await runGrailedPublishStep(
+        `uploading photo ${i + 1}`,
+        () => uploadPhotoFromUrl(url, csrf_token, cookies)
+      );
+      uploadedPhotoUrls.push(imageUrl);
     }
 
-    // 3. Build listing payload
-    const payload = {
-      buynow: true,
-      category_path: grailedCategory,
-      condition: mapCondition(listing.condition),
-      description: listing.description,
-      designers: listing.brand
-        ? [{ name: listing.brand }] // Grailed will match by name
-        : [],
-      duplicate_listing: false,
-      hidden_from_algolia: false,
-      makeoffer: true,
-      measurements: [],
-      minimum_price: null,
-      photos: uploadedPhotos,
-      price: String(listing.price),
-      return_address_id: returnAddressId,
-      shipping: {
-        us: { amount: 0, enabled: true },
-        ca: { amount: 0, enabled: false },
-        uk: { amount: 0, enabled: false },
-        eu: { amount: 0, enabled: false },
-        asia: { amount: 0, enabled: false },
-        au: { amount: 0, enabled: false },
-        other: { amount: 0, enabled: false },
-      },
-      shipping_label: { free_shipping: false },
-      size: listing.size ?? "one size",
-      styles: [],
-      exact_size: null,
-      title: listing.title,
-      traits: normalizedTraits.traits,
-    };
+    // 2. Resolve designer when possible
+    let designers: GrailedDesigner[] = [];
+    if (listing.brand) {
+      try {
+        const matches = await searchBrand(listing.brand, "menswear");
+        const match = matches?.[0];
+        designers = match ? [match] : [{ name: listing.brand }];
+      } catch {
+        designers = [{ name: listing.brand }];
+      }
+    }
 
-    // 4. Publish
-    const result = await apiFetch(`${GRAILED_API}/listings`, {
-      method: "POST",
-      headers: makeHeaders(csrf_token, cookies),
-      body: JSON.stringify(payload),
-    });
+    const draftPayloadResult = buildGrailedDraftPayload(
+      listing,
+      uploadedPhotoUrls,
+      designers,
+      normalizedTraits.traits
+    );
+    if (!draftPayloadResult.ok) {
+      return { ok: false, error: draftPayloadResult.error, retryable: false };
+    }
+    const payload = draftPayloadResult.payload;
+
+    // 3. Create or update draft
+    const existingDraftId = options.existingPlatformData?.remote_state === "draft"
+      ? options.existingPlatformListingId
+      : null;
+
+    const draftResponse = existingDraftId
+      ? await runGrailedPublishStep("updating draft", () =>
+        apiFetch(`${GRAILED_API}/listing_drafts/${existingDraftId}`, {
+          method: "PUT",
+          headers: makeHeaders(csrf_token, cookies),
+          body: JSON.stringify(payload),
+        })
+      )
+      : await runGrailedPublishStep("creating draft", () =>
+        apiFetch(`${GRAILED_API}/listing_drafts`, {
+          method: "POST",
+          headers: makeHeaders(csrf_token, cookies),
+          body: JSON.stringify(payload),
+        })
+      );
+
+    const draftId = String((draftResponse as { data: { id: number } }).data.id ?? existingDraftId);
+    if (mode === "draft") {
+      return {
+        ok: true,
+        platformListingId: draftId,
+        remoteState: "draft",
+        modeUsed: "draft",
+        platformData: { ...payload, remote_state: "draft" },
+      };
+    }
+
+    // 4. Submit draft live
+    const result = await runGrailedPublishStep("submitting draft", () =>
+      apiFetch(`${GRAILED_API}/listing_drafts/${draftId}/submit`, {
+        method: "POST",
+        headers: makeHeaders(csrf_token, cookies),
+      })
+    );
 
     const grailedId = String((result as { data: { id: number } }).data.id);
-    return { ok: true, platformListingId: grailedId, platformData: payload };
+    return {
+      ok: true,
+      platformListingId: grailedId,
+      remoteState: "live",
+      modeUsed: "live",
+      platformData: { ...payload, remote_state: "live", source_draft_id: draftId },
+    };
+  } catch (err) {
+    if (err instanceof GrailedPublishStepError) {
+      console.warn(JSON.stringify({
+        event: "grailed.publish.step_failure",
+        listing_id: listing.id,
+        step: err.step,
+        status_code: err.statusCode ?? null,
+        error: err.message,
+      }));
+    }
+    const error = err instanceof Error ? err.message : String(err);
+    const retryable = isRetryableGrailedError(err);
+    return { ok: false, error, retryable };
+  }
+}
+
+export async function deleteGrailedDraft(
+  platformListingId: string,
+  tokens: GrailedTokens
+): Promise<DelistResult> {
+  const { csrf_token, cookies } = tokens;
+  try {
+    await apiFetch(`${GRAILED_API}/listing_drafts/${platformListingId}`, {
+      method: "DELETE",
+      headers: makeHeaders(csrf_token, cookies),
+    });
+    return { ok: true };
   } catch (err) {
     const error = err instanceof Error ? err.message : String(err);
-    const retryable = err instanceof GrailedError
-      ? err.statusCode >= 500 || err.statusCode === 429
-      : true;
+    const retryable = err instanceof GrailedError ? err.statusCode >= 500 : true;
     return { ok: false, error, retryable };
   }
 }

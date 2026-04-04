@@ -2,6 +2,8 @@ import { useEffect } from "react";
 import { Stack, useRouter, useSegments } from "expo-router";
 import * as SecureStore from "expo-secure-store";
 import { SafeAreaProvider } from "react-native-safe-area-context";
+import { useFonts, Inter_400Regular, Inter_600SemiBold } from "@expo-google-fonts/inter";
+import { SpaceGrotesk_700Bold } from "@expo-google-fonts/space-grotesk";
 import { setTokenProvider } from "@/lib/api";
 import { theme } from "@/lib/theme";
 
@@ -82,6 +84,14 @@ function MockLayout() {
 }
 
 export default function RootLayout() {
+  const [fontsLoaded] = useFonts({
+    Inter: Inter_400Regular,
+    "Inter-SemiBold": Inter_600SemiBold,
+    "SpaceGrotesk-Bold": SpaceGrotesk_700Bold,
+  });
+
+  if (!fontsLoaded) return null;
+
   if (mockMode) {
     return (
       <SafeAreaProvider>

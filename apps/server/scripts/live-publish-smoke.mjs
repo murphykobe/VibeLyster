@@ -1,5 +1,11 @@
 #!/usr/bin/env node
 
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { basename, extname, join } from "node:path";
+import { tmpdir } from "node:os";
+import { buildGrailedDraftPayload } from "./live-publish-smoke-helpers.mjs";
+import * as grailedApi from "../../../tools/grailed/grailed-api.js";
+
 const API_URL = process.env.API_URL ?? "http://127.0.0.1:3001";
 const SHOW_HELP = process.argv.includes("--help") || process.argv.includes("-h");
 const AUTH_TOKEN = normalizeAuthToken(process.env.AUTH_TOKEN);
@@ -16,6 +22,8 @@ const PLATFORM_USERNAME = process.env.PLATFORM_USERNAME;
 const EXPIRES_AT = process.env.EXPIRES_AT;
 const DEV_USER_ID = process.env.DEV_USER_ID;
 const DEV_USER_EMAIL = process.env.DEV_USER_EMAIL;
+const GRAILED_DRAFT_ONLY = truthy(process.env.GRAILED_DRAFT_ONLY ?? "");
+const GRAILED_DEPARTMENT = process.env.GRAILED_DEPARTMENT ?? "menswear";
 const SKIP_CONNECT = truthy(process.env.SKIP_CONNECT);
 const CHECK_STATUS = !falsy(process.env.CHECK_STATUS);
 const CLEANUP = truthy(process.env.CLEANUP ?? "");
@@ -57,6 +65,8 @@ Options:
   DEV_USER_EMAIL=<optional local bypass email>
   PLATFORM_USERNAME=<optional display name>
   EXPIRES_AT=<optional ISO timestamp>
+  GRAILED_DRAFT_ONLY=1
+  GRAILED_DEPARTMENT=menswear
   SKIP_CONNECT=1
   CHECK_STATUS=0
   CLEANUP=1
@@ -71,6 +81,10 @@ Examples:
   npm run publish:smoke
 
   AUTH_TOKEN=clerk_jwt PLATFORM=grailed PHOTO_URL=https://placehold.co/1200x1200.jpg CLEANUP=1 \\
+  TOKENS_JSON='{"csrf_token":"abc","cookies":"grailed_jwt=...; csrftoken=..."}' \\
+  npm run publish:smoke
+
+  DEV_USER_ID=test@vibelyster.com PLATFORM=grailed GRAILED_DRAFT_ONLY=1 PHOTO_FILE=$HOME/Downloads/IMG_3235.JPG \\
   TOKENS_JSON='{"csrf_token":"abc","cookies":"grailed_jwt=...; csrftoken=..."}' \\
   npm run publish:smoke
 `);
@@ -218,6 +232,99 @@ async function maybeUploadPhoto() {
   return data.url;
 }
 
+async function writeTempImageFromUrl(url, index) {
+  const res = await fetch(url);
+  if (!res.ok) {
+    throw new Error(`Failed to fetch remote photo for Grailed draft upload: ${url}`);
+  }
+
+  const contentType = res.headers.get("content-type") ?? "image/jpeg";
+  const ext =
+    contentType.includes("png") ? ".png"
+      : contentType.includes("webp") ? ".webp"
+        : contentType.includes("heic") ? ".heic"
+          : contentType.includes("heif") ? ".heif"
+            : ".jpg";
+
+  const buffer = Buffer.from(await res.arrayBuffer());
+  const dir = await mkdtemp(join(tmpdir(), "vibelyster-grailed-"));
+  const filePath = join(dir, `draft-photo-${index}${ext}`);
+  await writeFile(filePath, buffer);
+  return { dir, filePath };
+}
+
+async function uploadGrailedDraftPhoto(source, index, tokens) {
+  if (typeof source !== "string" || !source.trim()) {
+    throw new Error("Grailed draft photo source must be a non-empty string.");
+  }
+
+  if (!tokens?.csrf_token || !tokens?.cookies) {
+    throw new Error("Grailed draft mode requires csrf_token and cookies.");
+  }
+
+  let tempDir = null;
+  let filePath = source;
+
+  if (/^https?:\/\//i.test(source)) {
+    const temp = await writeTempImageFromUrl(source, index);
+    tempDir = temp.dir;
+    filePath = temp.filePath;
+  }
+
+  try {
+    return await grailedApi.uploadImage(filePath, tokens.csrf_token, tokens.cookies);
+  } finally {
+    if (tempDir) {
+      await rm(tempDir, { recursive: true, force: true });
+    }
+  }
+}
+
+async function resolveGrailedDesigner(brand, department) {
+  if (!brand) {
+    throw new Error("Grailed draft mode requires listing.brand so we can resolve a valid designer.");
+  }
+
+  const matches = await grailedApi.searchBrand(brand, department);
+  if (!matches?.length) {
+    throw new Error(`Could not find a Grailed designer match for brand "${brand}".`);
+  }
+
+  const exact = matches.find((candidate) => candidate.name.toLowerCase() === brand.toLowerCase());
+  const best = exact ?? matches[0];
+  return { id: best.id, name: best.name, slug: best.slug };
+}
+
+async function prepareGrailedDraft(listing, tokens) {
+  const photoSources = [];
+  if (PHOTO_FILE) {
+    photoSources.push(PHOTO_FILE);
+  } else if (PHOTO_URL) {
+    photoSources.push(PHOTO_URL);
+  } else if (Array.isArray(listing.photos) && listing.photos.length > 0) {
+    photoSources.push(...listing.photos);
+  } else {
+    throw new Error("Grailed draft mode requires PHOTO_FILE, PHOTO_URL, or listing.photos.");
+  }
+
+  console.log("\n0. Uploading photos directly to Grailed draft storage...");
+  const uploadedPhotoUrls = [];
+  for (const [index, source] of photoSources.slice(0, 8).entries()) {
+    const imageUrl = await uploadGrailedDraftPhoto(source, index, tokens);
+    uploadedPhotoUrls.push(imageUrl);
+  }
+
+  const designer = await resolveGrailedDesigner(listing.brand, GRAILED_DEPARTMENT);
+  const draftPayload = buildGrailedDraftPayload({
+    listing,
+    designer,
+    department: GRAILED_DEPARTMENT,
+    uploadedPhotoUrls,
+  });
+
+  return { uploadedPhotoUrls, draftPayload };
+}
+
 function defaultListing() {
   const stamp = new Date().toISOString().replace(/[:.]/g, "-");
   return {
@@ -257,8 +364,7 @@ async function readListingPayload() {
   }
 }
 
-async function maybeCreateListing() {
-  const payload = await readListingPayload();
+async function maybeCreateListing(payload) {
   if (!payload) {
     return { listingId: LISTING_ID, created: false };
   }
@@ -274,10 +380,19 @@ async function maybeCreateListing() {
   return { listingId: listing.id, created: true };
 }
 
-async function cleanupListing(listingId, platform, publishOk) {
+async function cleanupListing(listingId, platform, publishOk, grailedDraftId, grailedTokens) {
   console.log("\n4. Cleanup...");
 
-  if (publishOk) {
+  if (grailedDraftId) {
+    try {
+      await grailedApi.deleteDraft(String(grailedDraftId), grailedTokens.csrf_token, grailedTokens.cookies);
+      console.log(`Grailed draft ${grailedDraftId} deleted.`);
+    } catch (error) {
+      console.warn(`Grailed draft cleanup failed: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
+  if (publishOk && !grailedDraftId) {
     try {
       const delistResult = await request("POST", "/api/delist", { listingId, platform });
       console.log("Delist result:");
@@ -307,8 +422,19 @@ async function main() {
     usage("PLATFORM must be grailed or depop.");
   }
 
+  if (GRAILED_DRAFT_ONLY && PLATFORM !== "grailed") {
+    usage("GRAILED_DRAFT_ONLY=1 is only supported with PLATFORM=grailed.");
+  }
+
   const tokens = await readTokens();
-  const { listingId, created } = await maybeCreateListing();
+  const listingPayload = await readListingPayload();
+  let grailedDraftPrepared = null;
+  if (!LISTING_ID && PLATFORM === "grailed" && GRAILED_DRAFT_ONLY) {
+    grailedDraftPrepared = await prepareGrailedDraft(listingPayload, tokens);
+    listingPayload.photos = grailedDraftPrepared.uploadedPhotoUrls;
+  }
+
+  const { listingId, created } = await maybeCreateListing(listingPayload);
   const shouldCleanup = CLEANUP || created;
 
   console.log(`Using API ${API_URL}`);
@@ -330,35 +456,59 @@ async function main() {
     console.log("\n1. Skipping /api/connect (SKIP_CONNECT=1)");
   }
 
-  console.log("\n2. Publishing listing...");
-  const publishResult = await request("POST", "/api/publish", {
-    listingId,
-    platforms: [PLATFORM],
-  });
+  let publishOk = false;
+  let grailedDraftId = null;
 
-  console.log("Publish result:");
-  console.log(JSON.stringify(publishResult, null, 2));
+  if (GRAILED_DRAFT_ONLY && PLATFORM === "grailed") {
+    console.log("\n2. Creating Grailed draft...");
+    const draftResult = await grailedApi.createDraft(
+      grailedDraftPrepared.draftPayload,
+      tokens.csrf_token,
+      tokens.cookies
+    );
+    grailedDraftId = draftResult.data.id;
+    publishOk = true;
+    console.log("Draft result:");
+    console.log(JSON.stringify({
+      id: draftResult.data.id,
+      title: draftResult.data.title,
+      percentage_complete: draftResult.data.percentage_complete,
+    }, null, 2));
 
-  const publishOk = Boolean(
-    publishResult
-      && typeof publishResult === "object"
-      && "results" in publishResult
-      && publishResult.results
-      && typeof publishResult.results === "object"
-      && publishResult.results[PLATFORM]
-      && typeof publishResult.results[PLATFORM] === "object"
-      && publishResult.results[PLATFORM].ok === true
-  );
+    if (CHECK_STATUS) {
+      console.log("\n3. Skipping /api/status because Grailed draft mode does not call /api/publish.");
+    }
+  } else {
+    console.log("\n2. Publishing listing...");
+    const publishResult = await request("POST", "/api/publish", {
+      listingId,
+      platforms: [PLATFORM],
+    });
 
-  if (CHECK_STATUS) {
-    console.log("\n3. Checking status...");
-    const statusResult = await request("GET", `/api/status/${listingId}`);
-    console.log("Status result:");
-    console.log(JSON.stringify(statusResult, null, 2));
+    console.log("Publish result:");
+    console.log(JSON.stringify(publishResult, null, 2));
+
+    publishOk = Boolean(
+      publishResult
+        && typeof publishResult === "object"
+        && "results" in publishResult
+        && publishResult.results
+        && typeof publishResult.results === "object"
+        && publishResult.results[PLATFORM]
+        && typeof publishResult.results[PLATFORM] === "object"
+        && publishResult.results[PLATFORM].ok === true
+    );
+
+    if (CHECK_STATUS) {
+      console.log("\n3. Checking status...");
+      const statusResult = await request("GET", `/api/status/${listingId}`);
+      console.log("Status result:");
+      console.log(JSON.stringify(statusResult, null, 2));
+    }
   }
 
   if (shouldCleanup) {
-    await cleanupListing(listingId, PLATFORM, publishOk);
+    await cleanupListing(listingId, PLATFORM, publishOk, grailedDraftId, tokens);
   }
 }
 

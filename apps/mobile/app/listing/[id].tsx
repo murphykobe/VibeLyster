@@ -13,8 +13,9 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useFocusEffect, useRouter, useLocalSearchParams } from "expo-router";
 import { getListing, updateListing, publishListing, delistListing, deleteListing, syncStatus, getConnections } from "@/lib/api";
-import type { Listing, MarketplaceConnection, Platform, PlatformListing } from "@/lib/types";
+import { getRemoteListingState, type Listing, type MarketplaceConnection, type Platform, type PlatformListing } from "@/lib/types";
 import { CATEGORY_GROUPS, getCategoryOption } from "@/lib/categories";
+import { getPublishMode, type PublishMode } from "@/lib/publish-mode";
 import PhotoCarousel from "@/components/PhotoCarousel";
 import PlatformRow from "@/components/PlatformRow";
 import { theme } from "@/lib/theme";
@@ -45,6 +46,7 @@ function getMergedPlatformRows(listing: Listing): PlatformListing[] {
       listing_id: listing.id,
       platform,
       platform_listing_id: null,
+      platform_data: {},
       status: "pending" as const,
       last_error: null,
       attempt_count: 0,
@@ -66,6 +68,7 @@ export default function ListingDetailScreen() {
   const [delisting, setDelisting] = useState<Platform | null>(null);
   const [publishingAll, setPublishingAll] = useState(false);
   const [showAdvanced, setShowAdvanced] = useState(false);
+  const [publishMode, setPublishMode] = useState<PublishMode>("live");
 
   const [connections, setConnections] = useState<MarketplaceConnection[]>([]);
 
@@ -117,12 +120,20 @@ export default function ListingDetailScreen() {
     }
   }, []);
 
+  const loadPublishMode = useCallback(async () => {
+    try {
+      setPublishMode(await getPublishMode());
+    } catch (err) {
+      console.error(err);
+    }
+  }, []);
+
   useFocusEffect(
     useCallback(() => {
       let cancelled = false;
 
       const run = async () => {
-        await Promise.all([load(), loadConnections()]);
+        await Promise.all([load(), loadConnections(), loadPublishMode()]);
         if (cancelled) return;
         setSyncing(true);
         try {
@@ -143,7 +154,7 @@ export default function ListingDetailScreen() {
       return () => {
         cancelled = true;
       };
-    }, [id, load])
+    }, [id, load, loadConnections, loadPublishMode])
   );
 
   async function handleSave() {
@@ -189,10 +200,16 @@ export default function ListingDetailScreen() {
   async function handlePublish(platform: Platform) {
     setPublishing(platform);
     try {
-      const result = await publishListing(id, [platform]);
-      const platformResult = result.results[platform] as { ok: boolean; error?: string };
+      const result = await publishListing(id, [platform], publishMode);
+      const platformResult = result.results[platform] as {
+        ok: boolean;
+        error?: string;
+        remoteState?: "live" | "draft";
+      };
       if (!platformResult.ok) {
         Alert.alert("Publish failed", platformResult.error ?? "Unknown error");
+      } else if (platformResult.remoteState === "draft") {
+        Alert.alert("Draft saved", `${platform} draft created. Switch back to Live mode whenever you want to publish it.`);
       }
       await load();
     } catch {
@@ -211,7 +228,7 @@ export default function ListingDetailScreen() {
 
     setPublishingAll(true);
     try {
-      await publishListing(id, connectedPlatforms);
+      await publishListing(id, connectedPlatforms, publishMode);
       await load();
     } catch {
       Alert.alert("Error", "Publish failed. Try again.");
@@ -286,6 +303,15 @@ export default function ListingDetailScreen() {
   const visibleCategoryOptions = CATEGORY_GROUPS.find((group) => group.key === visibleCategoryGroup)?.options ?? [];
   const editableTraitKeys = Array.from(new Set(["color", "country_of_origin", ...Object.keys(traits)]));
 
+  function getPublishLabel(platformListing: PlatformListing) {
+    const remoteState = getRemoteListingState(platformListing);
+    if (publishMode === "draft") {
+      return remoteState === "draft" ? "Update Draft" : "Save Draft";
+    }
+    if (remoteState === "draft") return "Go Live";
+    return platformListing.status === "failed" ? "Retry" : "Publish";
+  }
+
   if (loading) {
     return (
       <View style={styles.center}>
@@ -319,7 +345,9 @@ export default function ListingDetailScreen() {
       >
         <View style={styles.hero}>
           <Text style={styles.heroTitle}>{title || "Untitled Listing"}</Text>
-          <Text style={styles.heroSub}>Edit details and publish to marketplaces.</Text>
+          <Text style={styles.heroSub}>
+            Edit details and {publishMode === "draft" ? "save marketplace drafts." : "publish to marketplaces."}
+          </Text>
         </View>
 
         <PhotoCarousel photos={listing.photos} />
@@ -457,6 +485,7 @@ export default function ListingDetailScreen() {
                 onConnect={() => router.push(`/connect/${platformListing.platform}`)}
                 publishing={publishing === platformListing.platform}
                 delisting={delisting === platformListing.platform}
+                publishLabel={getPublishLabel(platformListing)}
               />
             ))}
           </View>
@@ -466,7 +495,9 @@ export default function ListingDetailScreen() {
               {publishingAll ? (
                 <ActivityIndicator size="small" color={theme.colors.white} />
               ) : (
-                <Text style={styles.publishAllText}>Publish to all connected</Text>
+                <Text style={styles.publishAllText}>
+                  {publishMode === "draft" ? "Save drafts to all connected" : "Publish to all connected"}
+                </Text>
               )}
             </Pressable>
           )}

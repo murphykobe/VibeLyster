@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 export const PlatformEnum = z.enum(["grailed", "depop", "ebay"]);
+export const PublishModeEnum = z.enum(["live", "draft"]);
 
 // ─── Listings ─────────────────────────────────────────────────────────────────
 
@@ -35,11 +36,13 @@ export const UpdateListingBody = z.object({
 export const PublishBody = z.object({
   listingId: z.string().uuid("listingId must be a UUID"),
   platforms: z.array(PlatformEnum).min(1, "at least one platform is required"),
+  mode: PublishModeEnum.default("live"),
 });
 
 export const BulkPublishBody = z.object({
   listingIds: z.array(z.string().uuid()).min(1, "at least one listingId is required"),
   platforms: z.array(PlatformEnum).min(1, "at least one platform is required"),
+  mode: PublishModeEnum.default("live"),
 });
 
 // ─── Delist ───────────────────────────────────────────────────────────────────

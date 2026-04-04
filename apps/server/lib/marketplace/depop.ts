@@ -17,6 +17,7 @@ import type {
   DelistResult,
   StatusResult,
   ConnectionProbeResult,
+  PublishOptions,
 } from "./types";
 import { mapCanonicalCategoryToDepop } from "../categories";
 
@@ -198,9 +199,11 @@ export async function verifyDepopConnection(tokens: DepopTokens): Promise<Connec
 
 export async function publishToDepop(
   listing: CanonicalListing,
-  tokens: DepopTokens
+  tokens: DepopTokens,
+  options: PublishOptions = {}
 ): Promise<PublishResult> {
   const { access_token } = tokens;
+  const mode = options.mode ?? "live";
 
   try {
     // 1. Resolve userId + ship-from address
@@ -221,16 +224,22 @@ export async function publishToDepop(
     const { group, productType } = mappedCategory;
     const condition = mapCondition(listing.condition);
 
-    // 4. Create draft
-    const draft = await apiFetch(`${DEPOP_API}/api/v2/drafts/`, {
-      method: "POST",
-      headers: makeHeaders(access_token),
-      body: JSON.stringify({}),
-    }) as { id: number };
+    // 4. Create or reuse draft
+    const existingDraftId = options.existingPlatformData?.remote_state === "draft"
+      ? Number(options.existingPlatformListingId)
+      : Number.NaN;
+
+    const draftId = Number.isFinite(existingDraftId)
+      ? existingDraftId
+      : (await apiFetch(`${DEPOP_API}/api/v2/drafts/`, {
+        method: "POST",
+        headers: makeHeaders(access_token),
+        body: JSON.stringify({}),
+      }) as { id: number }).id;
 
     // 5. Update draft with full payload
     const draftPayload = {
-      id: draft.id,
+      id: draftId,
       description: `${listing.title}\n\n${listing.description}`,
       pictures: pictureIds,
       priceAmount: listing.price.toFixed(2),
@@ -253,29 +262,67 @@ export async function publishToDepop(
       isKids: false,
     };
 
-    await apiFetch(`${DEPOP_API}/api/v2/drafts/${draft.id}/`, {
+    await apiFetch(`${DEPOP_API}/api/v2/drafts/${draftId}/`, {
       method: "PUT",
       headers: makeHeaders(access_token),
       body: JSON.stringify(draftPayload),
     });
 
+    if (mode === "draft") {
+      return {
+        ok: true,
+        platformListingId: String(draftId),
+        remoteState: "draft",
+        modeUsed: "draft",
+        platformData: {
+          userId,
+          ...draftPayload,
+          remote_state: "draft",
+        },
+      };
+    }
+
     // 6. Publish (PUT to products endpoint from draft edit page — the only route that works)
-    const published = await apiFetch(`${DEPOP_API}/api/v2/products/${draft.id}/`, {
+    const published = await apiFetch(`${DEPOP_API}/api/v2/products/${draftId}/`, {
       method: "PUT",
       headers: {
         ...makeHeaders(access_token),
-        Referer: `https://www.depop.com/products/edit/${draft.id}/`,
+        Referer: `https://www.depop.com/products/edit/${draftId}/`,
       },
       body: JSON.stringify(draftPayload),
     }) as { id: number };
 
-    const depopId = String(published.id ?? draft.id);
-    return { ok: true, platformListingId: depopId, platformData: { userId, ...draftPayload } };
+    const depopId = String(published.id ?? draftId);
+    return {
+      ok: true,
+      platformListingId: depopId,
+      remoteState: "live",
+      modeUsed: "live",
+      platformData: { userId, ...draftPayload, remote_state: "live" },
+    };
   } catch (err) {
     const error = err instanceof Error ? err.message : String(err);
     const retryable = err instanceof DepopError
       ? err.statusCode >= 500 || err.statusCode === 429
       : true;
+    return { ok: false, error, retryable };
+  }
+}
+
+export async function deleteDepopDraft(
+  platformListingId: string,
+  tokens: DepopTokens
+): Promise<DelistResult> {
+  const { access_token } = tokens;
+  try {
+    await apiFetch(`${DEPOP_API}/api/v1/drafts/${platformListingId}/`, {
+      method: "DELETE",
+      headers: makeHeaders(access_token),
+    });
+    return { ok: true };
+  } catch (err) {
+    const error = err instanceof Error ? err.message : String(err);
+    const retryable = err instanceof DepopError ? err.statusCode >= 500 : true;
     return { ok: false, error, retryable };
   }
 }

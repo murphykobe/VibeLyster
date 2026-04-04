@@ -5,12 +5,18 @@ export type PlatformListing = {
   listing_id: string;
   platform: Platform;
   platform_listing_id: string | null;
+  platform_data: Record<string, unknown>;
   status: "pending" | "publishing" | "live" | "failed" | "sold" | "delisted";
   last_error: string | null;
   attempt_count: number;
   published_at: string | null;
   last_synced_at: string | null;
 };
+
+export function getRemoteListingState(platformListing: PlatformListing): "draft" | "live" | null {
+  const remoteState = platformListing.platform_data?.remote_state;
+  return remoteState === "draft" || remoteState === "live" ? remoteState : null;
+}
 
 export type Listing = {
   id: string;
