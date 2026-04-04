@@ -89,12 +89,12 @@ From the mobile app, tapping `Connect` on eBay opens a WebView to eBay's OAuth a
 Required query parameters:
 
 - `client_id`
-- `redirect_uri`
+- `redirect_uri` (the eBay app's configured `RuName`)
 - `response_type=code`
 - `scope=<commerce.identity.readonly>`
 - `state=<signed or random anti-CSRF value>`
 
-The redirect target should be an app-controlled callback URL that the mobile app can intercept reliably.
+The authorize request uses the eBay app's configured `RuName`. The accept URL behind that `RuName` should return the user to an app-controlled callback URL that the mobile app can intercept reliably.
 
 ### 2. Capture Authorization Code
 
@@ -169,8 +169,7 @@ Recommended request body for eBay:
 {
   "platform": "ebay",
   "authorizationCode": "<ebay code>",
-  "redirectUri": "<matching redirect uri>",
-  "state": "<original state>"
+  "ruName": "<matching eBay RuName>"
 }
 ```
 
@@ -213,7 +212,7 @@ The eBay connect screen should:
 1. build the authorize URL
 2. open it in WebView
 3. watch navigation changes
-4. intercept callback
+4. intercept the callback after eBay redirects through the configured accept URL
 5. send the returned code to the server
 6. show loading while saving
 7. return to Settings on success
@@ -274,7 +273,7 @@ Failure cases and expected behavior:
 
 - keep eBay client secret on the server only
 - never exchange authorization code from the mobile app directly
-- require and validate `state`
+- require and validate `state` in the mobile callback flow before POSTing to the server
 - encrypt all tokens before storage using existing token crypto helpers
 - avoid storing more profile data than required for connection-only
 
