@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef } from "react";
 import { Animated, Pressable, StyleSheet, Text, View } from "react-native";
 import {
   AudioModule,
@@ -122,30 +122,26 @@ const styles = StyleSheet.create({
   outerRing: {
     width: 136,
     height: 136,
-    borderRadius: 999,
+    borderRadius: 68,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: theme.colors.accentSoft,
-    borderWidth: 1,
-    borderColor: theme.colors.border,
+    backgroundColor: theme.colors.surface,
+    ...theme.shadow.raisedStrong,
   },
   outerRingRecording: {
-    backgroundColor: "#FFDAD5",
-    borderColor: "#F9B8AC",
+    shadowColor: "#DC2626",
+    shadowOpacity: 0.4,
   },
   button: {
     width: 104,
     height: 104,
-    borderRadius: 999,
-    backgroundColor: theme.colors.surface,
-    borderWidth: 1,
-    borderColor: theme.colors.accent,
+    borderRadius: 52,
+    backgroundColor: theme.colors.surfaceStrong,
     alignItems: "center",
     justifyContent: "center",
   },
   buttonRecording: {
     backgroundColor: theme.colors.danger,
-    borderColor: theme.colors.danger,
   },
   mainLabel: {
     color: theme.colors.text,

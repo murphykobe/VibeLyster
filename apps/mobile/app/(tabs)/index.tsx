@@ -312,7 +312,7 @@ const styles = StyleSheet.create({
     fontFamily: theme.fonts.sansBold,
     fontSize: 12,
     textTransform: "uppercase",
-    letterSpacing: 1,
+    letterSpacing: 1.5,
   },
   heroTitle: {
     color: theme.colors.text,
@@ -320,6 +320,7 @@ const styles = StyleSheet.create({
     fontSize: 32,
     lineHeight: 38,
     marginTop: 2,
+    letterSpacing: -0.5,
   },
   heroSub: {
     marginTop: 6,
@@ -335,12 +336,10 @@ const styles = StyleSheet.create({
   metricCell: {
     flex: 1,
     borderRadius: theme.radius.md,
-    borderWidth: 1,
-    borderColor: theme.colors.border,
     backgroundColor: theme.colors.surface,
-    paddingVertical: 12,
+    paddingVertical: 14,
     alignItems: "center",
-    ...theme.shadow.card,
+    ...theme.shadow.raised,
   },
   metricValue: {
     color: theme.colors.text,
@@ -361,16 +360,16 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   tab: {
-    paddingHorizontal: 12,
+    paddingHorizontal: 14,
     paddingVertical: 8,
-    borderRadius: 999,
-    borderWidth: 1,
-    borderColor: theme.colors.border,
+    borderRadius: theme.radius.sm,
     backgroundColor: theme.colors.surface,
+    ...theme.shadow.raised,
   },
   activeTab: {
-    backgroundColor: theme.colors.accentSoft,
-    borderColor: theme.colors.accentSoft,
+    backgroundColor: theme.colors.accent,
+    shadowColor: "#6C63FF",
+    shadowOpacity: 0.4,
   },
   tabText: {
     color: theme.colors.textMuted,
@@ -378,14 +377,15 @@ const styles = StyleSheet.create({
     fontFamily: theme.fonts.sansBold,
   },
   activeTabText: {
-    color: theme.colors.accent,
+    color: theme.colors.white,
   },
   selectBtn: {
     marginLeft: "auto",
-    borderRadius: 999,
-    backgroundColor: theme.colors.surfaceStrong,
-    paddingHorizontal: 12,
+    borderRadius: theme.radius.sm,
+    backgroundColor: theme.colors.surface,
+    paddingHorizontal: 14,
     paddingVertical: 8,
+    ...theme.shadow.raised,
   },
   selectBtnText: {
     color: theme.colors.text,
@@ -397,9 +397,8 @@ const styles = StyleSheet.create({
     marginBottom: 10,
     backgroundColor: theme.colors.surface,
     borderRadius: theme.radius.md,
-    borderWidth: 1,
-    borderColor: theme.colors.border,
     overflow: "hidden",
+    ...theme.shadow.raised,
   },
   selectionBar: {
     flexDirection: "row",
@@ -420,7 +419,7 @@ const styles = StyleSheet.create({
   },
   selectionPublishBtn: {
     backgroundColor: theme.colors.accent,
-    borderRadius: 999,
+    borderRadius: theme.radius.sm,
     paddingHorizontal: 14,
     paddingVertical: 8,
   },
@@ -439,16 +438,13 @@ const styles = StyleSheet.create({
     paddingBottom: 12,
   },
   platformToggle: {
-    borderRadius: 999,
-    borderWidth: 1,
-    borderColor: theme.colors.border,
+    borderRadius: theme.radius.sm,
     backgroundColor: theme.colors.surfaceStrong,
     paddingHorizontal: 14,
     paddingVertical: 8,
   },
   platformToggleActive: {
-    borderColor: theme.colors.accent,
-    backgroundColor: theme.colors.accentSoft,
+    backgroundColor: theme.colors.accent,
   },
   platformToggleText: {
     color: theme.colors.textMuted,
@@ -456,7 +452,7 @@ const styles = StyleSheet.create({
     fontFamily: theme.fonts.sansBold,
   },
   platformToggleTextActive: {
-    color: theme.colors.accent,
+    color: theme.colors.white,
   },
   list: {
     paddingHorizontal: 16,
@@ -479,10 +475,12 @@ const styles = StyleSheet.create({
   },
   emptyCta: {
     marginTop: 8,
-    borderRadius: 999,
+    borderRadius: theme.radius.lg,
     backgroundColor: theme.colors.accent,
-    paddingHorizontal: 18,
-    paddingVertical: 11,
+    paddingHorizontal: 24,
+    paddingVertical: 13,
+    ...theme.shadow.raisedStrong,
+    shadowColor: "#6C63FF",
   },
   emptyCtaText: {
     color: theme.colors.white,
@@ -495,11 +493,12 @@ const styles = StyleSheet.create({
     bottom: 30,
     width: 64,
     height: 64,
-    borderRadius: 999,
+    borderRadius: 32,
     alignItems: "center",
     justifyContent: "center",
     backgroundColor: theme.colors.accent,
-    ...theme.shadow.card,
+    ...theme.shadow.raisedStrong,
+    shadowColor: "#6C63FF",
   },
   fabText: {
     color: theme.colors.white,
