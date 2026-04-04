@@ -54,8 +54,8 @@ export const DelistBody = z.object({
 
 // ─── Connect ──────────────────────────────────────────────────────────────────
 
-export const ConnectBody = z.object({
-  platform: PlatformEnum,
+const ConnectTokenBody = z.object({
+  platform: z.enum(["grailed", "depop"]),
   tokens: z.record(z.unknown()).refine(
     (t) => Object.keys(t).length > 0,
     "tokens must be a non-empty object"
@@ -63,6 +63,20 @@ export const ConnectBody = z.object({
   platformUsername: z.string().max(100).optional(),
   expiresAt: z.string().datetime().optional(),
 });
+
+const ConnectEbayBody = z.object({
+  platform: z.literal("ebay"),
+  authorizationCode: z.string().min(1, "authorizationCode is required"),
+  ruName: z.string().min(1, "ruName is required"),
+  state: z.string().min(1, "state is required"),
+  platformUsername: z.string().max(100).optional(),
+  expiresAt: z.string().datetime().optional(),
+});
+
+export const ConnectBody = z.discriminatedUnion("platform", [
+  ConnectTokenBody,
+  ConnectEbayBody,
+]);
 
 export const DisconnectQuery = z.object({
   platform: PlatformEnum,

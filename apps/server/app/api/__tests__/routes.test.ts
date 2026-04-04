@@ -296,6 +296,22 @@ describe("POST /api/connect", () => {
     expect(data.platform_username).toBe("mock-grailed-user");
   });
 
+  it("saves mock eBay connection from code exchange payload and returns 201", async () => {
+    const res = await connectPlatform(req("POST", "/api/connect", {
+      body: {
+        platform: "ebay",
+        authorizationCode: "ebay-code-1",
+        ruName: "vibelyster-accept",
+        state: "state-1",
+      },
+    }));
+
+    expect(res.status).toBe(201);
+    const data = await res.json();
+    expect(data.platform).toBe("ebay");
+    expect(data.platform_username).toBe("mock-ebay-user");
+  });
+
   it("upserts — reconnecting updates the record", async () => {
     await connectPlatform(req("POST", "/api/connect", { body: { platform: "depop", tokens: { access_token: "tok1" } } }));
     await connectPlatform(req("POST", "/api/connect", { body: { platform: "depop", tokens: { access_token: "tok2" } } }));
@@ -315,6 +331,13 @@ describe("POST /api/connect", () => {
   it("returns 400 for empty tokens", async () => {
     const res = await connectPlatform(req("POST", "/api/connect", {
       body: { platform: "grailed", tokens: {} },
+    }));
+    expect(res.status).toBe(400);
+  });
+
+  it("returns 400 for incomplete eBay payload", async () => {
+    const res = await connectPlatform(req("POST", "/api/connect", {
+      body: { platform: "ebay", authorizationCode: "ebay-code-1" },
     }));
     expect(res.status).toBe(400);
   });
