@@ -137,10 +137,23 @@ function getGrailedAuthPayload(cookieMap: Record<string, { value?: string }>) {
 }
 
 export default function ConnectScreen() {
-  const { platform } = useLocalSearchParams<{ platform: string }>();
+  const {
+    platform,
+    code,
+    state: incomingState,
+    error: incomingError,
+    error_description: incomingErrorDescription,
+  } = useLocalSearchParams<{
+    platform: string;
+    code?: string | string[];
+    state?: string | string[];
+    error?: string | string[];
+    error_description?: string | string[];
+  }>();
   const router = useRouter();
   const webviewRef = useRef<WebView>(null);
   const saveAttemptedRef = useRef(false);
+  const initialDeepLinkHandledRef = useRef(false);
   const debugIdRef = useRef(1);
   const ebayStateRef = useRef(createOauthState());
   const [loading, setLoading] = useState(true);
@@ -345,6 +358,27 @@ export default function ConnectScreen() {
       setSaving(false);
     }
   }
+
+  useEffect(() => {
+    if (typedPlatform !== "ebay" || initialDeepLinkHandledRef.current) return;
+
+    const deepLinkCode = pickString(code);
+    const deepLinkState = pickString(incomingState);
+    const deepLinkError = pickString(incomingError);
+    const deepLinkErrorDescription = pickString(incomingErrorDescription);
+
+    if (!deepLinkError && !(deepLinkCode && deepLinkState)) return;
+
+    const deepLink = new URL(EBAY_CALLBACK_PREFIX);
+    if (deepLinkCode) deepLink.searchParams.set("code", deepLinkCode);
+    if (deepLinkState) deepLink.searchParams.set("state", deepLinkState);
+    if (deepLinkError) deepLink.searchParams.set("error", deepLinkError);
+    if (deepLinkErrorDescription) deepLink.searchParams.set("error_description", deepLinkErrorDescription);
+
+    initialDeepLinkHandledRef.current = true;
+    pushDebug(`eBay deep link received via router: ${deepLink.toString()}`);
+    void handleEbayCallback(deepLink.toString());
+  }, [code, incomingError, incomingErrorDescription, incomingState, pushDebug, typedPlatform]);
 
   async function tryCaptureDepopTokenFromCookies(reason: string) {
     if (typedPlatform !== "depop" || saveAttemptedRef.current) return;
