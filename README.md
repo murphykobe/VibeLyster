@@ -155,6 +155,14 @@ E2E_PASSWORD='your-password' \
 npm run test:preview
 ```
 
+### eBay OAuth testing
+
+- Browser/server live coverage: `cd apps/e2e && npm run test:preview:ebay`
+- Native iOS deterministic smoke: `cd apps/mobile && npm run maestro:ebay:deterministic`
+- Native iOS live sandbox flow: `cd apps/mobile && npm run maestro:ebay:live`
+
+See `apps/mobile/.maestro/README.md` for the full local setup.
+
 ### Manual AI E2E
 This is opt-in and should not run in CI because it uses paid AI services.
 

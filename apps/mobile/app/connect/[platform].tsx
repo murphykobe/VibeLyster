@@ -20,6 +20,10 @@ const EBAY_SCOPE = "https://api.ebay.com/oauth/api_scope/commerce.identity.reado
 const EBAY_CALLBACK_PREFIX = "vibelyster://connect/ebay";
 const EBAY_CLIENT_ID = pickString(process.env.EXPO_PUBLIC_EBAY_CLIENT_ID);
 const EBAY_RU_NAME = pickString(process.env.EXPO_PUBLIC_EBAY_RU_NAME);
+const EBAY_SANDBOX = process.env.EXPO_PUBLIC_EBAY_SANDBOX === "true";
+const EBAY_AUTH_HOST = EBAY_SANDBOX ? "https://auth.sandbox.ebay.com" : "https://auth.ebay.com";
+const EBAY_E2E_MODE = ["1", "true", "yes", "on"].includes((process.env.EXPO_PUBLIC_EBAY_E2E_MODE ?? "").toLowerCase());
+const EBAY_E2E_STATE = pickString(process.env.EXPO_PUBLIC_EBAY_TEST_STATE);
 
 const CONFIG: Record<Platform, { title: string }> = {
   grailed: {
@@ -100,11 +104,15 @@ function extractAccessTokenFromUrl(value: string) {
 }
 
 function createOauthState() {
+  if (typeof __DEV__ !== "undefined" && __DEV__ && EBAY_E2E_MODE && EBAY_E2E_STATE) {
+    return EBAY_E2E_STATE;
+  }
+
   return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
 }
 
 function buildEbayAuthorizeUrl(params: { clientId: string; ruName: string; state: string }) {
-  const url = new URL("https://auth.ebay.com/oauth2/authorize");
+  const url = new URL(`${EBAY_AUTH_HOST}/oauth2/authorize`);
   url.searchParams.set("client_id", params.clientId);
   url.searchParams.set("redirect_uri", params.ruName);
   url.searchParams.set("response_type", "code");

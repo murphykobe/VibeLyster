@@ -55,6 +55,17 @@ If we add native smoke CI, the first target should be a simulator-based smoke la
 
 Live marketplace tests should stay manual or nightly and remain non-blocking.
 
+### eBay OAuth verification
+
+We now verify eBay OAuth in three layers:
+1. Playwright live callback redirect + code exchange
+2. Maestro deterministic iOS deep-link smoke in mock mode
+3. Maestro live iOS sandbox OAuth
+
+Use Playwright when debugging callback-route or server token exchange issues.
+Use Maestro deterministic when debugging app deep-link/state handling.
+Use Maestro live when debugging real iOS WebView/runtime integration.
+
 ---
 
 ## 2. Current Testing Modes

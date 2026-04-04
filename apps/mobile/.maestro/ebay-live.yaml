@@ -1,0 +1,44 @@
+appId: com.vibelyster.app
+env:
+  CLERK_EMAIL: ${MAESTRO_CLERK_TEST_EMAIL}
+  CLERK_PASSWORD: ${MAESTRO_CLERK_TEST_PASSWORD}
+  EBAY_USERNAME: ${MAESTRO_EBAY_SANDBOX_USERNAME}
+  EBAY_PASSWORD: ${MAESTRO_EBAY_SANDBOX_PASSWORD}
+---
+- launchApp:
+    clearState: true
+- runFlow:
+    when:
+      visible: "Sign in to your account"
+    commands:
+      - tapOn: "Email"
+      - inputText: ${CLERK_EMAIL}
+      - tapOn: "Password"
+      - inputText: ${CLERK_PASSWORD}
+      - tapOn: "Sign in"
+- tapOn: "Settings"
+- assertVisible: "Account & Connections"
+- runFlow:
+    when:
+      visible:
+        id: "platform-disconnect-ebay"
+    commands:
+      - tapOn:
+          id: "platform-disconnect-ebay"
+      - tapOn: "Disconnect"
+- tapOn:
+    id: "platform-connect-ebay"
+- assertVisible: "Connect eBay"
+- tapOn: "Email or username"
+- inputText: ${EBAY_USERNAME}
+- tapOn: "Continue"
+- tapOn: "Password"
+- inputText: ${EBAY_PASSWORD}
+- tapOn: "Sign in"
+- runFlow:
+    when:
+      visible: "Agree"
+    commands:
+      - tapOn: "Agree"
+- assertVisible:
+    id: "platform-disconnect-ebay"
