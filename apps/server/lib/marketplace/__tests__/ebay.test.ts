@@ -15,14 +15,14 @@ describe("eBay marketplace helper", () => {
   it("builds an authorize URL with the minimum identity scope", () => {
     const url = buildEbayAuthorizeUrl({
       clientId: "client-123",
-      redirectUri: "https://app.example.com/oauth/ebay/callback",
+      ruName: "vibelyster-app-EBAY-US",
       state: "state-abc",
     });
 
     const parsed = new URL(url);
     expect(parsed.origin + parsed.pathname).toBe("https://auth.ebay.com/oauth2/authorize");
     expect(parsed.searchParams.get("client_id")).toBe("client-123");
-    expect(parsed.searchParams.get("redirect_uri")).toBe("https://app.example.com/oauth/ebay/callback");
+    expect(parsed.searchParams.get("redirect_uri")).toBe("vibelyster-app-EBAY-US");
     expect(parsed.searchParams.get("state")).toBe("state-abc");
     expect(parsed.searchParams.get("scope")).toBe(EBAY_IDENTITY_SCOPE);
     expect(parsed.searchParams.get("response_type")).toBe("code");
@@ -46,7 +46,7 @@ describe("eBay marketplace helper", () => {
     const result = await exchangeEbayAuthorizationCode({
       clientId: "client-123",
       clientSecret: "secret-456",
-      redirectUri: "https://app.example.com/oauth/ebay/callback",
+      ruName: "vibelyster-app-EBAY-US",
       authorizationCode: "code-789",
     });
 
@@ -69,8 +69,28 @@ describe("eBay marketplace helper", () => {
       })
     );
     expect(init?.body).toBe(
-      "grant_type=authorization_code&code=code-789&redirect_uri=https%3A%2F%2Fapp.example.com%2Foauth%2Febay%2Fcallback"
+      "grant_type=authorization_code&code=code-789&redirect_uri=vibelyster-app-EBAY-US"
     );
+  });
+
+  it("rejects malformed token exchange responses", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(JSON.stringify({ access_token: "access-123", token_type: "User Token", expires_in: 7200 }), {
+          status: 200,
+        })
+      )
+    );
+
+    await expect(
+      exchangeEbayAuthorizationCode({
+        clientId: "client-123",
+        clientSecret: "secret-456",
+        ruName: "vibelyster-app-EBAY-US",
+        authorizationCode: "code-789",
+      })
+    ).rejects.toThrow("eBay token exchange response missing refresh_token");
   });
 
   it("verifies an eBay connection from tokens and returns platformUsername when present", async () => {
@@ -96,5 +116,13 @@ describe("eBay marketplace helper", () => {
     const result = await verifyEbayConnectionFromTokens({ accessToken: "access-123" });
 
     expect(result).toEqual({ ok: false, error: "eBay verification response missing userId" });
+  });
+
+  it("returns an error when verification response is not OK", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(null, { status: 401 })));
+
+    const result = await verifyEbayConnectionFromTokens({ accessToken: "access-123" });
+
+    expect(result).toEqual({ ok: false, error: "eBay verification failed with status 401" });
   });
 });

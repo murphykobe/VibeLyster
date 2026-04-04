@@ -3,14 +3,14 @@ export const EBAY_IDENTITY_SCOPE =
 
 type EbayAuthorizeUrlInput = {
   clientId: string;
-  redirectUri: string;
+  ruName: string;
   state: string;
 };
 
 type EbayTokenExchangeInput = {
   clientId: string;
   clientSecret: string;
-  redirectUri: string;
+  ruName: string;
   authorizationCode: string;
 };
 
@@ -39,10 +39,26 @@ function toNumber(value: unknown): number | undefined {
   return typeof parsed === "number" && Number.isFinite(parsed) ? parsed : undefined;
 }
 
-export function buildEbayAuthorizeUrl({ clientId, redirectUri, state }: EbayAuthorizeUrlInput): string {
+function requireString(value: unknown, fieldName: string): string {
+  const parsed = pickString(value);
+  if (!parsed) {
+    throw new Error(`eBay token exchange response missing ${fieldName}`);
+  }
+  return parsed;
+}
+
+function requireNumber(value: unknown, fieldName: string): number {
+  const parsed = toNumber(value);
+  if (parsed === undefined) {
+    throw new Error(`eBay token exchange response missing ${fieldName}`);
+  }
+  return parsed;
+}
+
+export function buildEbayAuthorizeUrl({ clientId, ruName, state }: EbayAuthorizeUrlInput): string {
   const url = new URL("https://auth.ebay.com/oauth2/authorize");
   url.searchParams.set("client_id", clientId);
-  url.searchParams.set("redirect_uri", redirectUri);
+  url.searchParams.set("redirect_uri", ruName);
   url.searchParams.set("response_type", "code");
   url.searchParams.set("scope", EBAY_IDENTITY_SCOPE);
   url.searchParams.set("state", state);
@@ -52,7 +68,7 @@ export function buildEbayAuthorizeUrl({ clientId, redirectUri, state }: EbayAuth
 export async function exchangeEbayAuthorizationCode({
   clientId,
   clientSecret,
-  redirectUri,
+  ruName,
   authorizationCode,
 }: EbayTokenExchangeInput): Promise<{
   accessToken: string;
@@ -70,7 +86,7 @@ export async function exchangeEbayAuthorizationCode({
     body: new URLSearchParams({
       grant_type: "authorization_code",
       code: authorizationCode,
-      redirect_uri: redirectUri,
+      redirect_uri: ruName,
     }).toString(),
   });
 
@@ -80,10 +96,10 @@ export async function exchangeEbayAuthorizationCode({
 
   const data = (await response.json()) as EbayTokenResponse;
   return {
-    accessToken: pickString(data.access_token) ?? "",
-    refreshToken: pickString(data.refresh_token) ?? "",
-    tokenType: pickString(data.token_type) ?? "",
-    expiresIn: toNumber(data.expires_in) ?? 0,
+    accessToken: requireString(data.access_token, "access_token"),
+    refreshToken: requireString(data.refresh_token, "refresh_token"),
+    tokenType: requireString(data.token_type, "token_type"),
+    expiresIn: requireNumber(data.expires_in, "expires_in"),
     refreshTokenExpiresIn: toNumber(data.refresh_token_expires_in) ?? 0,
   };
 }
