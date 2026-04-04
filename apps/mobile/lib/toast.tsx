@@ -22,7 +22,7 @@ const ANIM_MS = 250;
 const TYPE_STYLES: Record<ToastType, { bg: string; color: string }> = {
   error: { bg: "#DC2626", color: "#FFFFFF" },
   success: { bg: "#16A34A", color: "#FFFFFF" },
-  info: { bg: "#111111", color: "#FFFFFF" },
+  info: { bg: "#3D4852", color: "#FFFFFF" },
 };
 
 function Toast({ entry, onDone }: { entry: ToastEntry; onDone: (id: number) => void }) {
@@ -92,13 +92,9 @@ const styles = StyleSheet.create({
   toast: {
     paddingHorizontal: 16,
     paddingVertical: 12,
-    borderRadius: 10,
+    borderRadius: theme.radius.md,
     width: "100%",
-    shadowColor: "#000",
-    shadowOpacity: 0.15,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 4 },
-    elevation: 5,
+    ...theme.shadow.raisedStrong,
   },
   toastText: {
     fontFamily: theme.fonts.sansBold,

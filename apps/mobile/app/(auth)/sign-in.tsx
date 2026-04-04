@@ -144,7 +144,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     paddingHorizontal: 20,
     paddingVertical: 24,
-    gap: 18,
+    gap: 24,
   },
   hero: {
     gap: 4,
@@ -154,13 +154,14 @@ const styles = StyleSheet.create({
     fontFamily: theme.fonts.sansBold,
     fontSize: 12,
     textTransform: "uppercase",
-    letterSpacing: 1,
+    letterSpacing: 1.5,
   },
   logo: {
     color: theme.colors.text,
     fontFamily: theme.fonts.display,
     fontSize: 42,
     lineHeight: 46,
+    letterSpacing: -1,
   },
   tagline: {
     color: theme.colors.textMuted,
@@ -170,15 +171,13 @@ const styles = StyleSheet.create({
   card: {
     backgroundColor: theme.colors.surface,
     borderRadius: theme.radius.xl,
-    borderWidth: 1,
-    borderColor: theme.colors.border,
-    padding: 18,
+    padding: 20,
     gap: 14,
-    ...theme.shadow.card,
+    ...theme.shadow.raisedStrong,
   },
   cardTitle: {
     color: theme.colors.text,
-    fontFamily: theme.fonts.sansBold,
+    fontFamily: theme.fonts.display,
     fontSize: 20,
   },
   cardSub: {
@@ -198,8 +197,6 @@ const styles = StyleSheet.create({
   },
   input: {
     backgroundColor: theme.colors.surfaceStrong,
-    borderWidth: 1,
-    borderColor: theme.colors.border,
     borderRadius: theme.radius.md,
     paddingVertical: 14,
     paddingHorizontal: 16,
@@ -221,28 +218,21 @@ const styles = StyleSheet.create({
     marginVertical: 2,
   },
   button: {
-    borderRadius: 999,
+    borderRadius: theme.radius.lg,
     paddingVertical: 15,
     alignItems: "center",
     justifyContent: "center",
+    ...theme.shadow.raised,
   },
   emailButton: {
     backgroundColor: theme.colors.accent,
-  },
-  appleButton: {
-    backgroundColor: theme.colors.text,
+    shadowColor: "#6C63FF",
+    shadowOpacity: 0.4,
   },
   googleButton: {
-    backgroundColor: theme.colors.surfaceStrong,
-    borderWidth: 1,
-    borderColor: theme.colors.border,
+    backgroundColor: theme.colors.surface,
   },
   primaryButtonText: {
-    color: theme.colors.white,
-    fontFamily: theme.fonts.sansBold,
-    fontSize: 15,
-  },
-  appleButtonText: {
     color: theme.colors.white,
     fontFamily: theme.fonts.sansBold,
     fontSize: 15,

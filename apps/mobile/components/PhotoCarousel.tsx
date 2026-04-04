@@ -74,8 +74,6 @@ const styles = StyleSheet.create({
   placeholder: {
     borderRadius: theme.radius.lg,
     backgroundColor: theme.colors.surfaceStrong,
-    borderWidth: 1,
-    borderColor: theme.colors.border,
     alignItems: "center",
     justifyContent: "center",
     height: 220,

@@ -112,15 +112,13 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     backgroundColor: theme.colors.surface,
     borderRadius: theme.radius.lg,
-    borderWidth: 1,
-    borderColor: theme.colors.border,
     marginBottom: 12,
     overflow: "hidden",
-    ...theme.shadow.card,
+    ...theme.shadow.raised,
   },
   cardSelected: {
-    borderColor: theme.colors.accent,
-    borderWidth: 2,
+    shadowColor: "#6C63FF",
+    shadowOpacity: 0.5,
   },
   thumb: {
     width: 104,
@@ -155,8 +153,8 @@ const styles = StyleSheet.create({
     lineHeight: 20,
   },
   pricePill: {
-    backgroundColor: theme.colors.accentSoft,
-    borderRadius: 999,
+    backgroundColor: theme.colors.surfaceStrong,
+    borderRadius: theme.radius.sm,
     paddingHorizontal: 10,
     paddingVertical: 5,
   },
@@ -171,7 +169,7 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
   },
   statusPill: {
-    borderRadius: 999,
+    borderRadius: theme.radius.sm,
     paddingHorizontal: 10,
     paddingVertical: 5,
   },

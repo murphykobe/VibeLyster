@@ -107,10 +107,8 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    backgroundColor: theme.colors.surface,
+    backgroundColor: theme.colors.surfaceStrong,
     borderRadius: theme.radius.md,
-    borderWidth: 1,
-    borderColor: theme.colors.border,
     paddingHorizontal: 14,
     paddingVertical: 13,
   },
@@ -144,7 +142,7 @@ const styles = StyleSheet.create({
     fontFamily: theme.fonts.sans,
   },
   actionBtn: {
-    borderRadius: 999,
+    borderRadius: theme.radius.sm,
     paddingHorizontal: 14,
     paddingVertical: 8,
     minWidth: 86,
@@ -156,25 +154,24 @@ const styles = StyleSheet.create({
   },
   actionPrimary: {
     backgroundColor: theme.colors.accent,
+    ...theme.shadow.raised,
+    shadowColor: "#6C63FF",
+    shadowOpacity: 0.3,
   },
   actionPrimaryText: {
     color: theme.colors.white,
   },
   actionGhost: {
-    borderWidth: 1,
-    borderColor: theme.colors.danger,
     backgroundColor: theme.colors.surface,
   },
   actionGhostText: {
     color: theme.colors.danger,
   },
   actionLink: {
-    borderWidth: 1,
-    borderColor: theme.colors.border,
-    backgroundColor: theme.colors.surfaceStrong,
+    backgroundColor: theme.colors.surface,
   },
   actionLinkText: {
-    color: theme.colors.info,
+    color: theme.colors.accent,
   },
   actionSpacer: {
     minWidth: 86,

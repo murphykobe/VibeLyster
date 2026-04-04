@@ -473,9 +473,7 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     paddingHorizontal: 14,
     paddingVertical: 10,
-    backgroundColor: theme.colors.surface,
-    borderBottomWidth: 1,
-    borderBottomColor: theme.colors.border,
+    backgroundColor: theme.colors.bg,
   },
   backBtn: {
     minWidth: 52,
@@ -507,9 +505,7 @@ const styles = StyleSheet.create({
     backgroundColor: theme.colors.surface,
   },
   helperPanel: {
-    borderTopWidth: 1,
-    borderTopColor: theme.colors.border,
-    backgroundColor: theme.colors.surface,
+    backgroundColor: theme.colors.bg,
     paddingHorizontal: 12,
     paddingVertical: 12,
     gap: 8,
@@ -527,8 +523,6 @@ const styles = StyleSheet.create({
   },
   magicLinkInput: {
     minHeight: 72,
-    borderWidth: 1,
-    borderColor: theme.colors.border,
     borderRadius: theme.radius.md,
     backgroundColor: theme.colors.surfaceStrong,
     paddingHorizontal: 12,
@@ -539,12 +533,14 @@ const styles = StyleSheet.create({
     textAlignVertical: "top",
   },
   magicLinkButton: {
-    borderRadius: 999,
+    borderRadius: theme.radius.md,
     backgroundColor: theme.colors.accent,
     alignItems: "center",
     justifyContent: "center",
     paddingHorizontal: 16,
     paddingVertical: 11,
+    ...theme.shadow.raised,
+    shadowColor: "#6C63FF",
   },
   magicLinkButtonDisabled: {
     opacity: 0.55,
@@ -556,7 +552,7 @@ const styles = StyleSheet.create({
   },
   loadingOverlay: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: "rgba(246, 241, 232, 0.75)",
+    backgroundColor: "rgba(224, 229, 236, 0.75)",
     alignItems: "center",
     justifyContent: "center",
   },

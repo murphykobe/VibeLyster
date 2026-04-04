@@ -278,6 +278,7 @@ const styles = StyleSheet.create({
     fontFamily: theme.fonts.display,
     fontSize: 32,
     lineHeight: 38,
+    letterSpacing: -0.5,
   },
   heroSub: {
     marginTop: 8,
@@ -288,12 +289,10 @@ const styles = StyleSheet.create({
   },
   sectionCard: {
     backgroundColor: theme.colors.surface,
-    borderWidth: 1,
-    borderColor: theme.colors.border,
     borderRadius: theme.radius.lg,
     padding: 14,
     gap: 12,
-    ...theme.shadow.card,
+    ...theme.shadow.raised,
   },
   sectionHeader: {
     flexDirection: "row",
@@ -328,7 +327,7 @@ const styles = StyleSheet.create({
     right: 6,
     width: 22,
     height: 22,
-    borderRadius: 99,
+    borderRadius: 11,
     alignItems: "center",
     justifyContent: "center",
     backgroundColor: "rgba(31, 36, 48, 0.78)",
@@ -374,9 +373,7 @@ const styles = StyleSheet.create({
   },
   statusBox: {
     borderRadius: theme.radius.md,
-    borderWidth: 1,
-    borderColor: theme.colors.accent,
-    backgroundColor: theme.colors.accentSoft,
+    backgroundColor: theme.colors.surfaceStrong,
     flexDirection: "row",
     alignItems: "center",
     gap: 10,
@@ -394,11 +391,13 @@ const styles = StyleSheet.create({
     paddingBottom: 22,
   },
   generateBtn: {
-    borderRadius: 999,
+    borderRadius: theme.radius.lg,
     backgroundColor: theme.colors.accent,
     alignItems: "center",
     justifyContent: "center",
     paddingVertical: 15,
+    ...theme.shadow.raisedStrong,
+    shadowColor: "#6C63FF",
   },
   generateBtnDisabled: {
     opacity: 0.45,
@@ -420,7 +419,7 @@ const styles = StyleSheet.create({
     color: theme.colors.accent,
     fontFamily: theme.fonts.sansBold,
     textTransform: "uppercase",
-    letterSpacing: 1,
+    letterSpacing: 1.5,
     fontSize: 12,
   },
   doneTitle: {
@@ -428,6 +427,7 @@ const styles = StyleSheet.create({
     fontFamily: theme.fonts.display,
     fontSize: 44,
     lineHeight: 52,
+    letterSpacing: -1,
   },
   doneSubtitle: {
     color: theme.colors.textMuted,
@@ -442,10 +442,12 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   donePrimary: {
-    borderRadius: 999,
+    borderRadius: theme.radius.lg,
     backgroundColor: theme.colors.accent,
     alignItems: "center",
     paddingVertical: 14,
+    ...theme.shadow.raisedStrong,
+    shadowColor: "#6C63FF",
   },
   donePrimaryText: {
     color: theme.colors.white,
@@ -453,12 +455,11 @@ const styles = StyleSheet.create({
     fontSize: 14,
   },
   doneSecondary: {
-    borderRadius: 999,
-    borderWidth: 1,
-    borderColor: theme.colors.border,
+    borderRadius: theme.radius.lg,
     backgroundColor: theme.colors.surface,
     alignItems: "center",
     paddingVertical: 14,
+    ...theme.shadow.raised,
   },
   doneSecondaryText: {
     color: theme.colors.text,

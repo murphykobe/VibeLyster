@@ -90,18 +90,16 @@ const styles = StyleSheet.create({
   content: {
     marginTop: 20,
     borderRadius: theme.radius.lg,
-    borderWidth: 1,
-    borderColor: theme.colors.border,
     backgroundColor: theme.colors.surface,
     padding: 16,
     gap: 12,
-    ...theme.shadow.card,
+    ...theme.shadow.raised,
   },
   kicker: {
     color: theme.colors.accent,
     fontFamily: theme.fonts.sansBold,
     fontSize: 12,
-    letterSpacing: 1,
+    letterSpacing: 1.5,
     textTransform: "uppercase",
   },
   title: {
@@ -119,9 +117,11 @@ const styles = StyleSheet.create({
   button: {
     marginTop: 12,
     backgroundColor: theme.colors.accent,
-    borderRadius: 999,
+    borderRadius: theme.radius.md,
     paddingVertical: 12,
     alignItems: "center",
+    ...theme.shadow.raised,
+    shadowColor: "#6C63FF",
   },
   buttonText: {
     color: theme.colors.white,
@@ -130,12 +130,11 @@ const styles = StyleSheet.create({
   },
   secondaryButton: {
     marginTop: 4,
-    borderRadius: 999,
-    borderWidth: 1,
-    borderColor: theme.colors.border,
-    backgroundColor: theme.colors.surfaceStrong,
+    borderRadius: theme.radius.md,
+    backgroundColor: theme.colors.surface,
     paddingVertical: 12,
     alignItems: "center",
+    ...theme.shadow.raised,
   },
   secondaryButtonText: {
     color: theme.colors.text,

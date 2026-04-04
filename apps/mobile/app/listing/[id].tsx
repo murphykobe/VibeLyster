@@ -397,9 +397,9 @@ export default function ListingDetailScreen() {
                           setCategory(group.options[0]?.key ?? "");
                         }
                       }}
-                      style={[styles.conditionChip, visibleCategoryGroup === group.key && styles.conditionChipActive]}
+                      style={[styles.chip, visibleCategoryGroup === group.key && styles.chipActive]}
                     >
-                      <Text style={[styles.conditionChipText, visibleCategoryGroup === group.key && styles.conditionChipTextActive]}>
+                      <Text style={[styles.chipText, visibleCategoryGroup === group.key && styles.chipTextActive]}>
                         {group.label}
                       </Text>
                     </Pressable>
@@ -410,9 +410,9 @@ export default function ListingDetailScreen() {
                     <Pressable
                       key={option.key}
                       onPress={() => setCategory(option.key)}
-                      style={[styles.categoryOptionChip, category === option.key && styles.categoryOptionChipActive]}
+                      style={[styles.chip, category === option.key && styles.chipActive]}
                     >
-                      <Text style={[styles.categoryOptionText, category === option.key && styles.categoryOptionTextActive]}>
+                      <Text style={[styles.chipText, category === option.key && styles.chipTextActive]}>
                         {option.label}
                       </Text>
                     </Pressable>
@@ -428,9 +428,9 @@ export default function ListingDetailScreen() {
                 <Pressable
                   key={item}
                   onPress={() => setCondition(item)}
-                  style={[styles.conditionChip, condition === item && styles.conditionChipActive]}
+                  style={[styles.chip, condition === item && styles.chipActive]}
                 >
-                  <Text style={[styles.conditionChipText, condition === item && styles.conditionChipTextActive]}>
+                  <Text style={[styles.chipText, condition === item && styles.chipTextActive]}>
                     {item.replace(/_/g, " ")}
                   </Text>
                 </Pressable>
@@ -562,12 +562,14 @@ const styles = StyleSheet.create({
     fontFamily: theme.fonts.sansBold,
   },
   saveBtn: {
-    borderRadius: 999,
+    borderRadius: theme.radius.sm,
     backgroundColor: theme.colors.accent,
     paddingHorizontal: 14,
     paddingVertical: 9,
     minWidth: 72,
     alignItems: "center",
+    ...theme.shadow.raised,
+    shadowColor: "#6C63FF",
   },
   saveBtnText: {
     color: theme.colors.white,
@@ -587,6 +589,7 @@ const styles = StyleSheet.create({
     fontFamily: theme.fonts.display,
     fontSize: 34,
     lineHeight: 40,
+    letterSpacing: -0.5,
   },
   heroSub: {
     marginTop: 4,
@@ -597,12 +600,10 @@ const styles = StyleSheet.create({
   card: {
     marginHorizontal: 16,
     borderRadius: theme.radius.lg,
-    borderWidth: 1,
-    borderColor: theme.colors.border,
     backgroundColor: theme.colors.surface,
     padding: 14,
     gap: 12,
-    ...theme.shadow.card,
+    ...theme.shadow.raised,
   },
   field: {
     gap: 6,
@@ -612,12 +613,10 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontFamily: theme.fonts.sansBold,
     textTransform: "uppercase",
-    letterSpacing: 1,
+    letterSpacing: 1.5,
   },
   input: {
     borderRadius: theme.radius.sm,
-    borderWidth: 1,
-    borderColor: theme.colors.border,
     backgroundColor: theme.colors.surfaceStrong,
     paddingHorizontal: 12,
     paddingVertical: 11,
@@ -649,52 +648,27 @@ const styles = StyleSheet.create({
     flexWrap: "wrap",
     gap: 8,
   },
-  categoryOptionChip: {
-    borderRadius: 999,
-    borderWidth: 1,
-    borderColor: theme.colors.border,
+  chip: {
+    borderRadius: theme.radius.sm,
     backgroundColor: theme.colors.surfaceStrong,
     paddingHorizontal: 12,
     paddingVertical: 8,
   },
-  categoryOptionChipActive: {
-    borderColor: theme.colors.accent,
-    backgroundColor: theme.colors.accentSoft,
+  chipActive: {
+    backgroundColor: theme.colors.accent,
   },
-  categoryOptionText: {
+  chipText: {
     color: theme.colors.textMuted,
     fontFamily: theme.fonts.sansBold,
     fontSize: 12,
   },
-  categoryOptionTextActive: {
-    color: theme.colors.accent,
-  },
-  conditionChip: {
-    borderRadius: 999,
-    borderWidth: 1,
-    borderColor: theme.colors.border,
-    backgroundColor: theme.colors.surfaceStrong,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-  },
-  conditionChipActive: {
-    borderColor: theme.colors.accent,
-    backgroundColor: theme.colors.accentSoft,
-  },
-  conditionChipText: {
-    color: theme.colors.textMuted,
-    fontFamily: theme.fonts.sansBold,
-    fontSize: 12,
-  },
-  conditionChipTextActive: {
-    color: theme.colors.accent,
+  chipTextActive: {
+    color: theme.colors.white,
   },
   advancedToggle: {
-    borderRadius: 999,
+    borderRadius: theme.radius.sm,
     alignSelf: "flex-start",
     backgroundColor: theme.colors.surfaceStrong,
-    borderWidth: 1,
-    borderColor: theme.colors.border,
     paddingHorizontal: 12,
     paddingVertical: 8,
   },
@@ -717,7 +691,7 @@ const styles = StyleSheet.create({
     fontSize: 17,
   },
   syncBtn: {
-    color: theme.colors.info,
+    color: theme.colors.accent,
     fontFamily: theme.fonts.sansBold,
     fontSize: 12,
   },
@@ -731,10 +705,12 @@ const styles = StyleSheet.create({
   },
   publishAllBtn: {
     marginTop: 4,
-    borderRadius: 999,
+    borderRadius: theme.radius.md,
     backgroundColor: theme.colors.accent,
     alignItems: "center",
     paddingVertical: 12,
+    ...theme.shadow.raised,
+    shadowColor: "#6C63FF",
   },
   publishAllText: {
     color: theme.colors.white,
@@ -743,10 +719,8 @@ const styles = StyleSheet.create({
   },
   delistAllBtn: {
     marginTop: 2,
-    borderRadius: 999,
-    borderWidth: 1,
-    borderColor: "#F5B1A7",
-    backgroundColor: "#FFE7E3",
+    borderRadius: theme.radius.md,
+    backgroundColor: theme.colors.surfaceStrong,
     alignItems: "center",
     paddingVertical: 12,
   },
@@ -758,9 +732,7 @@ const styles = StyleSheet.create({
   deleteBtn: {
     marginHorizontal: 16,
     borderRadius: theme.radius.md,
-    borderWidth: 1,
-    borderColor: "#F5B1A7",
-    backgroundColor: "#FFE7E3",
+    backgroundColor: theme.colors.surfaceStrong,
     alignItems: "center",
     paddingVertical: 13,
   },

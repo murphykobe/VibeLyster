@@ -2,8 +2,13 @@ import { useEffect } from "react";
 import { Stack, useRouter, useSegments } from "expo-router";
 import * as SecureStore from "expo-secure-store";
 import { SafeAreaProvider } from "react-native-safe-area-context";
-import { useFonts, Inter_400Regular, Inter_600SemiBold } from "@expo-google-fonts/inter";
-import { SpaceGrotesk_700Bold } from "@expo-google-fonts/space-grotesk";
+import {
+  useFonts,
+  PlusJakartaSans_400Regular,
+  PlusJakartaSans_500Medium,
+  PlusJakartaSans_600SemiBold,
+  PlusJakartaSans_800ExtraBold,
+} from "@expo-google-fonts/plus-jakarta-sans";
 import { setTokenProvider } from "@/lib/api";
 import { ToastProvider } from "@/lib/toast";
 import { BackgroundTokenRefresh } from "@/lib/token-refresh";
@@ -93,9 +98,10 @@ function MockLayout() {
 
 export default function RootLayout() {
   const [fontsLoaded] = useFonts({
-    Inter: Inter_400Regular,
-    "Inter-SemiBold": Inter_600SemiBold,
-    "SpaceGrotesk-Bold": SpaceGrotesk_700Bold,
+    PlusJakartaSans: PlusJakartaSans_400Regular,
+    "PlusJakartaSans-Medium": PlusJakartaSans_500Medium,
+    "PlusJakartaSans-SemiBold": PlusJakartaSans_600SemiBold,
+    "PlusJakartaSans-ExtraBold": PlusJakartaSans_800ExtraBold,
   });
 
   if (!fontsLoaded) return null;
