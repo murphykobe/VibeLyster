@@ -429,6 +429,27 @@ describe("POST /api/publish", () => {
     expect(grailedRow.status).toBe("live");
     expect(grailedRow.attempt_count).toBe(1);
   });
+
+  it("stores a remote draft when mode=draft", async () => {
+    const id = await setup();
+    const res = await publishListing(req("POST", "/api/publish", {
+      body: { listingId: id, platforms: ["grailed"], mode: "draft" },
+    }));
+
+    expect(res.status).toBe(200);
+    const data = await res.json();
+    expect(data.results.grailed.ok).toBe(true);
+    expect(data.results.grailed.remoteState).toBe("draft");
+    expect(data.results.grailed.modeUsed).toBe("draft");
+
+    const getRes = await getListing(req("GET", `/api/listings/${id}`), params(id));
+    const listing = await getRes.json();
+    const grailedRow = listing.platform_listings.find((pl: { platform: string }) => pl.platform === "grailed");
+    expect(grailedRow.status).toBe("pending");
+    expect(grailedRow.platform_listing_id).toMatch(/^mock-grailed-draft-/);
+    expect(grailedRow.platform_data.remote_state).toBe("draft");
+    expect(grailedRow.attempt_count).toBe(1);
+  });
 });
 
 // ─── Delist ───────────────────────────────────────────────────────────────────

@@ -13,6 +13,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { useFocusEffect, useRouter } from "expo-router";
 import { getListings, bulkPublish } from "@/lib/api";
 import type { Listing, Platform } from "@/lib/types";
+import { getPublishMode, type PublishMode } from "@/lib/publish-mode";
 import { getDisplayStatus } from "@/lib/types";
 import ListingCard from "@/components/ListingCard";
 import { theme } from "@/lib/theme";
@@ -32,6 +33,7 @@ export default function DashboardScreen() {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [bulkPlatforms, setBulkPlatforms] = useState<Set<Platform>>(new Set(["grailed", "depop"]));
   const [publishing, setPublishing] = useState(false);
+  const [publishMode, setPublishMode] = useState<PublishMode>("live");
   const heroMotion = useFadeSlideIn({ delay: 35, y: 8, duration: 240 });
   const metricsMotion = useFadeSlideIn({ delay: 110, y: 10, duration: 240 });
   const tabsMotion = useFadeSlideIn({ delay: 160, y: 10, duration: 240 });
@@ -49,10 +51,19 @@ export default function DashboardScreen() {
     }
   }, []);
 
+  const loadPublishMode = useCallback(async () => {
+    try {
+      setPublishMode(await getPublishMode());
+    } catch (err) {
+      console.error(err);
+    }
+  }, []);
+
   useFocusEffect(
     useCallback(() => {
       loadListings();
-    }, [loadListings])
+      loadPublishMode();
+    }, [loadListings, loadPublishMode])
   );
 
   const counts = useMemo(() => {
@@ -98,7 +109,7 @@ export default function DashboardScreen() {
     if (selected.size === 0 || bulkPlatforms.size === 0) return;
     setPublishing(true);
     try {
-      await bulkPublish(Array.from(selected), Array.from(bulkPlatforms));
+      await bulkPublish(Array.from(selected), Array.from(bulkPlatforms), publishMode);
       setSelectMode(false);
       setSelected(new Set());
       await loadListings();
@@ -176,7 +187,7 @@ export default function DashboardScreen() {
               {publishing ? (
                 <ActivityIndicator size="small" color={theme.colors.white} />
               ) : (
-                <Text style={styles.selectionPublishText}>Publish</Text>
+                <Text style={styles.selectionPublishText}>{publishMode === "draft" ? "Save Drafts" : "Publish"}</Text>
               )}
             </Pressable>
           </View>

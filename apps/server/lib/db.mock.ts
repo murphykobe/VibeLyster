@@ -255,7 +255,12 @@ export async function updatePlatformListingStatus(
   listingId: string,
   platform: Platform,
   status: PlatformListingStatus,
-  opts?: { platformListingId?: string; lastError?: string; incrementAttempt?: boolean }
+  opts?: {
+    platformListingId?: string;
+    lastError?: string;
+    incrementAttempt?: boolean;
+    platformData?: Record<string, unknown>;
+  }
 ) {
   const row = getState().platformListings.find(
     (pl) => pl.listing_id === listingId && pl.platform === platform
@@ -264,6 +269,9 @@ export async function updatePlatformListingStatus(
 
   row.status = status;
   row.platform_listing_id = opts?.platformListingId ?? row.platform_listing_id;
+  if (opts?.platformData) {
+    row.platform_data = clone(opts.platformData);
+  }
   row.last_error = opts?.lastError ?? null;
   row.attempt_count += opts?.incrementAttempt ? 1 : 0;
   if (status === "live") row.published_at = nowIso();

@@ -215,13 +215,19 @@ export async function updatePlatformListingStatus(
   listingId: string,
   platform: "grailed" | "depop" | "ebay",
   status: PlatformListingRow["status"],
-  opts?: { platformListingId?: string; lastError?: string; incrementAttempt?: boolean }
+  opts?: {
+    platformListingId?: string;
+    lastError?: string;
+    incrementAttempt?: boolean;
+    platformData?: Record<string, unknown>;
+  }
 ) {
   if (MOCK_MODE) return mockDb.updatePlatformListingStatus(listingId, platform, status, opts);
   const rows = await sql`
     UPDATE platform_listings SET
       status = ${status},
       platform_listing_id = COALESCE(${opts?.platformListingId ?? null}, platform_listing_id),
+      platform_data = COALESCE(${opts?.platformData ? JSON.stringify(opts.platformData) : null}, platform_data),
       last_error = ${opts?.lastError ?? null},
       attempt_count = attempt_count + ${opts?.incrementAttempt ? 1 : 0},
       published_at = CASE WHEN ${status} = 'live' THEN now() ELSE published_at END,

@@ -1,5 +1,5 @@
 import { View, Text, StyleSheet, Pressable, ActivityIndicator } from "react-native";
-import type { PlatformListing } from "@/lib/types";
+import { getRemoteListingState, type PlatformListing } from "@/lib/types";
 import { theme } from "@/lib/theme";
 
 type Props = {
@@ -10,6 +10,7 @@ type Props = {
   onConnect: () => void;
   publishing?: boolean;
   delisting?: boolean;
+  publishLabel?: string;
 };
 
 const STATUS_LABELS: Record<string, string> = {
@@ -38,10 +39,14 @@ export default function PlatformRow({
   onConnect,
   publishing,
   delisting,
+  publishLabel,
 }: Props) {
   const { platform, status } = platformListing;
+  const remoteState = getRemoteListingState(platformListing);
   const label = platform.charAt(0).toUpperCase() + platform.slice(1);
-  const statusLabel = STATUS_LABELS[status] ?? status;
+  const statusLabel = remoteState === "draft" && status === "pending"
+    ? "Draft saved"
+    : STATUS_LABELS[status] ?? status;
   const statusColor = STATUS_COLORS[status] ?? theme.colors.textMuted;
 
   function renderAction() {
@@ -68,7 +73,9 @@ export default function PlatformRow({
     if (status === "delisted" || status === "pending" || status === "failed") {
       return (
         <Pressable onPress={onPublish} style={[styles.actionBtn, styles.actionPrimary]}>
-          <Text style={[styles.actionText, styles.actionPrimaryText]}>{status === "failed" ? "Retry" : "Publish"}</Text>
+          <Text style={[styles.actionText, styles.actionPrimaryText]}>
+            {publishLabel ?? (status === "failed" ? "Retry" : "Publish")}
+          </Text>
         </Pressable>
       );
     }

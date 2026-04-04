@@ -4,6 +4,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { useFocusEffect, useRouter } from "expo-router";
 import { getConnections, disconnectPlatform } from "@/lib/api";
 import type { MarketplaceConnection, Platform } from "@/lib/types";
+import { getPublishMode, setPublishMode, type PublishMode } from "@/lib/publish-mode";
 import { theme } from "@/lib/theme";
 
 const PLATFORMS: { key: Platform; label: string }[] = [
@@ -52,6 +53,7 @@ export default function SettingsScreen() {
   const [connections, setConnections] = useState<MarketplaceConnection[]>([]);
   const [loading, setLoading] = useState(true);
   const [disconnecting, setDisconnecting] = useState<Platform | null>(null);
+  const [publishMode, setPublishModeState] = useState<PublishMode>("live");
 
   const loadConnections = useCallback(async () => {
     try {
@@ -64,10 +66,19 @@ export default function SettingsScreen() {
     }
   }, []);
 
+  const loadPublishMode = useCallback(async () => {
+    try {
+      setPublishModeState(await getPublishMode());
+    } catch (err) {
+      console.error(err);
+    }
+  }, []);
+
   useFocusEffect(
     useCallback(() => {
       loadConnections();
-    }, [loadConnections])
+      loadPublishMode();
+    }, [loadConnections, loadPublishMode])
   );
 
   function getConnection(platform: Platform) {
@@ -97,6 +108,16 @@ export default function SettingsScreen() {
     }
   }
 
+  async function handlePublishModeChange(nextMode: PublishMode) {
+    try {
+      await setPublishMode(nextMode);
+      setPublishModeState(nextMode);
+    } catch (err) {
+      console.error(err);
+      Alert.alert("Error", "Failed to update publish preference. Try again.");
+    }
+  }
+
   return (
     <SafeAreaView style={styles.container} edges={["top"]}>
       <ScrollView contentContainerStyle={styles.content}>
@@ -116,6 +137,36 @@ export default function SettingsScreen() {
             ) : (
               <Text style={styles.mockHint}>Mock mode active</Text>
             )}
+          </View>
+        </View>
+
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Publishing</Text>
+          <View style={styles.card}>
+            <View style={styles.preferenceRow}>
+              <View style={styles.preferenceTextWrap}>
+                <Text style={styles.preferenceTitle}>Default publish mode</Text>
+                <Text style={styles.preferenceBody}>
+                  Live keeps the current one-tap publish flow. Draft only saves marketplace drafts until you switch back.
+                </Text>
+              </View>
+              <View style={styles.modeToggle}>
+                {(["live", "draft"] as PublishMode[]).map((mode) => {
+                  const active = publishMode === mode;
+                  return (
+                    <Pressable
+                      key={mode}
+                      onPress={() => handlePublishModeChange(mode)}
+                      style={[styles.modeToggleBtn, active && styles.modeToggleBtnActive]}
+                    >
+                      <Text style={[styles.modeToggleText, active && styles.modeToggleTextActive]}>
+                        {mode === "live" ? "Live" : "Draft only"}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+            </View>
           </View>
         </View>
 
@@ -214,6 +265,49 @@ const styles = StyleSheet.create({
     borderColor: theme.colors.border,
     overflow: "hidden",
     ...theme.shadow.card,
+  },
+  preferenceRow: {
+    paddingHorizontal: 16,
+    paddingVertical: 16,
+    gap: 14,
+  },
+  preferenceTextWrap: {
+    gap: 5,
+  },
+  preferenceTitle: {
+    color: theme.colors.text,
+    fontFamily: theme.fonts.sansBold,
+    fontSize: 15,
+  },
+  preferenceBody: {
+    color: theme.colors.textMuted,
+    fontFamily: theme.fonts.sans,
+    fontSize: 13,
+    lineHeight: 18,
+  },
+  modeToggle: {
+    flexDirection: "row",
+    gap: 8,
+  },
+  modeToggleBtn: {
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    backgroundColor: theme.colors.surfaceStrong,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+  },
+  modeToggleBtnActive: {
+    backgroundColor: theme.colors.accent,
+    borderColor: theme.colors.accent,
+  },
+  modeToggleText: {
+    color: theme.colors.text,
+    fontFamily: theme.fonts.sansBold,
+    fontSize: 12,
+  },
+  modeToggleTextActive: {
+    color: theme.colors.white,
   },
   email: {
     color: theme.colors.text,

@@ -173,6 +173,24 @@ describe("publishToGrailed", () => {
     if (!result.ok) expect(result.retryable).toBe(false);
   });
 
+  it("includes the failing Grailed publish step in 401 errors", async () => {
+    mockFetchSequence([
+      new Response(JSON.stringify({ data: { fields: { key: "abc" }, url: "https://s3.example.com/", image_url: "https://grailed-media.s3.amazonaws.com/photo1.jpg" } }), { status: 200 }),
+      new Response(new Uint8Array([1, 2, 3]).buffer, { status: 200 }),
+      new Response(null, { status: 204 }),
+      new Response(JSON.stringify({ hits: [{ id: 12, name: "Carhartt", slug: "carhartt" }] }), { status: 200 }),
+      new Response("", { status: 401 }),
+    ]);
+
+    const result = await publishToGrailed(makeListing(), TOKENS);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.retryable).toBe(false);
+      expect(result.error).toContain("creating draft");
+      expect(result.error).toContain("401");
+    }
+  });
+
   it("returns retryable=true for 500 errors", async () => {
     mockFetchSequence([
       new Response(JSON.stringify({ error: "server error" }), { status: 500 }),
@@ -212,17 +230,17 @@ describe("publishToGrailed", () => {
 
   it("builds correct payload shape and returns platformListingId on success", async () => {
     mockFetchSequence([
-      // getMe
-      new Response(JSON.stringify({ data: { id: 42, username: "user42" } }), { status: 200 }),
-      // getAddresses
-      new Response(JSON.stringify({ data: [{ id: 99 }] }), { status: 200 }),
       // uploadPhotoFromUrl: presign
       new Response(JSON.stringify({ data: { fields: { key: "abc" }, url: "https://s3.example.com/", image_url: "https://grailed-media.s3.amazonaws.com/photo1.jpg" } }), { status: 200 }),
       // uploadPhotoFromUrl: fetch photo from blob
       new Response(new Uint8Array([1, 2, 3]).buffer, { status: 200 }),
       // uploadPhotoFromUrl: POST to S3 (204 is OK)
       new Response(null, { status: 204 }),
-      // POST /api/listings
+      // Algolia brand search
+      new Response(JSON.stringify({ hits: [{ id: 18, name: "Carhartt", slug: "carhartt" }] }), { status: 200 }),
+      // POST /api/listing_drafts
+      new Response(JSON.stringify({ data: { id: 333 } }), { status: 200 }),
+      // POST /api/listing_drafts/:id/submit
       new Response(JSON.stringify({ data: { id: 777 } }), { status: 200 }),
     ]);
 
@@ -230,14 +248,18 @@ describe("publishToGrailed", () => {
     expect(result.ok).toBe(true);
     if (result.ok) {
       expect(result.platformListingId).toBe("777");
+      expect(result.remoteState).toBe("live");
+      expect(result.modeUsed).toBe("live");
       expect(result.platformData).toMatchObject({
-        category_path: "tops.jackets",
+        category_path: "outerwear.light_jackets",
         condition: "is_gently_used",
         title: "Vintage Jacket",
-        price: "120",
+        price: 120,
         size: "L",
-        designers: [{ name: "Carhartt" }],
+        designers: [{ id: 18, name: "Carhartt", slug: "carhartt" }],
         traits: [{ name: "color", value: "black" }],
+        remote_state: "live",
+        source_draft_id: "333",
       });
     }
   });
@@ -250,10 +272,10 @@ describe("publishToGrailed", () => {
     ]).flat();
 
     mockFetchSequence([
-      new Response(JSON.stringify({ data: { id: 1 } }), { status: 200 }),   // getMe
-      new Response(JSON.stringify({ data: [{ id: 1 }] }), { status: 200 }), // getAddresses
       ...photoResponses,
-      new Response(JSON.stringify({ data: { id: 55 } }), { status: 200 }),  // POST listing
+      new Response(JSON.stringify({ hits: [{ id: 18, name: "Carhartt", slug: "carhartt" }] }), { status: 200 }),
+      new Response(JSON.stringify({ data: { id: 55 } }), { status: 200 }),
+      new Response(JSON.stringify({ data: { id: 66 } }), { status: 200 }),
     ]);
 
     const listing = makeListing({
@@ -262,8 +284,31 @@ describe("publishToGrailed", () => {
     const result = await publishToGrailed(listing, TOKENS);
     expect(result.ok).toBe(true);
     if (result.ok) {
+      expect(result.remoteState).toBe("live");
       const photos = (result.platformData as { photos: unknown[] }).photos;
       expect(photos).toHaveLength(8);
+    }
+  });
+
+  it("returns a remote draft without submitting when mode=draft", async () => {
+    mockFetchSequence([
+      new Response(JSON.stringify({ data: { fields: { key: "abc" }, url: "https://s3.example.com/", image_url: "https://grailed-media.s3.amazonaws.com/photo1.jpg" } }), { status: 200 }),
+      new Response(new Uint8Array([1, 2, 3]).buffer, { status: 200 }),
+      new Response(null, { status: 204 }),
+      new Response(JSON.stringify({ hits: [{ id: 18, name: "Carhartt", slug: "carhartt" }] }), { status: 200 }),
+      new Response(JSON.stringify({ data: { id: 333 } }), { status: 200 }),
+    ]);
+
+    const result = await publishToGrailed(makeListing(), TOKENS, { mode: "draft" });
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.platformListingId).toBe("333");
+      expect(result.remoteState).toBe("draft");
+      expect(result.modeUsed).toBe("draft");
+      expect(result.platformData).toMatchObject({
+        category_path: "outerwear.light_jackets",
+        remote_state: "draft",
+      });
     }
   });
 });

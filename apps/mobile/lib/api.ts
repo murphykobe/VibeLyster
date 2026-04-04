@@ -4,6 +4,7 @@
  */
 
 import type { Listing, MarketplaceConnection, Platform } from "./types";
+import type { PublishMode } from "./publish-mode";
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL ?? "http://localhost:3001";
 const MOCK_MODE = ["1", "true", "yes", "on"].includes((process.env.EXPO_PUBLIC_MOCK_MODE ?? "").toLowerCase());
@@ -233,12 +234,12 @@ export async function generateListing(params: {
 
 // ─── Publish ──────────────────────────────────────────────────────────────────
 
-export async function publishListing(listingId: string, platforms: Platform[]) {
-  return apiRequest<{ results: Record<string, unknown> }>("POST", "/api/publish", { listingId, platforms });
+export async function publishListing(listingId: string, platforms: Platform[], mode: PublishMode = "live") {
+  return apiRequest<{ results: Record<string, unknown> }>("POST", "/api/publish", { listingId, platforms, mode });
 }
 
-export async function bulkPublish(listingIds: string[], platforms: Platform[]) {
-  return apiRequest<{ acknowledged: boolean; count: number }>("POST", "/api/publish/bulk", { listingIds, platforms });
+export async function bulkPublish(listingIds: string[], platforms: Platform[], mode: PublishMode = "live") {
+  return apiRequest<{ acknowledged: boolean; count: number }>("POST", "/api/publish/bulk", { listingIds, platforms, mode });
 }
 
 export async function delistListing(listingId: string, platform: Platform) {

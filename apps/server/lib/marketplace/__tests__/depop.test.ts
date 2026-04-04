@@ -184,6 +184,8 @@ describe("publishToDepop", () => {
     expect(result.ok).toBe(true);
     if (result.ok) {
       expect(result.platformListingId).toBe("500");
+      expect(result.remoteState).toBe("live");
+      expect(result.modeUsed).toBe("live");
       expect(result.platformData).toMatchObject({
         group: "clothing",
         productType: "sweatshirts-hoodies",
@@ -210,6 +212,7 @@ describe("publishToDepop", () => {
     const result = await publishToDepop(makeListing({ price: 9.9 }), TOKENS);
     expect(result.ok).toBe(true);
     if (result.ok) {
+      expect(result.remoteState).toBe("live");
       expect((result.platformData as { priceAmount: string }).priceAmount).toBe("9.90");
     }
   });
@@ -236,8 +239,30 @@ describe("publishToDepop", () => {
     const result = await publishToDepop(listing, TOKENS);
     expect(result.ok).toBe(true);
     if (result.ok) {
+      expect(result.remoteState).toBe("live");
       const pictures = (result.platformData as { pictures: unknown[] }).pictures;
       expect(pictures).toHaveLength(4);
+    }
+  });
+
+  it("stops after updating the remote draft when mode=draft", async () => {
+    mockFetchSequence([
+      new Response(JSON.stringify([{ userId: "user-42", id: 7 }]), { status: 200 }),
+      new Response(JSON.stringify([{ userId: "user-42", id: 7 }]), { status: 200 }),
+      new Response(JSON.stringify({ id: 100, url: "https://s3.depop.com/presigned" }), { status: 200 }),
+      new Response(new Uint8Array([1, 2, 3]).buffer, { status: 200 }),
+      new Response(null, { status: 200 }),
+      new Response(JSON.stringify({ id: 500 }), { status: 200 }),
+      new Response(JSON.stringify({ id: 500 }), { status: 200 }),
+    ]);
+
+    const result = await publishToDepop(makeListing(), TOKENS, { mode: "draft" });
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.platformListingId).toBe("500");
+      expect(result.remoteState).toBe("draft");
+      expect(result.modeUsed).toBe("draft");
+      expect(result.platformData).toMatchObject({ remote_state: "draft" });
     }
   });
 });

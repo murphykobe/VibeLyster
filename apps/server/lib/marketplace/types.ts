@@ -4,6 +4,8 @@
  */
 
 export type Platform = "grailed" | "depop" | "ebay";
+export type PublishMode = "live" | "draft";
+export type RemoteListingState = "live" | "draft";
 
 /** Canonical listing from the DB — all fields the AI generates */
 export type CanonicalListing = {
@@ -30,6 +32,12 @@ export type DepopTokens = {
   access_token: string;
 };
 
+export type PublishOptions = {
+  mode?: PublishMode;
+  existingPlatformListingId?: string | null;
+  existingPlatformData?: Record<string, unknown> | null;
+};
+
 /** Result returned by a marketplace connection verification probe */
 export type ConnectionProbeResult =
   | { ok: true; platformUsername?: string; expiresAt?: string }
@@ -37,7 +45,13 @@ export type ConnectionProbeResult =
 
 /** Result returned by a publish call */
 export type PublishResult =
-  | { ok: true; platformListingId: string; platformData: Record<string, unknown> }
+  | {
+    ok: true;
+    platformListingId: string;
+    platformData: Record<string, unknown>;
+    remoteState: RemoteListingState;
+    modeUsed: PublishMode;
+  }
   | { ok: false; error: string; retryable: boolean };
 
 /** Result returned by a delist call */
