@@ -73,7 +73,7 @@ export async function POST(req: NextRequest) {
             authorizationCode: parsed.data.authorizationCode,
           });
         } catch (err) {
-          if (err instanceof EbayTokenExchangeError && err.statusCode === 400) {
+          if (err instanceof EbayTokenExchangeError && err.oauthError === "invalid_grant") {
             return Response.json(
               { error: "Invalid eBay authorization code. Please reconnect your account." },
               { status: 400 },

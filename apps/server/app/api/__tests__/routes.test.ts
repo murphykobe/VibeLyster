@@ -428,7 +428,10 @@ describe("POST /api/connect real eBay behavior", () => {
   it("returns 400 for invalid eBay authorization codes", async () => {
     vi.stubEnv("EBAY_CLIENT_ID", "client-123");
     vi.stubEnv("EBAY_CLIENT_SECRET", "secret-456");
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("invalid_grant", { status: 400 })));
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(new Response(JSON.stringify({ error: "invalid_grant" }), { status: 403 }))
+    );
 
     const { POST } = await loadRealEbayConnectRoute();
     const res = await POST(req("POST", "/api/connect", {
@@ -447,7 +450,10 @@ describe("POST /api/connect real eBay behavior", () => {
   it("returns 500 for eBay auth misconfiguration failures", async () => {
     vi.stubEnv("EBAY_CLIENT_ID", "client-123");
     vi.stubEnv("EBAY_CLIENT_SECRET", "secret-456");
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("forbidden", { status: 403 })));
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(new Response(JSON.stringify({ error: "invalid_client" }), { status: 403 }))
+    );
 
     const { POST } = await loadRealEbayConnectRoute();
     const res = await POST(req("POST", "/api/connect", {

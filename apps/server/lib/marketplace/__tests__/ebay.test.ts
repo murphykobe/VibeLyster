@@ -93,8 +93,8 @@ describe("eBay marketplace helper", () => {
     ).rejects.toThrow("eBay token exchange response missing refresh_token");
   });
 
-  it("tags 400 token exchange failures as user-correctable", async () => {
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({ error: "invalid_grant" }), { status: 400 })));
+  it("tags invalid_grant token exchange failures as user-correctable", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({ error: "invalid_grant" }), { status: 403 })));
 
     await expect(
       exchangeEbayAuthorizationCode({
@@ -103,13 +103,14 @@ describe("eBay marketplace helper", () => {
         ruName: "vibelyster-app-EBAY-US",
         authorizationCode: "code-789",
       })
-    ).rejects.toMatchObject({
-      statusCode: 400,
-    });
+    ).rejects.toMatchObject({ statusCode: 403, oauthError: "invalid_grant" });
   });
 
   it("tags 401 token exchange failures as app misconfiguration", async () => {
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("unauthorized", { status: 401 })));
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(new Response(JSON.stringify({ error: "invalid_client" }), { status: 401 }))
+    );
 
     await expect(
       exchangeEbayAuthorizationCode({
@@ -118,9 +119,7 @@ describe("eBay marketplace helper", () => {
         ruName: "vibelyster-app-EBAY-US",
         authorizationCode: "code-789",
       })
-    ).rejects.toMatchObject({
-      statusCode: 401,
-    });
+    ).rejects.toMatchObject({ statusCode: 401, oauthError: "invalid_client" });
   });
 
   it("tags network failures as retryable server errors", async () => {

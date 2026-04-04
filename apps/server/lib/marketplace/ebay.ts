@@ -30,6 +30,7 @@ export class EbayTokenExchangeError extends Error {
   constructor(
     public readonly statusCode: number,
     message: string,
+    public readonly oauthError?: string,
   ) {
     super(`eBay token exchange failed with status ${statusCode}: ${message}`);
     this.name = "EbayTokenExchangeError";
@@ -108,9 +109,29 @@ export async function exchangeEbayAuthorizationCode({
 
   if (!response.ok) {
     const detail = await response.text().catch(() => "");
+    let oauthError: string | undefined;
+    let message = detail || "upstream error";
+
+    if (detail) {
+      try {
+        const parsed = JSON.parse(detail) as {
+          error?: unknown;
+          error_description?: unknown;
+        };
+        oauthError = pickString(parsed.error);
+        message =
+          pickString(parsed.error_description) ??
+          oauthError ??
+          detail;
+      } catch {
+        message = detail;
+      }
+    }
+
     throw new EbayTokenExchangeError(
       response.status,
-      detail || "upstream error",
+      message,
+      oauthError,
     );
   }
 
