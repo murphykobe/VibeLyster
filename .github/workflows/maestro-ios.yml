@@ -39,7 +39,7 @@ jobs:
 
       - name: Build iOS dev client
         working-directory: apps/mobile
-        run: npx expo run:ios --simulator "iPhone 16"
+        run: npx expo run:ios --device "iPhone 16"
 
       - name: Start mock server
         working-directory: apps/server
