@@ -29,17 +29,35 @@ jobs:
       - name: Install Maestro
         run: curl -Ls "https://get.maestro.mobile.dev" | bash
 
-      - name: Select Xcode
-        run: sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
+      - name: Select latest Xcode
+        run: |
+          XCODE_APP=$(find /Applications -maxdepth 1 -type d -name 'Xcode_*.app' | sort -V | tail -n1)
+          if [ -z "$XCODE_APP" ]; then
+            XCODE_APP=/Applications/Xcode.app
+          fi
+          echo "Using Xcode app: $XCODE_APP"
+          sudo xcode-select -s "$XCODE_APP/Contents/Developer"
+          xcodebuild -version
+
+      - name: Choose simulator
+        id: simulator
+        run: |
+          SIMULATOR_NAME=$(xcrun simctl list devices available | grep -E 'iPhone ' | head -n1 | sed -E 's/^[[:space:]]*([^()]+) \(.*/\1/' | xargs)
+          if [ -z "$SIMULATOR_NAME" ]; then
+            echo "No available iPhone simulator found"
+            exit 1
+          fi
+          echo "Using simulator: $SIMULATOR_NAME"
+          echo "name=$SIMULATOR_NAME" >> "$GITHUB_OUTPUT"
 
       - name: Boot iOS simulator
         run: |
-          xcrun simctl boot "iPhone 16" || true
+          xcrun simctl boot "${{ steps.simulator.outputs.name }}" || true
           open -a Simulator
 
       - name: Build iOS dev client
         working-directory: apps/mobile
-        run: npx expo run:ios --device "iPhone 16"
+        run: npx expo run:ios --device "${{ steps.simulator.outputs.name }}"
 
       - name: Start mock server
         working-directory: apps/server
