@@ -57,7 +57,7 @@ jobs:
 
       - name: Build iOS dev client
         working-directory: apps/mobile
-        run: npx expo run:ios --device "${{ steps.simulator.outputs.name }}"
+        run: npx expo run:ios --device "${{ steps.simulator.outputs.name }}" --no-bundler
 
       - name: Start mock server
         working-directory: apps/server
@@ -81,6 +81,7 @@ jobs:
           EXPO_PUBLIC_EBAY_E2E_MODE=1
           EXPO_PUBLIC_EBAY_TEST_STATE=maestro-ebay-state
           EOF
+          pkill -f 'expo start' || true
           (npx expo start --dev-client --port 8083 > /tmp/vibelyster-metro.log 2>&1 &)
           for i in {1..90}; do
             grep -q 'Waiting on' /tmp/vibelyster-metro.log && exit 0
