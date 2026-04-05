@@ -55,10 +55,6 @@ jobs:
           xcrun simctl boot "${{ steps.simulator.outputs.name }}" || true
           open -a Simulator
 
-      - name: Build iOS dev client
-        working-directory: apps/mobile
-        run: npx expo run:ios --device "${{ steps.simulator.outputs.name }}" --no-bundler
-
       - name: Start mock server
         working-directory: apps/server
         run: |
@@ -90,6 +86,10 @@ jobs:
           echo "Metro failed to start"
           cat /tmp/vibelyster-metro.log
           exit 1
+
+      - name: Build iOS dev client
+        working-directory: apps/mobile
+        run: npx expo run:ios --device "${{ steps.simulator.outputs.name }}" --port 8083 --no-bundler
 
       - name: Run deterministic Maestro flow
         working-directory: apps/mobile
