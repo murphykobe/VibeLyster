@@ -3,6 +3,7 @@ import type { EbaySellerReadiness } from "./types";
 const EBAY_ACCOUNT_HOST = process.env.EBAY_SANDBOX === "true"
   ? "https://api.sandbox.ebay.com"
   : "https://api.ebay.com";
+const EBAY_MARKETPLACE_ID = "EBAY_US";
 
 type PolicyRow = {
   name?: unknown;
@@ -32,13 +33,24 @@ async function parsePolicyResponse(response: Response) {
   }
 }
 
+function getErrors(payload: Record<string, unknown>) {
+  return Array.isArray(payload.errors) ? payload.errors : [];
+}
+
 function isInsufficientPermissions(payload: Record<string, unknown>) {
-  const errors = Array.isArray(payload.errors) ? payload.errors : [];
-  return errors.some((error) => {
+  return getErrors(payload).some((error) => {
     if (!error || typeof error !== "object") return false;
     const message = pickString((error as { message?: unknown }).message)?.toLowerCase();
     const longMessage = pickString((error as { longMessage?: unknown }).longMessage)?.toLowerCase();
     return message?.includes("access denied") || longMessage?.includes("insufficient permissions");
+  });
+}
+
+function isBusinessPolicyIneligible(payload: Record<string, unknown>) {
+  return getErrors(payload).some((error) => {
+    if (!error || typeof error !== "object") return false;
+    const longMessage = pickString((error as { longMessage?: unknown }).longMessage)?.toLowerCase();
+    return longMessage?.includes("not eligible for business policy") ?? false;
   });
 }
 
@@ -54,10 +66,11 @@ export async function fetchEbaySellerReadiness({
     Accept: "application/json",
   };
 
+  const marketplaceQuery = `marketplace_id=${encodeURIComponent(EBAY_MARKETPLACE_ID)}`;
   const [fulfillmentRes, paymentRes, returnRes] = await Promise.all([
-    fetchImpl(`${EBAY_ACCOUNT_HOST}/sell/account/v1/fulfillment_policy`, { headers }),
-    fetchImpl(`${EBAY_ACCOUNT_HOST}/sell/account/v1/payment_policy`, { headers }),
-    fetchImpl(`${EBAY_ACCOUNT_HOST}/sell/account/v1/return_policy`, { headers }),
+    fetchImpl(`${EBAY_ACCOUNT_HOST}/sell/account/v1/fulfillment_policy?${marketplaceQuery}`, { headers }),
+    fetchImpl(`${EBAY_ACCOUNT_HOST}/sell/account/v1/payment_policy?${marketplaceQuery}`, { headers }),
+    fetchImpl(`${EBAY_ACCOUNT_HOST}/sell/account/v1/return_policy?${marketplaceQuery}`, { headers }),
   ]);
 
   const [fulfillmentJson, paymentJson, returnJson] = await Promise.all([
@@ -82,9 +95,25 @@ export async function fetchEbaySellerReadiness({
         ready: false,
         missing: [],
         policies: {},
+        marketplaceId: EBAY_MARKETPLACE_ID,
         checkedAt: new Date().toISOString(),
         requiresReconnect: true,
         actionableError: "Reconnect eBay to grant publish permissions, then try again.",
+      };
+    }
+
+    const businessPolicyIneligible = policyResponses.some(({ payload }) =>
+      isBusinessPolicyIneligible(payload),
+    );
+
+    if (businessPolicyIneligible) {
+      return {
+        ready: false,
+        missing: [],
+        policies: {},
+        marketplaceId: EBAY_MARKETPLACE_ID,
+        checkedAt: new Date().toISOString(),
+        actionableError: "This eBay sandbox seller account is not eligible for Business Policy access. Enable Business Policies in the sandbox account or use another sandbox seller account.",
       };
     }
 
@@ -97,6 +126,7 @@ export async function fetchEbaySellerReadiness({
       ready: false,
       missing: [],
       policies: {},
+      marketplaceId: EBAY_MARKETPLACE_ID,
       checkedAt: new Date().toISOString(),
       actionableError: `eBay seller readiness check failed (${failedStatuses}). Please try reconnecting eBay or try again later.`,
     };
@@ -120,6 +150,7 @@ export async function fetchEbaySellerReadiness({
       fulfillment,
       return: returnsPolicy,
     },
+    marketplaceId: EBAY_MARKETPLACE_ID,
     checkedAt: new Date().toISOString(),
   };
 }
