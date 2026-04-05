@@ -93,9 +93,9 @@ jobs:
 
       - name: Run deterministic Maestro flow
         working-directory: apps/mobile
-        env:
-          PATH: ${{ env.PATH }}:${{ github.workspace }}/.maestro/bin:${{ env.HOME }}/.maestro/bin
-        run: npm run maestro:ebay:deterministic
+        run: |
+          export PATH="$PATH:${HOME}/.maestro/bin:${{ github.workspace }}/.maestro/bin"
+          npm run maestro:ebay:deterministic
 
       - name: Upload Maestro artifacts
         if: always()
