@@ -361,6 +361,10 @@ export default function ConnectScreen() {
         ruName: EBAY_RU_NAME,
       });
       pushDebug("eBay saveConnection ok");
+      if (typeof __DEV__ !== "undefined" && __DEV__ && EBAY_E2E_MODE) {
+        router.back();
+        return;
+      }
       Alert.alert("Connected!", "eBay account connected successfully.", [
         { text: "OK", onPress: () => router.back() },
       ]);
