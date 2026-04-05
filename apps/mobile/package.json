@@ -13,7 +13,7 @@
     "prebuild": "expo prebuild",
     "android": "expo run:android",
     "ios": "expo run:ios",
-    "maestro:ebay:deterministic": "maestro test .maestro/ebay-deterministic.yaml",
+    "maestro:ebay:deterministic": "curl -fsS -X POST ${MAESTRO_API_URL:-http://127.0.0.1:3001}/api/test/reset && maestro test .maestro/ebay-deterministic.yaml",
     "maestro:ebay:live": "maestro test .maestro/ebay-live.yaml"
   },
   "dependencies": {

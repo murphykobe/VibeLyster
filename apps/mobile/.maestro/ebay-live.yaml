@@ -7,16 +7,37 @@ env:
 ---
 - launchApp:
     clearState: true
+- openLink: "exp+vibelyster://expo-development-client/?url=http%3A%2F%2F127.0.0.1%3A8084"
+- runFlow:
+    when:
+      visible: "Open"
+    commands:
+      - tapOn: "Open"
+- runFlow:
+    when:
+      visible: "Continue"
+    commands:
+      - tapOn: "Continue"
+- runFlow:
+    when:
+      visible: "Close"
+    commands:
+      - tapOn: "Close"
 - runFlow:
     when:
       visible: "Sign in to your account"
     commands:
-      - tapOn: "Email"
+      - tapOn:
+          id: "sign-in-email"
       - inputText: ${CLERK_EMAIL}
-      - tapOn: "Password"
+      - tapOn:
+          id: "sign-in-password"
       - inputText: ${CLERK_PASSWORD}
-      - tapOn: "Sign in"
-- tapOn: "Settings"
+      - pressKey: Enter
+- extendedWaitUntil:
+    visible: "Settings, tab, 2 of 2"
+    timeout: 30000
+- tapOn: "Settings, tab, 2 of 2"
 - assertVisible: "Account & Connections"
 - runFlow:
     when:
@@ -25,20 +46,45 @@ env:
     commands:
       - tapOn:
           id: "platform-disconnect-ebay"
-      - tapOn: "Disconnect"
+      - runFlow:
+          when:
+            visible: "Disconnect ebay"
+          commands:
+            - tapOn:
+                text: "Disconnect"
+                index: 0
+- extendedWaitUntil:
+    visible:
+      id: "platform-connect-ebay"
+    timeout: 15000
 - tapOn:
     id: "platform-connect-ebay"
 - assertVisible: "Connect eBay"
-- tapOn: "Email or username"
-- inputText: ${EBAY_USERNAME}
-- tapOn: "Continue"
-- tapOn: "Password"
-- inputText: ${EBAY_PASSWORD}
-- tapOn: "Sign in"
+# eBay sandbox login — conditional because prior session may auto-consent
 - runFlow:
     when:
-      visible: "Agree"
+      visible: "Email or username"
     commands:
-      - tapOn: "Agree"
-- assertVisible:
-    id: "platform-disconnect-ebay"
+      - tapOn: "Email or username"
+      - inputText: ${EBAY_USERNAME}
+      - tapOn: "Continue"
+      - tapOn: "Password"
+      - inputText: ${EBAY_PASSWORD}
+      - tapOn: "Sign in"
+- runFlow:
+    when:
+      visible: "Agree and Continue"
+    commands:
+      - tapOn: "Agree and Continue"
+- runFlow:
+    when:
+      visible: "Open"
+    commands:
+      - tapOn: "Open"
+- runFlow:
+    when:
+      visible: "OK"
+    commands:
+      - tapOn: "OK"
+- assertVisible: "Account & Connections"
+- assertVisible: "Disconnect"
