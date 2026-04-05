@@ -58,6 +58,8 @@ The CI job:
 
 Live sandbox Maestro stays local/manual and is not part of normal PR CI.
 
+Real eBay sandbox publish verification is also kept out of PR CI. That smoke requires a seller-ready sandbox account with Business Policy access, so it runs only as a manual secrets-gated workflow.
+
 ## Live sandbox OAuth
 
 Uses real Clerk sign-in + eBay sandbox consent flow.

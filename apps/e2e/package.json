@@ -8,6 +8,7 @@
     "test:headed": "playwright test --headed",
     "test:preview": "playwright test",
     "test:preview:ebay": "playwright test tests/ebay-oauth.live.spec.ts",
+    "test:preview:ebay:publish": "playwright test tests/ebay-publish.live.spec.ts",
     "test:preview:manual-ai": "E2E_MANUAL_AI=1 playwright test",
     "install:browsers": "playwright install chromium"
   },
