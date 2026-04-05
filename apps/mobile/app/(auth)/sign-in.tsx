@@ -1,4 +1,4 @@
-import { View, Text, StyleSheet, Pressable, ActivityIndicator, TextInput } from "react-native";
+import { View, Text, StyleSheet, Pressable, ActivityIndicator, TextInput, TouchableOpacity } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useState } from "react";
 import { useRouter } from "expo-router";
@@ -65,13 +65,14 @@ function RealSignInScreen() {
           <Text style={styles.cardTitle}>Sign in to your account</Text>
           <Text style={styles.cardSub}>Use email/password or continue with your provider.</Text>
 
-          {loading ? (
+          {loading || !isLoaded || !signIn ? (
             <View style={styles.loaderWrap}>
               <ActivityIndicator size="large" color={theme.colors.accent} />
             </View>
           ) : (
             <View style={styles.form}>
               <TextInput
+                testID="sign-in-email"
                 style={styles.input}
                 placeholder="Email"
                 placeholderTextColor={theme.colors.textMuted}
@@ -81,17 +82,20 @@ function RealSignInScreen() {
                 onChangeText={setEmail}
               />
               <TextInput
+                testID="sign-in-password"
                 style={styles.input}
                 placeholder="Password"
                 placeholderTextColor={theme.colors.textMuted}
                 secureTextEntry
                 value={password}
                 onChangeText={setPassword}
+                returnKeyType="go"
+                onSubmitEditing={handleEmailSignIn}
               />
               {error ? <Text style={styles.error}>{error}</Text> : null}
-              <Pressable style={[styles.button, styles.emailButton]} onPress={handleEmailSignIn}>
+              <TouchableOpacity testID="sign-in-submit" style={[styles.button, styles.emailButton]} onPress={handleEmailSignIn} activeOpacity={0.7}>
                 <Text style={styles.primaryButtonText}>Sign in</Text>
-              </Pressable>
+              </TouchableOpacity>
 
               <Text style={styles.divider}>or</Text>
 
