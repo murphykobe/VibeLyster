@@ -4,8 +4,21 @@ import { getListingById, getConnection, upsertPlatformListing, updatePlatformLis
 import { decryptTokens } from "@/lib/crypto";
 import { publishToGrailed } from "@/lib/marketplace/grailed";
 import { publishToDepop } from "@/lib/marketplace/depop";
+import { publishToEbay } from "@/lib/marketplace/ebay-publish";
+import { fetchEbaySellerReadiness } from "@/lib/marketplace/ebay-seller";
+import { buildEbayListingMetadata } from "@/lib/marketplace/ebay-metadata";
+import { generateEbayAspects } from "@/lib/ai";
 import { PublishBody, parseBody } from "@/lib/validation";
-import type { GrailedTokens, DepopTokens, Platform, CanonicalListing, PublishMode } from "@/lib/marketplace/types";
+import type {
+  GrailedTokens,
+  DepopTokens,
+  EbayListingMetadata,
+  EbaySellerReadiness,
+  EbayTokens,
+  Platform,
+  CanonicalListing,
+  PublishMode,
+} from "@/lib/marketplace/types";
 import { isMockMode, mockPlatformListingId } from "@/lib/mock";
 
 const RETRY_DELAY_MS = 2000;
@@ -22,18 +35,27 @@ async function publishWithRetry(
     mode: PublishMode;
     existingPlatformListingId?: string | null;
     existingPlatformData?: Record<string, unknown> | null;
+    ebayMetadata?: EbayListingMetadata;
+    ebaySellerReadiness?: EbaySellerReadiness;
   }
 ) {
-  if (platform !== "grailed" && platform !== "depop") {
-    return { result: { ok: false as const, error: "eBay not yet supported", retryable: false }, attempts: 0 };
-  }
-
   let attempts = 0;
   for (let attempt = 1; attempt <= 2; attempt++) {
     attempts = attempt;
     const result = platform === "grailed"
       ? await publishToGrailed(listing, tokens as GrailedTokens, options)
-      : await publishToDepop(listing, tokens as DepopTokens, options);
+      : platform === "depop"
+        ? await publishToDepop(listing, tokens as DepopTokens, options)
+        : await publishToEbay(listing, tokens as EbayTokens, {
+            ...options,
+            metadata: options.ebayMetadata ?? {},
+            sellerReadiness: options.ebaySellerReadiness ?? {
+              ready: false,
+              missing: ["seller_readiness"],
+              policies: {},
+              checkedAt: new Date().toISOString(),
+            },
+          });
 
     if (result.ok || !result.retryable || attempt === 2) return { result, attempts };
     await sleep(RETRY_DELAY_MS);
@@ -100,12 +122,35 @@ export async function POST(req: NextRequest) {
       }
 
       const tokens = decryptTokens(conn.encrypted_tokens);
+      const ebaySellerReadiness = platform === "ebay"
+        ? await fetchEbaySellerReadiness({ accessToken: (tokens as EbayTokens).access_token })
+        : undefined;
+      const ebayMetadata = platform === "ebay"
+        ? (await buildEbayListingMetadata({
+            listing: canonical,
+            existing: existingPlatformListing?.platform_data as EbayListingMetadata | undefined,
+            generateFallback: ({ listing, missingAspects }) =>
+              generateEbayAspects({
+                listing: {
+                  title: listing.title,
+                  description: listing.description,
+                  brand: listing.brand,
+                  size: listing.size,
+                  category: listing.category,
+                  traits: listing.traits,
+                },
+                missingAspects,
+              }),
+          })).metadata
+        : undefined;
 
       const startMs = Date.now();
       const { result, attempts } = await publishWithRetry(canonical, platform, tokens, {
         mode,
         existingPlatformListingId: existingPlatformListing?.platform_listing_id,
         existingPlatformData: existingPlatformListing?.platform_data ?? null,
+        ebayMetadata,
+        ebaySellerReadiness,
       });
       const latencyMs = Date.now() - startMs;
 

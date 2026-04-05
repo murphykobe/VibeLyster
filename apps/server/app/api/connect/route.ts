@@ -95,6 +95,12 @@ export async function POST(req: NextRequest) {
           token_type: exchange.tokenType,
           ebay_user_id: ebayVerification.ebayUserId,
           expires_at: expiresAtIso,
+          seller_readiness: {
+            ready: false,
+            missing: [],
+            policies: {},
+            checkedAt: new Date(0).toISOString(),
+          },
           ...(exchange.refreshTokenExpiresIn === undefined
             ? {}
             : { refresh_token_expires_in: exchange.refreshTokenExpiresIn }),

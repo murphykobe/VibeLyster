@@ -678,6 +678,29 @@ describe("POST /api/publish", () => {
     expect(grailedRow.platform_data.remote_state).toBe("draft");
     expect(grailedRow.attempt_count).toBe(1);
   });
+
+  it("publishes to ebay in mock mode when connected", async () => {
+    const createRes = await createListing(req("POST", "/api/listings", { body: VALID_LISTING }));
+    const { id } = await createRes.json();
+    await connectPlatform(req("POST", "/api/connect", {
+      body: { platform: "ebay", authorizationCode: "ebay-code-1", ruName: "ru-name" },
+    }));
+
+    const res = await publishListing(req("POST", "/api/publish", {
+      body: { listingId: id, platforms: ["ebay"], mode: "draft" },
+    }));
+
+    expect(res.status).toBe(200);
+    const data = await res.json();
+    expect(data.results.ebay.ok).toBe(true);
+    expect(data.results.ebay.remoteState).toBe("draft");
+
+    const getRes = await getListing(req("GET", `/api/listings/${id}`), params(id));
+    const listing = await getRes.json();
+    const ebayRow = listing.platform_listings.find((pl: { platform: string }) => pl.platform === "ebay");
+    expect(ebayRow.status).toBe("pending");
+    expect(ebayRow.platform_data.remote_state).toBe("draft");
+  });
 });
 
 // ─── Delist ───────────────────────────────────────────────────────────────────
