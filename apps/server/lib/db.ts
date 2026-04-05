@@ -251,6 +251,16 @@ export type MarketplaceConnectionRow = {
   expires_at: string | null;
 };
 
+export type MarketplaceConnectionPublicRow = Omit<MarketplaceConnectionRow, "encrypted_tokens">;
+
+export async function getConnections(
+  userId: string,
+  opts: { includeEncryptedTokens: true },
+): Promise<MarketplaceConnectionRow[]>;
+export async function getConnections(
+  userId: string,
+  opts?: { includeEncryptedTokens?: false },
+): Promise<MarketplaceConnectionPublicRow[]>;
 export async function getConnections(userId: string, opts?: { includeEncryptedTokens?: boolean }) {
   if (MOCK_MODE) return mockDb.getConnections(userId, opts);
   if (opts?.includeEncryptedTokens) {
@@ -266,7 +276,7 @@ export async function getConnections(userId: string, opts?: { includeEncryptedTo
     FROM marketplace_connections
     WHERE user_id = ${userId}
   `;
-  return rows as unknown as Omit<MarketplaceConnectionRow, "encrypted_tokens">[];
+  return rows as unknown as MarketplaceConnectionPublicRow[];
 }
 
 export async function getConnection(userId: string, platform: string) {
