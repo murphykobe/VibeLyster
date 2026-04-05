@@ -16,7 +16,14 @@ import type { Platform } from "@/lib/types";
 import { theme } from "@/lib/theme";
 
 const MOBILE_SAFARI_USER_AGENT = "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1";
-const EBAY_SCOPE = "https://api.ebay.com/oauth/api_scope/commerce.identity.readonly";
+const EBAY_AUTH_SCOPES = [
+  "https://api.ebay.com/oauth/api_scope/commerce.identity.readonly",
+  "https://api.ebay.com/oauth/api_scope/sell.account.readonly",
+  "https://api.ebay.com/oauth/api_scope/sell.inventory",
+  "https://api.ebay.com/oauth/api_scope/sell.inventory.readonly",
+  "https://api.ebay.com/oauth/api_scope/sell.fulfillment.readonly",
+] as const;
+const EBAY_SCOPE = EBAY_AUTH_SCOPES.join(" ");
 const EBAY_CALLBACK_PREFIX = "vibelyster://connect/ebay";
 const EBAY_CLIENT_ID = pickString(process.env.EXPO_PUBLIC_EBAY_CLIENT_ID);
 const EBAY_RU_NAME = pickString(process.env.EXPO_PUBLIC_EBAY_RU_NAME);

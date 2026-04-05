@@ -1,5 +1,13 @@
 export const EBAY_IDENTITY_SCOPE =
   "https://api.ebay.com/oauth/api_scope/commerce.identity.readonly";
+export const EBAY_AUTH_SCOPES = [
+  EBAY_IDENTITY_SCOPE,
+  "https://api.ebay.com/oauth/api_scope/sell.account.readonly",
+  "https://api.ebay.com/oauth/api_scope/sell.inventory",
+  "https://api.ebay.com/oauth/api_scope/sell.inventory.readonly",
+  "https://api.ebay.com/oauth/api_scope/sell.fulfillment.readonly",
+] as const;
+export const EBAY_AUTH_SCOPE = EBAY_AUTH_SCOPES.join(" ");
 
 const EBAY_SANDBOX = process.env.EBAY_SANDBOX === "true";
 const EBAY_AUTH_HOST = EBAY_SANDBOX ? "https://auth.sandbox.ebay.com" : "https://auth.ebay.com";
@@ -76,7 +84,7 @@ export function buildEbayAuthorizeUrl({ clientId, ruName, state }: EbayAuthorize
   url.searchParams.set("client_id", clientId);
   url.searchParams.set("redirect_uri", ruName);
   url.searchParams.set("response_type", "code");
-  url.searchParams.set("scope", EBAY_IDENTITY_SCOPE);
+  url.searchParams.set("scope", EBAY_AUTH_SCOPE);
   url.searchParams.set("state", state);
   return url.toString();
 }
