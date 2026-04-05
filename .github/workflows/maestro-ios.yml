@@ -59,11 +59,13 @@ jobs:
         working-directory: apps/server
         run: |
           (MOCK_MODE=1 npm run dev > /tmp/vibelyster-server.log 2>&1 &)
-          for i in {1..60}; do
-            curl -sf http://127.0.0.1:3001 >/dev/null && exit 0
+          for i in {1..120}; do
+            if curl -fsS -X POST http://127.0.0.1:3001/api/test/reset >/dev/null; then
+              exit 0
+            fi
             sleep 2
           done
-          echo "Server failed to start"
+          echo "Server failed to start or mock reset route never became ready"
           cat /tmp/vibelyster-server.log
           exit 1
 
