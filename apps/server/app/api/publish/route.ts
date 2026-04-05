@@ -105,6 +105,48 @@ export async function POST(req: NextRequest) {
       await upsertPlatformListing(listingId, platform, { status: "publishing" });
 
       if (isMockMode()) {
+        if (platform === "ebay") {
+          const sellerReadiness = ((tokens: Record<string, unknown>) => {
+            const readiness = tokens.seller_readiness;
+            return typeof readiness === "object" && readiness ? readiness as EbaySellerReadiness : {
+              ready: false,
+              missing: ["seller_readiness"],
+              policies: {},
+              checkedAt: new Date().toISOString(),
+            };
+          })(decryptTokens(conn.encrypted_tokens));
+          const metadata = (await buildEbayListingMetadata({
+            listing: canonical,
+            existing: existingPlatformListing?.platform_data as EbayListingMetadata | undefined,
+            generateFallback: async () => ({}),
+          })).metadata;
+
+          if (!sellerReadiness.ready || metadata.validationStatus !== "valid") {
+            await updatePlatformListingStatus(listingId, platform, "failed", {
+              lastError: !sellerReadiness.ready
+                ? `eBay seller setup incomplete: ${sellerReadiness.missing.join(", ")}`
+                : `eBay listing metadata incomplete: ${(metadata.missingFields ?? []).join(", ")}`,
+              incrementAttempt: true,
+              platformData: {
+                ...(existingPlatformListing?.platform_data ?? {}),
+                ...metadata,
+              },
+            });
+            results[platform] = {
+              ok: false,
+              error: !sellerReadiness.ready
+                ? `eBay seller setup incomplete: ${sellerReadiness.missing.join(", ")}`
+                : `eBay listing metadata incomplete: ${(metadata.missingFields ?? []).join(", ")}`,
+              metadataRequired: metadata.validationStatus !== "valid",
+              platformData: {
+                ...(existingPlatformListing?.platform_data ?? {}),
+                ...metadata,
+              },
+            };
+            continue;
+          }
+        }
+
         const platformListingId = existingPlatformListing?.platform_listing_id ?? mockPlatformListingId(platform, mode);
         const platformData = {
           ...(existingPlatformListing?.platform_data ?? {}),

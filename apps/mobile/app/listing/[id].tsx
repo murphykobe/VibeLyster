@@ -12,17 +12,18 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useFocusEffect, useRouter, useLocalSearchParams } from "expo-router";
-import { getListing, updateListing, publishListing, delistListing, deleteListing, syncStatus, getConnections } from "@/lib/api";
-import { getRemoteListingState, type Listing, type MarketplaceConnection, type Platform, type PlatformListing } from "@/lib/types";
+import { getListing, updateListing, publishListing, delistListing, deleteListing, syncStatus, getConnections, saveEbayListingMetadata } from "@/lib/api";
+import { getRemoteListingState, type EbayListingMetadata, type Listing, type MarketplaceConnection, type Platform, type PlatformListing } from "@/lib/types";
 import { CATEGORY_GROUPS, getCategoryOption } from "@/lib/categories";
 import { getPublishMode, type PublishMode } from "@/lib/publish-mode";
 import PhotoCarousel from "@/components/PhotoCarousel";
 import PlatformRow from "@/components/PlatformRow";
+import EbayMetadataEditor from "@/components/EbayMetadataEditor";
 import { theme } from "@/lib/theme";
 import { useToast } from "@/lib/toast";
 
 const CONDITIONS = ["new", "gently_used", "used", "heavily_used"];
-const MVP_PLATFORMS: Platform[] = ["grailed", "depop"];
+const MVP_PLATFORMS: Platform[] = ["grailed", "depop", "ebay"];
 
 function confirmAction(title: string, message: string, confirmText = "Confirm") {
   if (typeof window !== "undefined" && typeof window.confirm === "function") {
@@ -71,6 +72,9 @@ export default function ListingDetailScreen() {
   const [publishingAll, setPublishingAll] = useState(false);
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [publishMode, setPublishMode] = useState<PublishMode>("live");
+  const [showEbayMetadata, setShowEbayMetadata] = useState(false);
+  const [savingEbayMetadata, setSavingEbayMetadata] = useState(false);
+  const [ebayMetadata, setEbayMetadata] = useState<EbayListingMetadata>({});
 
   const [connections, setConnections] = useState<MarketplaceConnection[]>([]);
 
@@ -93,6 +97,9 @@ export default function ListingDetailScreen() {
     setBrand(data.brand ?? "");
     setCategory(data.category ?? "");
     setTraits(data.traits ?? {});
+
+    const ebayPlatform = (data.platform_listings ?? []).find((row) => row.platform === "ebay");
+    setEbayMetadata((ebayPlatform?.platform_data ?? {}) as EbayListingMetadata);
 
     const newestSync = (data.platform_listings ?? [])
       .map((pl) => pl.last_synced_at)
@@ -210,8 +217,16 @@ export default function ListingDetailScreen() {
         ok: boolean;
         error?: string;
         remoteState?: "live" | "draft";
+        metadataRequired?: boolean;
+        platformData?: Record<string, unknown>;
       };
       if (!platformResult.ok) {
+        if (platform === "ebay") {
+          setShowEbayMetadata(true);
+          if (platformResult.platformData) {
+            setEbayMetadata(platformResult.platformData as EbayListingMetadata);
+          }
+        }
         showToast(platformResult.error ?? "Publish failed.");
       } else if (platformResult.remoteState === "draft") {
         showToast(`${platform} draft created.`, "success");
@@ -275,6 +290,20 @@ export default function ListingDetailScreen() {
       showToast("Delist failed.");
     } finally {
       setDelisting(null);
+    }
+  }
+
+  async function handleSaveEbayMetadata() {
+    setSavingEbayMetadata(true);
+    try {
+      await saveEbayListingMetadata(id, ebayMetadata);
+      setShowEbayMetadata(true);
+      await load();
+      showToast("Saved eBay details.", "success");
+    } catch {
+      showToast("Failed to save eBay details.");
+    } finally {
+      setSavingEbayMetadata(false);
     }
   }
 
@@ -468,6 +497,14 @@ export default function ListingDetailScreen() {
             </View>
           )}
         </View>
+
+        <EbayMetadataEditor
+          visible={showEbayMetadata}
+          metadata={ebayMetadata}
+          saving={savingEbayMetadata}
+          onChange={setEbayMetadata}
+          onSave={handleSaveEbayMetadata}
+        />
 
         <View style={styles.card}>
           <View style={styles.publishHeader}>

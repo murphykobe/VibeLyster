@@ -36,6 +36,17 @@ function buildMockEbayTokens() {
     ebay_user_id: "mock-ebay-user-id",
     expires_at: expiresAt,
     refresh_token_expires_in: 7776000,
+    seller_readiness: {
+      ready: true,
+      missing: [],
+      policies: {
+        payment: { id: "mock-payment-policy", name: "Mock Payment" },
+        fulfillment: { id: "mock-fulfillment-policy", name: "Mock Fulfillment" },
+        return: { id: "mock-return-policy", name: "Mock Return" },
+      },
+      marketplaceId: "EBAY_US",
+      checkedAt: new Date().toISOString(),
+    },
   };
 }
 
