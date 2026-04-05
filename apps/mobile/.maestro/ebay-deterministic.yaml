@@ -23,6 +23,29 @@ appId: com.vibelyster.app
       visible: "Go to app"
     commands:
       - tapOn: "Go to app"
+- extendedWaitUntil:
+    visible: "Settings, tab, 2 of 2"
+    timeout: 60000
+- runFlow:
+    when:
+      visible: "Open"
+    commands:
+      - tapOn: "Open"
+- runFlow:
+    when:
+      visible: "Continue"
+    commands:
+      - tapOn: "Continue"
+- runFlow:
+    when:
+      visible: "Close"
+    commands:
+      - tapOn: "Close"
+- runFlow:
+    when:
+      visible: "Go to app"
+    commands:
+      - tapOn: "Go to app"
 - tapOn: "Settings, tab, 2 of 2"
 - assertVisible: "Account & Connections"
 - tapOn:
