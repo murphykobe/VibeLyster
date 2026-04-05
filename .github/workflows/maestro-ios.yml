@@ -1,0 +1,90 @@
+name: Maestro iOS
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "apps/mobile/**"
+      - "apps/server/**"
+      - "apps/mobile/.maestro/**"
+      - ".github/workflows/**"
+
+jobs:
+  maestro-deterministic:
+    name: Deterministic iOS Maestro
+    runs-on: macos-15
+    timeout-minutes: 45
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Maestro
+        run: curl -Ls "https://get.maestro.mobile.dev" | bash
+
+      - name: Select Xcode
+        run: sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
+
+      - name: Boot iOS simulator
+        run: |
+          xcrun simctl boot "iPhone 16" || true
+          open -a Simulator
+
+      - name: Build iOS dev client
+        working-directory: apps/mobile
+        run: npx expo run:ios --simulator "iPhone 16"
+
+      - name: Start mock server
+        working-directory: apps/server
+        run: |
+          (MOCK_MODE=1 npm run dev > /tmp/vibelyster-server.log 2>&1 &)
+          for i in {1..60}; do
+            curl -sf http://127.0.0.1:3001 >/dev/null && exit 0
+            sleep 2
+          done
+          echo "Server failed to start"
+          cat /tmp/vibelyster-server.log
+          exit 1
+
+      - name: Start Expo web / Metro for dev client
+        working-directory: apps/mobile
+        run: |
+          cat > .env.local <<'EOF'
+          EXPO_PUBLIC_API_URL=http://127.0.0.1:3001
+          EXPO_PUBLIC_MOCK_MODE=1
+          EXPO_PUBLIC_MOCK_USER_ID=maestro-user
+          EXPO_PUBLIC_EBAY_E2E_MODE=1
+          EXPO_PUBLIC_EBAY_TEST_STATE=maestro-ebay-state
+          EOF
+          (npx expo start --dev-client --port 8083 > /tmp/vibelyster-metro.log 2>&1 &)
+          for i in {1..90}; do
+            grep -q 'Waiting on' /tmp/vibelyster-metro.log && exit 0
+            sleep 2
+          done
+          echo "Metro failed to start"
+          cat /tmp/vibelyster-metro.log
+          exit 1
+
+      - name: Run deterministic Maestro flow
+        working-directory: apps/mobile
+        env:
+          PATH: ${{ env.PATH }}:${{ github.workspace }}/.maestro/bin:${{ env.HOME }}/.maestro/bin
+        run: npm run maestro:ebay:deterministic
+
+      - name: Upload Maestro artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: maestro-ios-artifacts
+          path: |
+            /tmp/vibelyster-server.log
+            /tmp/vibelyster-metro.log
+            ~/.maestro/tests
+          retention-days: 7

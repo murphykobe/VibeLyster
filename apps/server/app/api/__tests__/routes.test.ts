@@ -611,17 +611,36 @@ describe("GET /api/connections", () => {
 
 describe("PATCH /api/listings/[id]/ebay-metadata", () => {
   it("saves user-edited ebay metadata to platform_listings.platform_data", async () => {
-    const createRes = await createListing(req("POST", "/api/listings", { body: VALID_LISTING }));
-    const { id } = await createRes.json();
+    vi.resetModules();
+    vi.doMock("@/lib/auth", () => ({
+      requireAuth: vi.fn().mockResolvedValue({ id: "user-a" }),
+      AuthError: class AuthError extends Error {},
+      authErrorResponse: vi.fn((err: Error) => Response.json({ error: err.message }, { status: 401 })),
+    }));
+    vi.doMock("@/lib/db", () => ({
+      getListingById: vi.fn().mockResolvedValue({
+        id: "listing-1",
+        platform_listings: [],
+      }),
+      upsertPlatformListing: vi.fn().mockResolvedValue({
+        platform: "ebay",
+        platform_data: {
+          ebayCategoryId: "155183",
+          ebayAspects: { Department: ["Men"] },
+          metadataSources: { Department: "user" },
+          validationStatus: "incomplete",
+        },
+      }),
+    }));
 
     const { PATCH: saveEbayMetadata } = await import("../listings/[id]/ebay-metadata/route");
-    const saveRes = await saveEbayMetadata(req("PATCH", `/api/listings/${id}/ebay-metadata`, {
+    const saveRes = await saveEbayMetadata(req("PATCH", `/api/listings/listing-1/ebay-metadata`, {
       body: {
         ebayCategoryId: "155183",
         ebayAspects: { Department: ["Men"] },
         metadataSources: { Department: "user" },
       },
-    }), params(id));
+    }), params("listing-1"));
 
     expect(saveRes.status).toBe(200);
     const row = await saveRes.json();
@@ -717,7 +736,9 @@ describe("POST /api/publish", () => {
   });
 
   it("publishes to ebay in mock mode when connected", async () => {
-    const createRes = await createListing(req("POST", "/api/listings", { body: VALID_LISTING }));
+    const createRes = await createListing(req("POST", "/api/listings", {
+      body: { ...VALID_LISTING, traits: { department: "Men", material: "Leather" } },
+    }));
     const { id } = await createRes.json();
     await connectPlatform(req("POST", "/api/connect", {
       body: { platform: "ebay", authorizationCode: "ebay-code-1", ruName: "ru-name" },
