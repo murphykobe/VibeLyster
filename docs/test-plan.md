@@ -261,3 +261,11 @@ cd apps/mobile && EXPO_PUBLIC_MOCK_MODE=1 EXPO_PUBLIC_API_URL=http://<LAN_IP>:30
 3. **3A / 3B (Camera, picker, voice recording)** — Native capture remains lightly verified compared with server behavior.
 4. **3D (Full happy path)** — Manual release gate for end-to-end confidence on iOS.
 5. **3E (Error states)** — Important for reconnect, offline, and duplicate-publish handling once native happy paths are stable.
+
+### Deferred live eBay production smoke
+
+If we add a true live eBay production smoke later, it should be:
+- a dedicated `workflow_dispatch` workflow
+- secrets-gated
+- configured with explicit production eBay credentials, not sandbox credentials
+- non-blocking and excluded from normal PR CI

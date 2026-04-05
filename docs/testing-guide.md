@@ -152,6 +152,12 @@ Use this sparingly:
 - nightly workflows
 - pre-release validation
 
+For future live eBay production smoke:
+- use a dedicated `workflow_dispatch` workflow
+- keep it secrets-gated
+- use explicit production eBay credentials, not sandbox credentials
+- keep it non-blocking and out of normal PR CI
+
 ---
 
 ## 3. Current Verification Status
@@ -399,3 +405,4 @@ Best for real publish verification.
 - add env-overridable marketplace base URLs for fake upstreams
 - add simulator smoke automation for launch, connect, publish, and failure states
 - keep live marketplace smoke non-blocking
+- if we add live eBay production smoke, make it a dedicated manual workflow with explicit prod-only secrets, not a PR-required check
