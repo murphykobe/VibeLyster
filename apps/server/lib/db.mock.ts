@@ -280,17 +280,19 @@ export async function updatePlatformListingStatus(
   return clone(row);
 }
 
-export async function getConnections(userId: string) {
+export async function getConnections(userId: string, opts?: { includeEncryptedTokens?: boolean }) {
   return getState().connections
     .filter((c) => c.user_id === userId)
-    .map((c) => clone({
-      id: c.id,
-      user_id: c.user_id,
-      platform: c.platform,
-      platform_username: c.platform_username,
-      connected_at: c.connected_at,
-      expires_at: c.expires_at,
-    }));
+    .map((c) => clone(opts?.includeEncryptedTokens
+      ? c
+      : {
+          id: c.id,
+          user_id: c.user_id,
+          platform: c.platform,
+          platform_username: c.platform_username,
+          connected_at: c.connected_at,
+          expires_at: c.expires_at,
+        }));
 }
 
 export async function getConnection(userId: string, platform: string) {

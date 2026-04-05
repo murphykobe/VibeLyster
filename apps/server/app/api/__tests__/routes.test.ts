@@ -590,9 +590,46 @@ describe("GET /api/connections", () => {
       expect(c).not.toHaveProperty("encrypted_tokens");
     }
   });
+
+  it("returns ebay readiness summary from GET /api/connections", async () => {
+    await connectPlatform(req("POST", "/api/connect", {
+      body: { platform: "ebay", authorizationCode: "ebay-code-1", ruName: "ru-name" },
+    }));
+
+    const res = await listConnections(req("GET", "/api/connections"));
+    const data = await res.json();
+    const ebay = data.find((row: { platform: string }) => row.platform === "ebay");
+
+    expect(ebay.readiness).toEqual(expect.objectContaining({
+      ready: expect.any(Boolean),
+      missing: expect.any(Array),
+    }));
+  });
 });
 
 // ─── Publish ──────────────────────────────────────────────────────────────────
+
+describe("PATCH /api/listings/[id]/ebay-metadata", () => {
+  it("saves user-edited ebay metadata to platform_listings.platform_data", async () => {
+    const createRes = await createListing(req("POST", "/api/listings", { body: VALID_LISTING }));
+    const { id } = await createRes.json();
+
+    const { PATCH: saveEbayMetadata } = await import("../listings/[id]/ebay-metadata/route");
+    const saveRes = await saveEbayMetadata(req("PATCH", `/api/listings/${id}/ebay-metadata`, {
+      body: {
+        ebayCategoryId: "155183",
+        ebayAspects: { Department: ["Men"] },
+        metadataSources: { Department: "user" },
+      },
+    }), params(id));
+
+    expect(saveRes.status).toBe(200);
+    const row = await saveRes.json();
+    expect(row.platform_data.ebayCategoryId).toBe("155183");
+    expect(row.platform_data.ebayAspects.Department).toEqual(["Men"]);
+    expect(row.platform).toBe("ebay");
+  });
+});
 
 describe("POST /api/publish", () => {
   async function setup() {

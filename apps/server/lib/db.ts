@@ -251,8 +251,16 @@ export type MarketplaceConnectionRow = {
   expires_at: string | null;
 };
 
-export async function getConnections(userId: string) {
-  if (MOCK_MODE) return mockDb.getConnections(userId);
+export async function getConnections(userId: string, opts?: { includeEncryptedTokens?: boolean }) {
+  if (MOCK_MODE) return mockDb.getConnections(userId, opts);
+  if (opts?.includeEncryptedTokens) {
+    const rows = await sql`
+      SELECT *
+      FROM marketplace_connections
+      WHERE user_id = ${userId}
+    `;
+    return rows as unknown as MarketplaceConnectionRow[];
+  }
   const rows = await sql`
     SELECT id, user_id, platform, platform_username, connected_at, expires_at
     FROM marketplace_connections
