@@ -74,6 +74,9 @@ jobs:
           EXPO_PUBLIC_API_URL=http://127.0.0.1:3001
           EXPO_PUBLIC_MOCK_MODE=1
           EXPO_PUBLIC_MOCK_USER_ID=maestro-user
+          EXPO_PUBLIC_EBAY_CLIENT_ID=maestro-ebay-client-id
+          EXPO_PUBLIC_EBAY_RU_NAME=maestro-ebay-ru-name
+          EXPO_PUBLIC_EBAY_SANDBOX=true
           EXPO_PUBLIC_EBAY_E2E_MODE=1
           EXPO_PUBLIC_EBAY_TEST_STATE=maestro-ebay-state
           EOF
