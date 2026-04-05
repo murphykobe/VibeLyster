@@ -65,5 +65,13 @@ appId: com.vibelyster.app
       visible: "OK"
     commands:
       - tapOn: "OK"
+- runFlow:
+    when:
+      visible: "Connect eBay"
+    commands:
+      - tapOn: "Close"
+- extendedWaitUntil:
+    visible: "Account & Connections"
+    timeout: 15000
 - assertVisible: "Account & Connections"
 - assertVisible: "Disconnect"
