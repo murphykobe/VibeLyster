@@ -79,6 +79,13 @@ export const DisconnectQuery = z.object({
   platform: PlatformEnum,
 });
 
+export const UpdateEbayMetadataBody = z.object({
+  ebayCategoryId: z.string().min(1).optional(),
+  ebayConditionId: z.number().int().optional(),
+  ebayAspects: z.record(z.array(z.string())).optional(),
+  metadataSources: z.record(z.enum(["deterministic", "ai", "user"])).optional(),
+});
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 /** Parses body with a Zod schema; returns a 400 Response on failure, or the parsed data. */

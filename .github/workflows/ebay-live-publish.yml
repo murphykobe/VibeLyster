@@ -1,0 +1,70 @@
+name: eBay Live Publish Smoke
+
+on:
+  workflow_dispatch:
+
+jobs:
+  ebay-live-publish:
+    name: Live eBay publish smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      E2E_BASE_URL: ${{ secrets.E2E_BASE_URL }}
+      E2E_API_URL: ${{ secrets.E2E_API_URL }}
+      E2E_EMAIL: ${{ secrets.E2E_EMAIL }}
+      E2E_PASSWORD: ${{ secrets.E2E_PASSWORD }}
+      E2E_EBAY_TEST: "1"
+      E2E_EBAY_SANDBOX: "true"
+      E2E_EBAY_CALLBACK_HOST: ${{ secrets.E2E_EBAY_CALLBACK_HOST }}
+      E2E_EBAY_CLIENT_ID: ${{ secrets.E2E_EBAY_CLIENT_ID }}
+      E2E_EBAY_RU_NAME: ${{ secrets.E2E_EBAY_RU_NAME }}
+      E2E_EBAY_SANDBOX_USERNAME: ${{ secrets.E2E_EBAY_SANDBOX_USERNAME }}
+      E2E_EBAY_SANDBOX_PASSWORD: ${{ secrets.E2E_EBAY_SANDBOX_PASSWORD }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Validate required secrets
+        run: |
+          for key in \
+            E2E_BASE_URL \
+            E2E_API_URL \
+            E2E_EMAIL \
+            E2E_PASSWORD \
+            E2E_EBAY_CALLBACK_HOST \
+            E2E_EBAY_CLIENT_ID \
+            E2E_EBAY_RU_NAME \
+            E2E_EBAY_SANDBOX_USERNAME \
+            E2E_EBAY_SANDBOX_PASSWORD
+          do
+            if [ -z "${!key}" ]; then
+              echo "Missing required secret: $key"
+              exit 1
+            fi
+          done
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Playwright browsers
+        working-directory: apps/e2e
+        run: npx playwright install chromium --with-deps
+
+      - name: Run live eBay publish smoke
+        working-directory: apps/e2e
+        run: npm run test:preview:ebay:publish -- --project=chromium
+
+      - name: Upload Playwright report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ebay-live-publish-playwright-report
+          path: |
+            apps/e2e/playwright-report/
+            apps/e2e/test-results/
+          retention-days: 7

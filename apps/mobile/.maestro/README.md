@@ -39,6 +39,27 @@ cd apps/mobile && npm run maestro:ebay:deterministic
 
 The deterministic script auto-resets mock backend state before each run.
 
+## GitHub CI
+
+PR CI runs the deterministic iOS Maestro flow only.
+
+Trigger paths:
+- `apps/mobile/**`
+- `apps/server/**`
+- `apps/mobile/.maestro/**`
+- `.github/workflows/**`
+
+The CI job:
+- boots an iOS simulator
+- builds the Expo dev client
+- starts the mock server on `127.0.0.1:3001`
+- starts Metro on `8083`
+- runs `npm run maestro:ebay:deterministic`
+
+Live sandbox Maestro stays local/manual and is not part of normal PR CI.
+
+Real eBay sandbox publish verification is also kept out of PR CI. That smoke requires a seller-ready sandbox account with Business Policy access, so it runs only as a manual secrets-gated workflow.
+
 ## Live sandbox OAuth
 
 Uses real Clerk sign-in + eBay sandbox consent flow.

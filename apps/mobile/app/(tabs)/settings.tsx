@@ -194,6 +194,13 @@ export default function SettingsScreen() {
                       <Text style={styles.platformUsername}>
                         {connection ? (connection.platform_username ?? "Connected") : "Not connected"}
                       </Text>
+                      {key === "ebay" && connection?.readiness ? (
+                        <Text style={styles.platformUsername}>
+                          {connection.readiness.ready
+                            ? "Seller setup ready"
+                            : `Seller setup incomplete: ${connection.readiness.missing.join(", ")}`}
+                        </Text>
+                      ) : null}
                     </View>
 
                     {connection ? (

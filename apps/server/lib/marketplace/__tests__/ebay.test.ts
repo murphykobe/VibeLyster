@@ -3,7 +3,7 @@ import {
   buildEbayAuthorizeUrl,
   exchangeEbayAuthorizationCode,
   verifyEbayConnectionFromTokens,
-  EBAY_IDENTITY_SCOPE,
+  EBAY_AUTH_SCOPES,
 } from "../ebay";
 
 describe("eBay marketplace helper", () => {
@@ -12,7 +12,7 @@ describe("eBay marketplace helper", () => {
     vi.unstubAllGlobals();
   });
 
-  it("builds an authorize URL with the minimum identity scope", () => {
+  it("builds an authorize URL with publish-capable scopes", () => {
     const url = buildEbayAuthorizeUrl({
       clientId: "client-123",
       ruName: "vibelyster-app-EBAY-US",
@@ -24,7 +24,10 @@ describe("eBay marketplace helper", () => {
     expect(parsed.searchParams.get("client_id")).toBe("client-123");
     expect(parsed.searchParams.get("redirect_uri")).toBe("vibelyster-app-EBAY-US");
     expect(parsed.searchParams.get("state")).toBe("state-abc");
-    expect(parsed.searchParams.get("scope")).toBe(EBAY_IDENTITY_SCOPE);
+    const scope = parsed.searchParams.get("scope") ?? "";
+    for (const requiredScope of EBAY_AUTH_SCOPES) {
+      expect(scope).toContain(requiredScope);
+    }
     expect(parsed.searchParams.get("response_type")).toBe("code");
   });
 

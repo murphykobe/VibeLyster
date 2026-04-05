@@ -590,9 +590,65 @@ describe("GET /api/connections", () => {
       expect(c).not.toHaveProperty("encrypted_tokens");
     }
   });
+
+  it("returns ebay readiness summary from GET /api/connections", async () => {
+    await connectPlatform(req("POST", "/api/connect", {
+      body: { platform: "ebay", authorizationCode: "ebay-code-1", ruName: "ru-name" },
+    }));
+
+    const res = await listConnections(req("GET", "/api/connections"));
+    const data = await res.json();
+    const ebay = data.find((row: { platform: string }) => row.platform === "ebay");
+
+    expect(ebay.readiness).toEqual(expect.objectContaining({
+      ready: expect.any(Boolean),
+      missing: expect.any(Array),
+    }));
+  });
 });
 
 // ─── Publish ──────────────────────────────────────────────────────────────────
+
+describe("PATCH /api/listings/[id]/ebay-metadata", () => {
+  it("saves user-edited ebay metadata to platform_listings.platform_data", async () => {
+    vi.resetModules();
+    vi.doMock("@/lib/auth", () => ({
+      requireAuth: vi.fn().mockResolvedValue({ id: "user-a" }),
+      AuthError: class AuthError extends Error {},
+      authErrorResponse: vi.fn((err: Error) => Response.json({ error: err.message }, { status: 401 })),
+    }));
+    vi.doMock("@/lib/db", () => ({
+      getListingById: vi.fn().mockResolvedValue({
+        id: "listing-1",
+        platform_listings: [],
+      }),
+      upsertPlatformListing: vi.fn().mockResolvedValue({
+        platform: "ebay",
+        platform_data: {
+          ebayCategoryId: "155183",
+          ebayAspects: { Department: ["Men"] },
+          metadataSources: { Department: "user" },
+          validationStatus: "incomplete",
+        },
+      }),
+    }));
+
+    const { PATCH: saveEbayMetadata } = await import("../listings/[id]/ebay-metadata/route");
+    const saveRes = await saveEbayMetadata(req("PATCH", `/api/listings/listing-1/ebay-metadata`, {
+      body: {
+        ebayCategoryId: "155183",
+        ebayAspects: { Department: ["Men"] },
+        metadataSources: { Department: "user" },
+      },
+    }), params("listing-1"));
+
+    expect(saveRes.status).toBe(200);
+    const row = await saveRes.json();
+    expect(row.platform_data.ebayCategoryId).toBe("155183");
+    expect(row.platform_data.ebayAspects.Department).toEqual(["Men"]);
+    expect(row.platform).toBe("ebay");
+  });
+});
 
 describe("POST /api/publish", () => {
   async function setup() {
@@ -677,6 +733,31 @@ describe("POST /api/publish", () => {
     expect(grailedRow.platform_listing_id).toMatch(/^mock-grailed-draft-/);
     expect(grailedRow.platform_data.remote_state).toBe("draft");
     expect(grailedRow.attempt_count).toBe(1);
+  });
+
+  it("publishes to ebay in mock mode when connected", async () => {
+    const createRes = await createListing(req("POST", "/api/listings", {
+      body: { ...VALID_LISTING, traits: { department: "Men", material: "Leather" } },
+    }));
+    const { id } = await createRes.json();
+    await connectPlatform(req("POST", "/api/connect", {
+      body: { platform: "ebay", authorizationCode: "ebay-code-1", ruName: "ru-name" },
+    }));
+
+    const res = await publishListing(req("POST", "/api/publish", {
+      body: { listingId: id, platforms: ["ebay"], mode: "draft" },
+    }));
+
+    expect(res.status).toBe(200);
+    const data = await res.json();
+    expect(data.results.ebay.ok).toBe(true);
+    expect(data.results.ebay.remoteState).toBe("draft");
+
+    const getRes = await getListing(req("GET", `/api/listings/${id}`), params(id));
+    const listing = await getRes.json();
+    const ebayRow = listing.platform_listings.find((pl: { platform: string }) => pl.platform === "ebay");
+    expect(ebayRow.status).toBe("pending");
+    expect(ebayRow.platform_data.remote_state).toBe("draft");
   });
 });
 

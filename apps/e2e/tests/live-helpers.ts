@@ -3,7 +3,13 @@ import { expect, type APIRequestContext, type Page } from "@playwright/test";
 const API_URL = process.env.E2E_API_URL ?? (process.env.E2E_BASE_URL ? new URL(process.env.E2E_BASE_URL).origin : undefined);
 const EBAY_SANDBOX = ["1", "true", "yes", "on"].includes((process.env.E2E_EBAY_SANDBOX ?? "true").toLowerCase());
 const EBAY_AUTH_HOST = EBAY_SANDBOX ? "https://auth.sandbox.ebay.com" : "https://auth.ebay.com";
-const EBAY_SCOPE = "https://api.ebay.com/oauth/api_scope/commerce.identity.readonly";
+const EBAY_SCOPE = [
+  "https://api.ebay.com/oauth/api_scope/commerce.identity.readonly",
+  "https://api.ebay.com/oauth/api_scope/sell.account.readonly",
+  "https://api.ebay.com/oauth/api_scope/sell.inventory",
+  "https://api.ebay.com/oauth/api_scope/sell.inventory.readonly",
+  "https://api.ebay.com/oauth/api_scope/sell.fulfillment.readonly",
+].join(" ");
 const EBAY_CALLBACK_HOST = process.env.E2E_EBAY_CALLBACK_HOST ?? "https://vibelyster.vercel.app";
 
 if (!API_URL) {
@@ -206,4 +212,16 @@ export async function disconnectPlatformViaApi(request: APIRequestContext, token
   if (!response.ok() && response.status() !== 404) {
     throw new Error(`DELETE /api/connect failed: ${response.status()} ${await response.text()}`);
   }
+}
+
+export async function publishListingViaApi(
+  request: APIRequestContext,
+  token: string,
+  input: { listingId: string; mode?: "live" | "draft" },
+) {
+  return api<{ results: Record<string, unknown> }>(request, token, "POST", "/api/publish", {
+    listingId: input.listingId,
+    platforms: ["ebay"],
+    mode: input.mode ?? "draft",
+  });
 }

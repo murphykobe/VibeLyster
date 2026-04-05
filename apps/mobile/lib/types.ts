@@ -1,5 +1,20 @@
 export type Platform = "grailed" | "depop" | "ebay";
 
+export type EbayReadiness = {
+  ready: boolean;
+  missing: string[];
+  checkedAt: string | null;
+};
+
+export type EbayListingMetadata = {
+  ebayCategoryId?: string;
+  ebayConditionId?: number;
+  ebayAspects?: Record<string, string[]>;
+  metadataSources?: Record<string, "deterministic" | "ai" | "user">;
+  validationStatus?: "valid" | "incomplete";
+  missingFields?: string[];
+};
+
 export type PlatformListing = {
   id: string;
   listing_id: string;
@@ -58,4 +73,5 @@ export type MarketplaceConnection = {
   platform_username: string | null;
   connected_at: string;
   expires_at: string | null;
+  readiness?: EbayReadiness;
 };

@@ -32,6 +32,40 @@ export type DepopTokens = {
   access_token: string;
 };
 
+export type EbaySellerReadiness = {
+  ready: boolean;
+  missing: string[];
+  policies: {
+    payment?: { id: string; name: string };
+    fulfillment?: { id: string; name: string };
+    return?: { id: string; name: string };
+  };
+  marketplaceId?: string;
+  checkedAt: string;
+  actionableError?: string;
+  requiresReconnect?: boolean;
+};
+
+export type EbayListingMetadata = {
+  ebayCategoryId?: string;
+  ebayConditionId?: number;
+  ebayAspects?: Record<string, string[]>;
+  ebayListingFormat?: "FIXED_PRICE";
+  metadataSources?: Record<string, "deterministic" | "ai" | "user">;
+  validationStatus?: "valid" | "incomplete";
+  missingFields?: string[];
+};
+
+export type EbayTokens = {
+  access_token: string;
+  refresh_token: string;
+  token_type: string;
+  ebay_user_id: string;
+  expires_at: string;
+  refresh_token_expires_in?: number;
+  seller_readiness?: EbaySellerReadiness;
+};
+
 export type PublishOptions = {
   mode?: PublishMode;
   existingPlatformListingId?: string | null;

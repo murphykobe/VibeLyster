@@ -46,6 +46,23 @@ export async function seedConnection(request: APIRequestContext, platform: "grai
   });
 }
 
+export async function seedEbayConnection(
+  request: APIRequestContext,
+  input: { ready: boolean; missing?: string[] } = { ready: true }
+) {
+  await request.post(`${API}/api/connect`, {
+    headers: MOCK_HEADERS,
+    data: { platform: "ebay", authorizationCode: "mock-ebay-code", ruName: "mock-ebay-ru-name" },
+  });
+
+  if (!input.ready || (input.missing && input.missing.length > 0)) {
+    await request.post(`${API}/api/test/ebay-readiness`, {
+      headers: MOCK_HEADERS,
+      data: { ready: input.ready, missing: input.missing ?? [] },
+    });
+  }
+}
+
 export async function seedPublishedListing(request: APIRequestContext) {
   const listing = await seedListing(request);
   await seedConnection(request, "grailed");

@@ -155,13 +155,18 @@ E2E_PASSWORD='your-password' \
 npm run test:preview
 ```
 
-### eBay OAuth testing
+### eBay OAuth / publish testing
 
-- Browser/server live coverage: `cd apps/e2e && npm run test:preview:ebay`
+- Browser/server live OAuth coverage: `cd apps/e2e && npm run test:preview:ebay`
+- Browser/server live publish smoke: `cd apps/e2e && npm run test:preview:ebay:publish -- --project=chromium`
 - Native iOS deterministic smoke: `cd apps/mobile && npm run maestro:ebay:deterministic`
 - Native iOS live sandbox flow: `cd apps/mobile && npm run maestro:ebay:live`
 
-See `apps/mobile/.maestro/README.md` for the full local setup.
+Notes:
+- Deterministic Maestro remains the only eBay flow in normal PR CI.
+- Live eBay publish is manual/secrets-gated because it requires a real seller-ready sandbox account.
+
+See `apps/mobile/.maestro/README.md` and `apps/e2e/README.md` for the full setup.
 
 ### Manual AI E2E
 This is opt-in and should not run in CI because it uses paid AI services.

@@ -3,7 +3,7 @@
  * Uses Clerk JWT bearer tokens by default, or mock headers when EXPO_PUBLIC_MOCK_MODE is enabled.
  */
 
-import type { Listing, MarketplaceConnection, Platform } from "./types";
+import type { EbayListingMetadata, Listing, MarketplaceConnection, Platform } from "./types";
 import type { PublishMode } from "./publish-mode";
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL ?? "http://localhost:3001";
@@ -279,6 +279,10 @@ export async function saveEbayConnection(input: SaveEbayConnectionInput) {
     authorizationCode: input.authorizationCode,
     ruName: input.ruName,
   });
+}
+
+export async function saveEbayListingMetadata(listingId: string, metadata: EbayListingMetadata) {
+  return apiRequest<{ platform_data: Record<string, unknown> }>("PATCH", `/api/listings/${listingId}/ebay-metadata`, metadata);
 }
 
 export async function disconnectPlatform(platform: Platform) {

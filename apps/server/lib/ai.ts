@@ -236,6 +236,37 @@ export type GenerateListingResult = {
   usedVision: boolean;
 };
 
+const EbayAspectSchema = z.record(z.array(z.string().min(1))).describe(
+  "Map each requested eBay aspect name to one or more values. Only include requested aspects."
+);
+
+export async function generateEbayAspects(input: {
+  listing: {
+    title: string;
+    description: string;
+    brand: string | null;
+    size: string | null;
+    category: string | null;
+    traits: Record<string, string>;
+  };
+  missingAspects: string[];
+}): Promise<Record<string, string[]>> {
+  if (input.missingAspects.length === 0) return {};
+
+  const client = getGatewayClient();
+  const { object } = await generateObject({
+    model: client("minimax/minimax-m2.7"),
+    schema: EbayAspectSchema,
+    system: "You generate only missing eBay item specifics for fashion/apparel listings. Return compact JSON only. Do not invent facts that strongly contradict the listing.",
+    prompt: JSON.stringify({
+      listing: input.listing,
+      missingAspects: input.missingAspects,
+    }),
+  });
+
+  return object;
+}
+
 export async function generateListing(input: GenerateListingInput): Promise<GenerateListingResult> {
   const { audioBuffer, audioMimeType, photoUrls, transcript: providedTranscript } = input;
 
