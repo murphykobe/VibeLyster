@@ -28,4 +28,27 @@ describe("fetchEbaySellerReadiness", () => {
     expect(result.ready).toBe(false);
     expect(result.missing).toEqual(["fulfillment_policy", "return_policy"]);
   });
+
+  it("returns an actionable reconnect error when eBay denies seller account access", async () => {
+    const accessDenied = JSON.stringify({
+      errors: [{
+        errorId: 1100,
+        domain: "ACCESS",
+        category: "REQUEST",
+        message: "Access denied",
+        longMessage: "Insufficient permissions to fulfill the request.",
+      }],
+    });
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(accessDenied, { status: 403 }))
+      .mockResolvedValueOnce(new Response(accessDenied, { status: 403 }))
+      .mockResolvedValueOnce(new Response(accessDenied, { status: 403 }));
+
+    const result = await fetchEbaySellerReadiness({ accessToken: "token", fetchImpl: fetchMock as typeof fetch });
+
+    expect(result.ready).toBe(false);
+    expect(result.requiresReconnect).toBe(true);
+    expect(result.actionableError).toMatch(/reconnect ebay/i);
+    expect(result.missing).toEqual([]);
+  });
 });

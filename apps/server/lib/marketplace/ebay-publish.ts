@@ -23,7 +23,8 @@ export async function publishToEbay(
   if (!options.sellerReadiness.ready) {
     return {
       ok: false,
-      error: `eBay seller setup incomplete: ${options.sellerReadiness.missing.join(", ")}`,
+      error: options.sellerReadiness.actionableError
+        ?? `eBay seller setup incomplete: ${options.sellerReadiness.missing.join(", ")}`,
       retryable: false,
     };
   }

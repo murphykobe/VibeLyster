@@ -23,6 +23,25 @@ function pickFirstPolicy<T extends PolicyRow>(rows: T[] | undefined, idKey: keyo
   return id && name ? { id, name } : undefined;
 }
 
+async function parsePolicyResponse(response: Response) {
+  const text = await response.text();
+  try {
+    return text ? JSON.parse(text) as Record<string, unknown> : {};
+  } catch {
+    return { raw: text } satisfies Record<string, unknown>;
+  }
+}
+
+function isInsufficientPermissions(payload: Record<string, unknown>) {
+  const errors = Array.isArray(payload.errors) ? payload.errors : [];
+  return errors.some((error) => {
+    if (!error || typeof error !== "object") return false;
+    const message = pickString((error as { message?: unknown }).message)?.toLowerCase();
+    const longMessage = pickString((error as { longMessage?: unknown }).longMessage)?.toLowerCase();
+    return message?.includes("access denied") || longMessage?.includes("insufficient permissions");
+  });
+}
+
 export async function fetchEbaySellerReadiness({
   accessToken,
   fetchImpl = fetch,
@@ -42,10 +61,46 @@ export async function fetchEbaySellerReadiness({
   ]);
 
   const [fulfillmentJson, paymentJson, returnJson] = await Promise.all([
-    fulfillmentRes.json() as Promise<{ fulfillmentPolicies?: PolicyRow[] }> ,
-    paymentRes.json() as Promise<{ paymentPolicies?: PolicyRow[] }> ,
-    returnRes.json() as Promise<{ returnPolicies?: PolicyRow[] }> ,
+    parsePolicyResponse(fulfillmentRes) as Promise<{ fulfillmentPolicies?: PolicyRow[]; errors?: unknown[] }>,
+    parsePolicyResponse(paymentRes) as Promise<{ paymentPolicies?: PolicyRow[]; errors?: unknown[] }>,
+    parsePolicyResponse(returnRes) as Promise<{ returnPolicies?: PolicyRow[]; errors?: unknown[] }>,
   ]);
+
+  const policyResponses = [
+    { response: fulfillmentRes, payload: fulfillmentJson },
+    { response: paymentRes, payload: paymentJson },
+    { response: returnRes, payload: returnJson },
+  ];
+
+  if (policyResponses.some(({ response }) => !response.ok)) {
+    const insufficientPermissions = policyResponses.some(({ response, payload }) =>
+      (response.status === 401 || response.status === 403) && isInsufficientPermissions(payload),
+    );
+
+    if (insufficientPermissions) {
+      return {
+        ready: false,
+        missing: [],
+        policies: {},
+        checkedAt: new Date().toISOString(),
+        requiresReconnect: true,
+        actionableError: "Reconnect eBay to grant publish permissions, then try again.",
+      };
+    }
+
+    const failedStatuses = policyResponses
+      .filter(({ response }) => !response.ok)
+      .map(({ response }) => response.status)
+      .join(", ");
+
+    return {
+      ready: false,
+      missing: [],
+      policies: {},
+      checkedAt: new Date().toISOString(),
+      actionableError: `eBay seller readiness check failed (${failedStatuses}). Please try reconnecting eBay or try again later.`,
+    };
+  }
 
   const fulfillment = pickFirstPolicy(fulfillmentJson.fulfillmentPolicies, "fulfillmentPolicyId");
   const payment = pickFirstPolicy(paymentJson.paymentPolicies, "paymentPolicyId");

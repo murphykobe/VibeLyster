@@ -42,6 +42,8 @@ export type EbaySellerReadiness = {
   };
   marketplaceId?: string;
   checkedAt: string;
+  actionableError?: string;
+  requiresReconnect?: boolean;
 };
 
 export type EbayListingMetadata = {
