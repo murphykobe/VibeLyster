@@ -89,7 +89,7 @@ jobs:
 
       - name: Build iOS dev client
         working-directory: apps/mobile
-        run: npx expo run:ios --device "${{ steps.simulator.outputs.name }}" --port 8083 --no-bundler
+        run: npx expo run:ios --device "${{ steps.simulator.outputs.name }}" --port 8083
 
       - name: Run deterministic Maestro flow
         working-directory: apps/mobile
