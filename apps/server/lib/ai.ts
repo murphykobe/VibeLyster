@@ -40,10 +40,12 @@ function getGatewayClient() {
 const TEXT_MODEL_ID = "minimax/minimax-m2.7";
 const VISION_MODEL_ID = "google/gemini-2.5-flash";
 
-const VerificationFieldEnum = z.enum(["brand", "size", "condition", "category", "color", "price"]);
+const VerificationFieldEnum = z.enum(["title", "description", "brand", "size", "condition", "category", "color", "price"]);
 export type VerificationField = z.infer<typeof VerificationFieldEnum>;
 
 const IMAGE_DERIVABLE_FIELDS = new Set<VerificationField>([
+  "title",
+  "description",
   "brand",
   "size",
   "condition",
@@ -98,9 +100,9 @@ function uniqueFields(fields: VerificationField[]) {
 // ─── Schemas ──────────────────────────────────────────────────────────────────
 
 const ListingSchema = z.object({
-  title: z.string().min(1).describe("Short, keyword-rich listing title (max 70 chars). Platform-optimized for search."),
-  description: z.string().min(1).describe("Detailed item description including condition notes, measurements, and any flaws."),
-  price: z.number().positive().describe("Listing price in USD. If the seller did not provide a price, use a conservative, clearly reviewable estimate."),
+  title: z.string().nullable().describe("Short, keyword-rich listing title (max 70 chars). Platform-optimized for search. Use null if unknown."),
+  description: z.string().nullable().describe("Detailed item description including condition notes, measurements, and any flaws. Use null if unknown."),
+  price: z.number().positive().nullable().describe("Listing price in USD. Use null if unknown; do not guess."),
   size: z.string().nullable().describe("Size (e.g. 'M', 'L', '32x30', 'one size'). null if unknown."),
   condition: z.enum(["new", "gently_used", "used", "heavily_used"]).nullable().describe("Item condition. null if unknown."),
   brand: z.string().nullable().describe("Brand name (e.g. 'Nike', 'Levi\'s'). null if unknown."),
@@ -283,6 +285,10 @@ function inferColorFromText(...sources: Array<string | null | undefined>) {
 
 function hasFieldValue(listing: GeneratedListing, field: VerificationField) {
   switch (field) {
+    case "title":
+      return Boolean(listing.title?.trim());
+    case "description":
+      return Boolean(listing.description?.trim());
     case "brand":
       return Boolean(listing.brand?.trim());
     case "size":
@@ -294,7 +300,7 @@ function hasFieldValue(listing: GeneratedListing, field: VerificationField) {
     case "color":
       return Boolean(listing.traits?.color?.trim());
     case "price":
-      return Number.isFinite(listing.price) && listing.price > 0;
+      return listing.price != null && Number.isFinite(listing.price) && listing.price > 0;
   }
 }
 
@@ -310,6 +316,8 @@ function normalizeGeneratedListing(listing: GeneratedListing, transcript: string
 
   return {
     ...listing,
+    title: listing.title?.trim() || null,
+    description: listing.description?.trim() || null,
     category: listing.category ? normalizeCategoryForStorage(listing.category) : null,
     traits,
   };
@@ -317,10 +325,7 @@ function normalizeGeneratedListing(listing: GeneratedListing, transcript: string
 
 function normalizeStructuredDraft(draft: StructuredDraft, transcript: string): StructuredDraft {
   const listing = normalizeGeneratedListing(draft.listing, transcript);
-  const unresolvedFields = uniqueFields(draft.unresolvedFields).filter((field) => {
-    if (field === "price") return true;
-    return !hasFieldValue(listing, field);
-  });
+  const unresolvedFields = uniqueFields(draft.unresolvedFields).filter((field) => !hasFieldValue(listing, field));
   const lowConfidenceFields = uniqueFields(draft.lowConfidenceFields).filter(
     (field) => !unresolvedFields.includes(field)
   );

@@ -25,9 +25,9 @@ function buildMockListing(photoUrls: string[], hasAudio: boolean, transcript?: s
 }
 
 type GeneratedDraft = {
-  title: string;
-  description: string;
-  price: number;
+  title: string | null;
+  description: string | null;
+  price: number | null;
   size: string | null;
   condition: string | null;
   brand: string | null;

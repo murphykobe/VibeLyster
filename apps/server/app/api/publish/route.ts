@@ -78,10 +78,23 @@ export async function POST(req: NextRequest) {
     const dbListing = await getListingById(user.id, listingId);
     if (!dbListing) return Response.json({ error: "Listing not found" }, { status: 404 });
 
+    const missingListingFields = [
+      !dbListing.title?.trim() ? "title" : null,
+      !dbListing.description?.trim() ? "description" : null,
+      dbListing.price == null || Number.isNaN(Number(dbListing.price)) || Number(dbListing.price) <= 0 ? "price" : null,
+    ].filter((value): value is string => Boolean(value));
+
+    if (missingListingFields.length > 0) {
+      return Response.json(
+        { error: `Listing requires verification: ${missingListingFields.join(", ")}` },
+        { status: 400 },
+      );
+    }
+
     const canonical: CanonicalListing = {
       id: dbListing.id,
-      title: dbListing.title,
-      description: dbListing.description,
+      title: dbListing.title!,
+      description: dbListing.description!,
       price: Number(dbListing.price),
       size: dbListing.size,
       condition: dbListing.condition,

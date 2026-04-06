@@ -89,9 +89,9 @@ export default function ListingDetailScreen() {
 
   function hydrateListing(data: Listing) {
     setListing(data);
-    setTitle(data.title);
-    setPrice(String(data.price));
-    setDescription(data.description);
+    setTitle(data.title ?? "");
+    setPrice(data.price == null ? "" : String(data.price));
+    setDescription(data.description ?? "");
     setSize(data.size ?? "");
     setCondition(data.condition ?? "");
     setBrand(data.brand ?? "");

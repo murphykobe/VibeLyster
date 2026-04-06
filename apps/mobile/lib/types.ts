@@ -54,9 +54,9 @@ export type ListingAIRawResponse = {
 
 export type Listing = {
   id: string;
-  title: string;
-  description: string;
-  price: string;
+  title: string | null;
+  description: string | null;
+  price: string | null;
   size: string | null;
   condition: string | null;
   brand: string | null;

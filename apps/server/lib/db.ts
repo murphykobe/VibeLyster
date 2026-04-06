@@ -49,9 +49,9 @@ export async function getUserByClerkId(clerkId: string) {
 export type ListingRow = {
   id: string;
   user_id: string;
-  title: string;
-  description: string;
-  price: string;
+  title: string | null;
+  description: string | null;
+  price: string | null;
   size: string | null;
   condition: string | null;
   brand: string | null;
@@ -108,12 +108,12 @@ export async function getListingById(userId: string, listingId: string) {
 
 export type CreateListingInput = {
   userId: string;
-  title: string;
-  description: string;
-  price: number;
-  size?: string;
-  condition?: string;
-  brand?: string;
+  title: string | null;
+  description: string | null;
+  price: number | null;
+  size?: string | null;
+  condition?: string | null;
+  brand?: string | null;
   category?: string | null;
   traits?: Record<string, unknown>;
   photos: string[];
@@ -128,7 +128,7 @@ export async function createListing(input: CreateListingInput) {
       user_id, title, description, price, size, condition, brand,
       category, traits, photos, voice_transcript, ai_raw_response
     ) VALUES (
-      ${input.userId}, ${input.title}, ${input.description}, ${input.price},
+      ${input.userId}, ${input.title ?? null}, ${input.description ?? null}, ${input.price ?? null},
       ${input.size ?? null}, ${input.condition ?? null}, ${input.brand ?? null},
       ${input.category ?? null}, ${JSON.stringify(input.traits ?? {})},
       ${JSON.stringify(input.photos)},
