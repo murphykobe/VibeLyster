@@ -13,7 +13,7 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useFocusEffect, useRouter, useLocalSearchParams } from "expo-router";
 import { getListing, updateListing, publishListing, delistListing, deleteListing, syncStatus, getConnections, saveEbayListingMetadata } from "@/lib/api";
-import { getRemoteListingState, type EbayListingMetadata, type Listing, type MarketplaceConnection, type Platform, type PlatformListing } from "@/lib/types";
+import { getListingVerificationStatus, getRemoteListingState, type EbayListingMetadata, type Listing, type MarketplaceConnection, type Platform, type PlatformListing } from "@/lib/types";
 import { CATEGORY_GROUPS, getCategoryOption } from "@/lib/categories";
 import { getPublishMode, type PublishMode } from "@/lib/publish-mode";
 import PhotoCarousel from "@/components/PhotoCarousel";
@@ -325,6 +325,7 @@ export default function ListingDetailScreen() {
   }
 
   const platformRows = listing ? getMergedPlatformRows(listing) : [];
+  const verificationStatus = listing ? getListingVerificationStatus(listing) : "verified";
   const connectedPlatforms = new Set<Platform>([
     ...(listing?.platform_listings ?? []).map((pl) => pl.platform as Platform),
     ...connections.map((c) => c.platform),
@@ -382,6 +383,11 @@ export default function ListingDetailScreen() {
           <Text style={styles.heroSub}>
             Edit details and {publishMode === "draft" ? "save marketplace drafts." : "publish to marketplaces."}
           </Text>
+          {verificationStatus === "requires_verification" ? (
+            <View style={styles.verificationBadge}>
+              <Text style={styles.verificationBadgeText}>Requires verification</Text>
+            </View>
+          ) : null}
         </View>
 
         <PhotoCarousel photos={listing.photos} />
@@ -633,6 +639,21 @@ const styles = StyleSheet.create({
     color: theme.colors.textMuted,
     fontFamily: theme.fonts.sans,
     fontSize: 14,
+  },
+  verificationBadge: {
+    alignSelf: "flex-start",
+    marginTop: 10,
+    borderRadius: theme.radius.sm,
+    backgroundColor: theme.colors.surfaceStrong,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  verificationBadgeText: {
+    color: theme.colors.accent,
+    fontFamily: theme.fonts.sansBold,
+    fontSize: 12,
+    textTransform: "uppercase",
+    letterSpacing: 1,
   },
   card: {
     marginHorizontal: 16,

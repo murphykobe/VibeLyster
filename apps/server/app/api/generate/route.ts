@@ -76,6 +76,15 @@ export async function POST(req: NextRequest) {
           photoCount: photoUrls.length,
           hadAudio: Boolean(audioBuffer),
           hadTranscript: Boolean(transcript),
+          verification: {
+            verificationStatus: "verified",
+            unresolvedFields: [],
+            lowConfidenceFields: [],
+            fallbackTriggered: false,
+            fallbackReason: [],
+            fallbackResolvedFields: [],
+            resolutionSource: {},
+          },
         },
         usedVision: photoUrls.length > 0,
       };
