@@ -184,7 +184,7 @@ export default function ConnectScreen() {
   const showDebug = typeof __DEV__ !== "undefined" ? __DEV__ : false;
   const sourceUri = useMemo(() => {
     if (overrideUrl) return overrideUrl;
-    if (typedPlatform === "grailed") return "https://www.grailed.com/";
+    if (typedPlatform === "grailed") return "https://www.grailed.com/users/sign_up";
     if (typedPlatform === "depop") return "https://www.depop.com/login/";
     if (typedPlatform !== "ebay") return "";
     if (!EBAY_CLIENT_ID || !EBAY_RU_NAME) return "";

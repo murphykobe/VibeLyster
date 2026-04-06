@@ -70,42 +70,110 @@ function isTranscriptComplete(transcript: string): boolean {
 
 // ─── Soniox transcription ────────────────────────────────────────────────────
 
-type SonioxWord = { text: string; start_ms: number; end_ms: number; conf: number };
-type SonioxResponse = { words: SonioxWord[] };
+type SonioxFileResponse = {
+  id: string;
+  filename: string;
+};
+
+type SonioxTranscriptionStatus = "queued" | "processing" | "completed" | "failed";
+
+type SonioxTranscriptionResponse = {
+  id: string;
+  status: SonioxTranscriptionStatus;
+  error_message?: string | null;
+};
+
+type SonioxTranscriptResponse = {
+  id: string;
+  text: string;
+};
+
+const SONIOX_API_BASE = "https://api.soniox.com/v1";
+const SONIOX_ASYNC_MODEL = "stt-async-v4";
+const SONIOX_POLL_INTERVAL_MS = 250;
+const SONIOX_MAX_POLL_ATTEMPTS = 40;
+
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
 
 export async function transcribeAudio(audioBuffer: ArrayBuffer, mimeType: string): Promise<string> {
   const apiKey = process.env.SONIOX_API_KEY;
   if (!apiKey) throw new Error("SONIOX_API_KEY is required");
 
   const ext = mimeType.includes("mp4") || mimeType.includes("m4a") ? "m4a" : "webm";
+  const headers = { Authorization: `Bearer ${apiKey}` };
 
-  const form = new FormData();
+  const uploadForm = new FormData();
   const blob = new Blob([audioBuffer], { type: mimeType });
-  form.append("file", blob, `voice.${ext}`);
-  // Use Soniox's best general-purpose English model
-  form.append("model", "soniox-1");
+  uploadForm.append("file", blob, `voice.${ext}`);
 
-  const res = await fetch("https://api.soniox.com/v1/transcribe", {
+  const uploadResponse = await fetch(`${SONIOX_API_BASE}/files`, {
     method: "POST",
-    headers: { Authorization: `Bearer ${apiKey}` },
-    body: form,
+    headers,
+    body: uploadForm,
   });
 
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`Soniox transcription failed ${res.status}: ${text}`);
+  if (!uploadResponse.ok) {
+    const text = await uploadResponse.text();
+    throw new Error(`Soniox file upload failed ${uploadResponse.status}: ${text}`);
   }
 
-  const data = await res.json() as SonioxResponse;
+  const uploadedFile = await uploadResponse.json() as SonioxFileResponse;
 
-  // Join words into a transcript, skipping non-speech tokens (e.g. "<sc>", "<unk>")
-  const transcript = data.words
-    .map((w) => w.text)
-    .filter((t) => !t.startsWith("<"))
-    .join(" ")
-    .trim();
+  const createResponse = await fetch(`${SONIOX_API_BASE}/transcriptions`, {
+    method: "POST",
+    headers: {
+      ...headers,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      model: SONIOX_ASYNC_MODEL,
+      file_id: uploadedFile.id,
+    }),
+  });
 
-  return transcript;
+  if (!createResponse.ok) {
+    const text = await createResponse.text();
+    throw new Error(`Soniox create transcription failed ${createResponse.status}: ${text}`);
+  }
+
+  let transcription = await createResponse.json() as SonioxTranscriptionResponse;
+
+  for (let attempt = 0; attempt < SONIOX_MAX_POLL_ATTEMPTS && transcription.status !== "completed"; attempt++) {
+    if (transcription.status === "failed") {
+      throw new Error(`Soniox transcription failed: ${transcription.error_message ?? "Unknown error"}`);
+    }
+
+    await sleep(SONIOX_POLL_INTERVAL_MS);
+
+    const pollResponse = await fetch(`${SONIOX_API_BASE}/transcriptions/${transcription.id}`, {
+      headers,
+    });
+
+    if (!pollResponse.ok) {
+      const text = await pollResponse.text();
+      throw new Error(`Soniox get transcription failed ${pollResponse.status}: ${text}`);
+    }
+
+    transcription = await pollResponse.json() as SonioxTranscriptionResponse;
+  }
+
+  if (transcription.status !== "completed") {
+    throw new Error(`Soniox transcription did not complete in time (last status: ${transcription.status})`);
+  }
+
+  const transcriptResponse = await fetch(`${SONIOX_API_BASE}/transcriptions/${transcription.id}/transcript`, {
+    headers,
+  });
+
+  if (!transcriptResponse.ok) {
+    const text = await transcriptResponse.text();
+    throw new Error(`Soniox get transcript failed ${transcriptResponse.status}: ${text}`);
+  }
+
+  const transcript = await transcriptResponse.json() as SonioxTranscriptResponse;
+  return transcript.text.trim();
 }
 
 // ─── Listing generation ───────────────────────────────────────────────────────
