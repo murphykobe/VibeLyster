@@ -62,10 +62,27 @@ async function processInBackground(userId: string, listingIds: string[], platfor
     const dbListing = await getListingById(userId, listingId).catch(() => null);
     if (!dbListing) continue;
 
+    const missingListingFields = [
+      !dbListing.title?.trim() ? "title" : null,
+      !dbListing.description?.trim() ? "description" : null,
+      dbListing.price == null || Number.isNaN(Number(dbListing.price)) || Number(dbListing.price) <= 0 ? "price" : null,
+    ].filter((value): value is string => Boolean(value));
+
+    if (missingListingFields.length > 0) {
+      await Promise.all(
+        platforms.map((platform) =>
+          updatePlatformListingStatus(listingId, platform, "failed", {
+            lastError: `Listing requires verification: ${missingListingFields.join(", ")}`,
+          })
+        )
+      );
+      continue;
+    }
+
     const canonical: CanonicalListing = {
       id: dbListing.id,
-      title: dbListing.title,
-      description: dbListing.description,
+      title: dbListing.title!,
+      description: dbListing.description!,
       price: Number(dbListing.price),
       size: dbListing.size,
       condition: dbListing.condition,

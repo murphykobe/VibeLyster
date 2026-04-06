@@ -14,6 +14,7 @@ import { GET as listConnections } from "../connections/route";
 import { POST as publishListing } from "../publish/route";
 import { POST as delistListing } from "../delist/route";
 import { POST as uploadPhoto } from "../upload/route";
+import { createListing as createDbListing, upsertUser } from "@/lib/db";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -690,6 +691,37 @@ describe("POST /api/publish", () => {
   it("returns 404 for unknown listing", async () => {
     const res = await publishListing(req("POST", "/api/publish", { body: { listingId: "00000000-0000-4000-8000-000000000000", platforms: ["grailed"] } }));
     expect(res.status).toBe(404);
+  });
+
+  it("returns 400 when the listing still requires verification", async () => {
+    const user = await upsertUser("user-a", "user-a@example.com");
+    const listing = await createDbListing({
+      userId: user.id,
+      title: null,
+      description: null,
+      price: null,
+      photos: ["https://blob.vercel-storage.com/photo.jpg"],
+      aiRawResponse: {
+        verification: {
+          verificationStatus: "requires_verification",
+          unresolvedFields: ["title", "description", "price"],
+          lowConfidenceFields: [],
+          fallbackTriggered: false,
+          fallbackReason: [],
+          fallbackResolvedFields: [],
+          resolutionSource: {},
+        },
+      },
+    });
+    await connectPlatform(req("POST", "/api/connect", { body: { platform: "grailed", tokens: { csrf_token: "x", cookies: "y" } } }));
+
+    const res = await publishListing(req("POST", "/api/publish", { body: { listingId: listing.id, platforms: ["grailed"] } }));
+    expect(res.status).toBe(400);
+    const data = await res.json();
+    expect(data.error).toMatch(/requires verification/i);
+    expect(data.error).toMatch(/title/i);
+    expect(data.error).toMatch(/description/i);
+    expect(data.error).toMatch(/price/i);
   });
 
   it("returns 400 when listingId is not a UUID", async () => {

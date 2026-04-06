@@ -3,13 +3,17 @@
  *
  * Flow:
  * 1. Soniox transcribes voice note → text
- * 2. Completeness check: does the transcript contain enough info (brand, size, condition, price)?
- *    - Complete → text-only model call (cheaper, faster)
- *    - Incomplete → text + images sent to vision model
- * 3. Structured output: single model call returns canonical listing JSON
+ * 2. Text-first structured generation creates a partial listing draft and
+ *    explicitly marks unresolved / low-confidence fields.
+ * 3. A deterministic router decides whether image-derivable gaps justify a
+ *    single vision fallback call.
+ * 4. The final canonical listing plus internal verification metadata is stored
+ *    with the draft so the UI can surface a simple "Requires verification"
+ *    state without exposing internal categories.
  *
  * STT provider: Soniox REST API (SONIOX_API_KEY)
- * Generation provider: Vercel AI Gateway (prefer AI_GATEWAY_API_KEY, fallback to VERCEL_OIDC_TOKEN) → minimax/minimax-m2.7
+ * Generation provider: Vercel AI Gateway (prefer AI_GATEWAY_API_KEY, fallback
+ * to VERCEL_OIDC_TOKEN)
  */
 
 import { createOpenAI } from "@ai-sdk/openai";
@@ -20,8 +24,6 @@ import { CANONICAL_CATEGORY_KEYS, normalizeCategoryForStorage } from "./categori
 // ─── Vercel AI Gateway client ─────────────────────────────────────────────────
 
 function getGatewayClient() {
-  // Preferred: explicit AI Gateway API key configured in Vercel env vars.
-  // Fallback: Vercel-issued OIDC token if available in the runtime.
   const apiKey = process.env.AI_GATEWAY_API_KEY ?? process.env.VERCEL_OIDC_TOKEN;
   if (!apiKey) {
     throw new Error("AI_GATEWAY_API_KEY or VERCEL_OIDC_TOKEN is required");
@@ -33,94 +35,215 @@ function getGatewayClient() {
   });
 }
 
+// ─── Models & verification metadata ──────────────────────────────────────────
+
+const TEXT_MODEL_ID = "minimax/minimax-m2.7";
+const VISION_MODEL_ID = "google/gemini-2.5-flash";
+
+const VerificationFieldEnum = z.enum(["title", "description", "brand", "size", "condition", "category", "color", "price"]);
+export type VerificationField = z.infer<typeof VerificationFieldEnum>;
+
+const IMAGE_DERIVABLE_FIELDS = new Set<VerificationField>([
+  "title",
+  "description",
+  "brand",
+  "size",
+  "condition",
+  "category",
+  "color",
+]);
+
+export type ListingVerificationMetadata = {
+  verificationStatus: "verified" | "requires_verification";
+  unresolvedFields: VerificationField[];
+  lowConfidenceFields: VerificationField[];
+  fallbackTriggered: boolean;
+  fallbackReason: VerificationField[];
+  fallbackResolvedFields: VerificationField[];
+  resolutionSource: Partial<Record<VerificationField, "text" | "vision" | "user">>;
+};
+
+export function getListingGenerationModelId(input: { useVision: boolean }) {
+  return input.useVision ? VISION_MODEL_ID : TEXT_MODEL_ID;
+}
+
+export function getVisionFallbackFields(input: {
+  unresolvedFields: VerificationField[];
+  lowConfidenceFields: VerificationField[];
+}) {
+  return [...new Set([...input.unresolvedFields, ...input.lowConfidenceFields])].filter((field) =>
+    IMAGE_DERIVABLE_FIELDS.has(field)
+  );
+}
+
+export function shouldUseVisionFallback(input: {
+  photoUrls: string[];
+  unresolvedFields: VerificationField[];
+  lowConfidenceFields: VerificationField[];
+}) {
+  return input.photoUrls.length > 0 && getVisionFallbackFields(input).length > 0;
+}
+
+function getVerificationStatus(input: {
+  unresolvedFields: VerificationField[];
+  lowConfidenceFields: VerificationField[];
+}): ListingVerificationMetadata["verificationStatus"] {
+  return input.unresolvedFields.length > 0 || input.lowConfidenceFields.length > 0
+    ? "requires_verification"
+    : "verified";
+}
+
+function uniqueFields(fields: VerificationField[]) {
+  return [...new Set(fields)];
+}
+
 // ─── Schemas ──────────────────────────────────────────────────────────────────
 
 const ListingSchema = z.object({
-  title: z.string().describe("Short, keyword-rich listing title (max 70 chars). Platform-optimized for search."),
-  description: z.string().describe("Detailed item description including condition notes, measurements, and any flaws."),
-  price: z.number().positive().describe("Listing price in USD"),
-  size: z.string().nullable().describe("Size (e.g. 'M', 'L', '32x30', 'one size'). null if not applicable."),
-  condition: z.enum(["new", "gently_used", "used", "heavily_used"]).describe("Item condition"),
-  brand: z.string().nullable().describe("Brand name (e.g. 'Nike', 'Levi\\'s'). null if unknown."),
-  category: z.enum(CANONICAL_CATEGORY_KEYS).describe(
-    "Canonical supported category key. Choose only from the provided enum. If the item is not supported by our marketplaces, use unsupported.other."
+  title: z.string().nullable().describe("Short, keyword-rich listing title (max 70 chars). Platform-optimized for search. Use null if unknown."),
+  description: z.string().nullable().describe("Detailed item description including condition notes, measurements, and any flaws. Use null if unknown."),
+  price: z.number().positive().nullable().describe("Listing price in USD. Use null if unknown; do not guess."),
+  size: z.string().nullable().describe("Size (e.g. 'M', 'L', '32x30', 'one size'). null if unknown."),
+  condition: z.enum(["new", "gently_used", "used", "heavily_used"]).nullable().describe("Item condition. null if unknown."),
+  brand: z.string().nullable().describe("Brand name (e.g. 'Nike', 'Levi\'s'). null if unknown."),
+  category: z.enum(CANONICAL_CATEGORY_KEYS).nullable().describe(
+    "Canonical supported category key. Choose only from the provided enum. Use null if transcript/images do not support a confident category."
   ),
   traits: z.record(z.string()).describe(
-    "Additional attributes as key-value pairs. Always include traits.color when identifiable (for example black, white, blue, red, green, silver, gold, brown, grey, navy, orange, pink, purple, yellow, multi, cream). Include traits.country_of_origin only when known."
+    "Additional attributes as key-value pairs. Include traits.color when identifiable. Omit keys that are unknown."
   ),
 });
 
+const StructuredDraftSchema = z.object({
+  listing: ListingSchema,
+  unresolvedFields: z.array(VerificationFieldEnum).default([]),
+  lowConfidenceFields: z.array(VerificationFieldEnum).default([]),
+});
+
 type GeneratedListing = z.infer<typeof ListingSchema>;
-
-// ─── Completeness check ───────────────────────────────────────────────────────
-
-const COMPLETENESS_KEYWORDS = {
-  brand: /\b(nike|adidas|supreme|levi|ralph lauren|gucci|prada|zara|h&m|uniqlo|gap|vintage|brand)\b/i,
-  size: /\b(xs|small|medium|large|xl|xxl|s|m|l|\d{2}x\d{2}|one size|os|\d+ inch|\d+cm)\b/i,
-  condition: /\b(new|nwt|brand new|gently used|used|worn|good condition|great condition|excellent|fair|heavily)\b/i,
-  price: /\$?\d+(\.\d{2})?/,
-};
-
-function isTranscriptComplete(transcript: string): boolean {
-  const checks = Object.values(COMPLETENESS_KEYWORDS);
-  const passing = checks.filter((pattern) => pattern.test(transcript));
-  // Require at least 3/4 signals to skip vision
-  return passing.length >= 3;
-}
+type StructuredDraft = z.infer<typeof StructuredDraftSchema>;
 
 // ─── Soniox transcription ────────────────────────────────────────────────────
 
-type SonioxWord = { text: string; start_ms: number; end_ms: number; conf: number };
-type SonioxResponse = { words: SonioxWord[] };
+type SonioxFileResponse = {
+  id: string;
+  filename: string;
+};
+
+type SonioxTranscriptionStatus = "queued" | "processing" | "completed" | "error";
+
+type SonioxTranscriptionResponse = {
+  id: string;
+  status: SonioxTranscriptionStatus;
+  error_message?: string | null;
+};
+
+type SonioxTranscriptResponse = {
+  id: string;
+  text: string;
+};
+
+const SONIOX_API_BASE = "https://api.soniox.com/v1";
+const SONIOX_ASYNC_MODEL = "stt-async-v4";
+const SONIOX_POLL_INTERVAL_MS = 250;
+const SONIOX_MAX_POLL_ATTEMPTS = 40;
+
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
 
 export async function transcribeAudio(audioBuffer: ArrayBuffer, mimeType: string): Promise<string> {
   const apiKey = process.env.SONIOX_API_KEY;
   if (!apiKey) throw new Error("SONIOX_API_KEY is required");
 
   const ext = mimeType.includes("mp4") || mimeType.includes("m4a") ? "m4a" : "webm";
+  const headers = { Authorization: `Bearer ${apiKey}` };
 
-  const form = new FormData();
+  const uploadForm = new FormData();
   const blob = new Blob([audioBuffer], { type: mimeType });
-  form.append("file", blob, `voice.${ext}`);
-  // Use Soniox's best general-purpose English model
-  form.append("model", "soniox-1");
+  uploadForm.append("file", blob, `voice.${ext}`);
 
-  const res = await fetch("https://api.soniox.com/v1/transcribe", {
+  const uploadResponse = await fetch(`${SONIOX_API_BASE}/files`, {
     method: "POST",
-    headers: { Authorization: `Bearer ${apiKey}` },
-    body: form,
+    headers,
+    body: uploadForm,
   });
 
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`Soniox transcription failed ${res.status}: ${text}`);
+  if (!uploadResponse.ok) {
+    const text = await uploadResponse.text();
+    throw new Error(`Soniox file upload failed ${uploadResponse.status}: ${text}`);
   }
 
-  const data = await res.json() as SonioxResponse;
+  const uploadedFile = await uploadResponse.json() as SonioxFileResponse;
 
-  // Join words into a transcript, skipping non-speech tokens (e.g. "<sc>", "<unk>")
-  const transcript = data.words
-    .map((w) => w.text)
-    .filter((t) => !t.startsWith("<"))
-    .join(" ")
-    .trim();
+  const createResponse = await fetch(`${SONIOX_API_BASE}/transcriptions`, {
+    method: "POST",
+    headers: {
+      ...headers,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      model: SONIOX_ASYNC_MODEL,
+      file_id: uploadedFile.id,
+    }),
+  });
 
-  return transcript;
+  if (!createResponse.ok) {
+    const text = await createResponse.text();
+    throw new Error(`Soniox create transcription failed ${createResponse.status}: ${text}`);
+  }
+
+  let transcription = await createResponse.json() as SonioxTranscriptionResponse;
+
+  for (let attempt = 0; attempt < SONIOX_MAX_POLL_ATTEMPTS && transcription.status !== "completed"; attempt++) {
+    if (transcription.status === "error") {
+      throw new Error(`Soniox transcription failed: ${transcription.error_message ?? "Unknown error"}`);
+    }
+
+    await sleep(SONIOX_POLL_INTERVAL_MS);
+
+    const pollResponse = await fetch(`${SONIOX_API_BASE}/transcriptions/${transcription.id}`, {
+      headers,
+    });
+
+    if (!pollResponse.ok) {
+      const text = await pollResponse.text();
+      throw new Error(`Soniox get transcription failed ${pollResponse.status}: ${text}`);
+    }
+
+    transcription = await pollResponse.json() as SonioxTranscriptionResponse;
+  }
+
+  if (transcription.status !== "completed") {
+    throw new Error(`Soniox transcription did not complete in time (last status: ${transcription.status})`);
+  }
+
+  const transcriptResponse = await fetch(`${SONIOX_API_BASE}/transcriptions/${transcription.id}/transcript`, {
+    headers,
+  });
+
+  if (!transcriptResponse.ok) {
+    const text = await transcriptResponse.text();
+    throw new Error(`Soniox get transcript failed ${transcriptResponse.status}: ${text}`);
+  }
+
+  const transcript = await transcriptResponse.json() as SonioxTranscriptResponse;
+  return transcript.text.trim();
 }
 
 // ─── Listing generation ───────────────────────────────────────────────────────
 
 const SYSTEM_PROMPT = `You are an expert reseller who creates optimized marketplace listings.
-Given a voice description and optionally photos, generate a complete, accurate listing.
+Generate a canonical listing draft from the provided information.
 - Titles should be keyword-rich and under 70 characters
-- Descriptions should be detailed, mention condition, measurements, and any flaws
-- Be accurate — do not invent details not mentioned or visible
-- Prices should be reasonable resale values unless specified by the seller
-- For condition: "new" = unworn/unused with tags, "gently_used" = minimal wear, "used" = visible wear, "heavily_used" = significant wear/flaws
-- Category must be one of the canonical supported category enum values
-- If the item is outside our supported fashion/accessory categories, set category to unsupported.other
-- In traits, include color whenever it can be inferred from the text or photos
-- Prefer marketplace-safe trait keys such as color and country_of_origin`;
+- Descriptions should mention condition notes, measurements, and any flaws when known
+- Be accurate — do not invent details not supported by the transcript or images
+- Use null for unknown brand, size, condition, and category
+- Omit unknown traits (for example omit color if unknown)
+- If a field is unresolved, include it in unresolvedFields
+- If you provide a weak best-effort value that still needs human review, include it in lowConfidenceFields
+- Category must be one of the canonical supported category enum values when known
+- If the item is outside our supported fashion/accessory categories and you are confident about that, use unsupported.other`;
 
 const COLOR_KEYWORDS: Array<[string, string]> = [
   ["off-white", "cream"],
@@ -160,12 +283,32 @@ function inferColorFromText(...sources: Array<string | null | undefined>) {
   return null;
 }
 
-function normalizeGeneratedListing(listing: GeneratedListing, transcript: string) {
+function hasFieldValue(listing: GeneratedListing, field: VerificationField) {
+  switch (field) {
+    case "title":
+      return Boolean(listing.title?.trim());
+    case "description":
+      return Boolean(listing.description?.trim());
+    case "brand":
+      return Boolean(listing.brand?.trim());
+    case "size":
+      return Boolean(listing.size?.trim());
+    case "condition":
+      return Boolean(listing.condition);
+    case "category":
+      return Boolean(listing.category);
+    case "color":
+      return Boolean(listing.traits?.color?.trim());
+    case "price":
+      return listing.price != null && Number.isFinite(listing.price) && listing.price > 0;
+  }
+}
+
+function normalizeGeneratedListing(listing: GeneratedListing, transcript: string): GeneratedListing {
   const traits = { ...(listing.traits ?? {}) };
   const inferredColor = typeof traits.color === "string" && traits.color.trim()
     ? traits.color.trim().toLowerCase()
     : inferColorFromText(listing.title, listing.description, listing.category, transcript);
-  const category = normalizeCategoryForStorage(listing.category);
 
   if (inferredColor) {
     traits.color = inferredColor;
@@ -173,35 +316,58 @@ function normalizeGeneratedListing(listing: GeneratedListing, transcript: string
 
   return {
     ...listing,
-    category,
+    title: listing.title?.trim() || null,
+    description: listing.description?.trim() || null,
+    category: listing.category ? normalizeCategoryForStorage(listing.category) : null,
     traits,
   };
 }
 
-async function generateWithText(transcript: string): Promise<GeneratedListing> {
+function normalizeStructuredDraft(draft: StructuredDraft, transcript: string): StructuredDraft {
+  const listing = normalizeGeneratedListing(draft.listing, transcript);
+  const unresolvedFields = uniqueFields(draft.unresolvedFields).filter((field) => !hasFieldValue(listing, field));
+  const lowConfidenceFields = uniqueFields(draft.lowConfidenceFields).filter(
+    (field) => !unresolvedFields.includes(field)
+  );
+
+  return {
+    listing,
+    unresolvedFields,
+    lowConfidenceFields,
+  };
+}
+
+async function generateWithText(transcript: string): Promise<StructuredDraft> {
   const client = getGatewayClient();
 
   const { object } = await generateObject({
-    model: client("minimax/minimax-m2.7"),
-    schema: ListingSchema,
+    model: client(getListingGenerationModelId({ useVision: false })),
+    schema: StructuredDraftSchema,
     system: SYSTEM_PROMPT,
-    prompt: `Create a marketplace listing based on this voice description:\n\n"${transcript}"`,
+    prompt: `Create a marketplace listing draft from this transcript only. Do not use image information.
+
+Transcript: "${transcript || ""}"`,
   });
 
   return object;
 }
 
-async function generateWithVision(transcript: string, photoUrls: string[]): Promise<GeneratedListing> {
+async function generateWithVision(input: {
+  transcript: string;
+  photoUrls: string[];
+  partialDraft: GeneratedListing;
+  fallbackFields: VerificationField[];
+}): Promise<StructuredDraft> {
   const client = getGatewayClient();
 
-  const imageContent = photoUrls.slice(0, 4).map((url) => ({
+  const imageContent = input.photoUrls.slice(0, 4).map((url) => ({
     type: "image" as const,
     image: url,
   }));
 
   const { object } = await generateObject({
-    model: client("minimax/minimax-m2.7"),
-    schema: ListingSchema,
+    model: client(getListingGenerationModelId({ useVision: true })),
+    schema: StructuredDraftSchema,
     system: SYSTEM_PROMPT,
     messages: [
       {
@@ -210,7 +376,14 @@ async function generateWithVision(transcript: string, photoUrls: string[]): Prom
           ...imageContent,
           {
             type: "text",
-            text: `Create a marketplace listing. Voice description: "${transcript || "No voice description provided."}"`,
+            text: [
+              "Complete this marketplace listing using the images plus the transcript.",
+              "Preserve existing draft values unless the images clearly improve unresolved image-derivable fields.",
+              `Transcript: ${input.transcript || "No voice description provided."}`,
+              `Current draft JSON: ${JSON.stringify(input.partialDraft)}`,
+              `Fields that need image help: ${JSON.stringify(input.fallbackFields)}`,
+              "Return the full listing object plus unresolvedFields and lowConfidenceFields.",
+            ].join("\n"),
           },
         ],
       },
@@ -218,6 +391,43 @@ async function generateWithVision(transcript: string, photoUrls: string[]): Prom
   });
 
   return object;
+}
+
+function buildVerificationMetadata(input: {
+  pass1: StructuredDraft;
+  final: StructuredDraft;
+  fallbackTriggered: boolean;
+  fallbackReason: VerificationField[];
+}): ListingVerificationMetadata {
+  const unresolvedFields = uniqueFields(input.final.unresolvedFields);
+  const lowConfidenceFields = uniqueFields(input.final.lowConfidenceFields).filter(
+    (field) => !unresolvedFields.includes(field)
+  );
+  const resolutionSource: Partial<Record<VerificationField, "text" | "vision" | "user">> = {};
+
+  for (const field of VerificationFieldEnum.options) {
+    const finalNeedsVerification = unresolvedFields.includes(field) || lowConfidenceFields.includes(field);
+    if (finalNeedsVerification) continue;
+
+    const pass1NeededVerification =
+      input.pass1.unresolvedFields.includes(field) || input.pass1.lowConfidenceFields.includes(field);
+
+    resolutionSource[field] = input.fallbackTriggered && pass1NeededVerification ? "vision" : "text";
+  }
+
+  const fallbackResolvedFields = input.fallbackReason.filter(
+    (field) => !unresolvedFields.includes(field) && !lowConfidenceFields.includes(field)
+  );
+
+  return {
+    verificationStatus: getVerificationStatus({ unresolvedFields, lowConfidenceFields }),
+    unresolvedFields,
+    lowConfidenceFields,
+    fallbackTriggered: input.fallbackTriggered,
+    fallbackReason: uniqueFields(input.fallbackReason),
+    fallbackResolvedFields,
+    resolutionSource,
+  };
 }
 
 // ─── Public API ───────────────────────────────────────────────────────────────
@@ -255,7 +465,7 @@ export async function generateEbayAspects(input: {
 
   const client = getGatewayClient();
   const { object } = await generateObject({
-    model: client("minimax/minimax-m2.7"),
+    model: client(TEXT_MODEL_ID),
     schema: EbayAspectSchema,
     system: "You generate only missing eBay item specifics for fashion/apparel listings. Return compact JSON only. Do not invent facts that strongly contradict the listing.",
     prompt: JSON.stringify({
@@ -270,9 +480,6 @@ export async function generateEbayAspects(input: {
 export async function generateListing(input: GenerateListingInput): Promise<GenerateListingResult> {
   const { audioBuffer, audioMimeType, photoUrls, transcript: providedTranscript } = input;
 
-  // Step 1: Determine transcript.
-  // If a transcript is explicitly provided, prefer it and skip STT so manual
-  // testing can exercise generation without Soniox cost/latency.
   let transcript = providedTranscript?.trim() ?? "";
   if (!transcript && audioBuffer && audioMimeType) {
     transcript = await transcribeAudio(audioBuffer, audioMimeType);
@@ -281,26 +488,105 @@ export async function generateListing(input: GenerateListingInput): Promise<Gene
     console.log(JSON.stringify({ event: "ai.transcript_provided", transcript_length: transcript.length }));
   }
 
-  // Step 2: Decide text-only vs vision
-  const complete = isTranscriptComplete(transcript);
-  const useVision = !complete && photoUrls.length > 0;
+  const pass1StartMs = Date.now();
+  const pass1Raw = await generateWithText(transcript);
+  const pass1 = normalizeStructuredDraft(pass1Raw, transcript);
+  const pass1LatencyMs = Date.now() - pass1StartMs;
 
-  console.log(JSON.stringify({ event: "ai.completeness_check", complete, useVision, transcript_length: transcript.length }));
+  console.log(JSON.stringify({
+    event: "ai.pass1.completed",
+    latency_ms: pass1LatencyMs,
+    model: TEXT_MODEL_ID,
+    transcript_length: transcript.length,
+    unresolved_fields: pass1.unresolvedFields,
+    low_confidence_fields: pass1.lowConfidenceFields,
+    photo_count: photoUrls.length,
+  }));
 
-  // Step 3: Generate listing
-  const startMs = Date.now();
-  const listing = useVision
-    ? await generateWithVision(transcript, photoUrls)
-    : await generateWithText(transcript);
-  const latencyMs = Date.now() - startMs;
-  const normalizedListing = normalizeGeneratedListing(listing, transcript);
+  const fallbackReason = getVisionFallbackFields({
+    unresolvedFields: pass1.unresolvedFields,
+    lowConfidenceFields: pass1.lowConfidenceFields,
+  });
+  const useVision = shouldUseVisionFallback({
+    photoUrls,
+    unresolvedFields: pass1.unresolvedFields,
+    lowConfidenceFields: pass1.lowConfidenceFields,
+  });
 
-  console.log(JSON.stringify({ event: "ai.generation_complete", latency_ms: latencyMs, used_vision: useVision }));
+  let finalDraft = pass1;
+
+  if (useVision) {
+    console.log(JSON.stringify({
+      event: "ai.pass1.requires_vision",
+      model: VISION_MODEL_ID,
+      fallback_reason: fallbackReason,
+      photo_count: photoUrls.length,
+    }));
+
+    const pass2StartMs = Date.now();
+    const pass2Raw = await generateWithVision({
+      transcript,
+      photoUrls,
+      partialDraft: pass1.listing,
+      fallbackFields: fallbackReason,
+    });
+    finalDraft = normalizeStructuredDraft(pass2Raw, transcript);
+    const pass2LatencyMs = Date.now() - pass2StartMs;
+
+    console.log(JSON.stringify({
+      event: "ai.pass2.completed",
+      latency_ms: pass2LatencyMs,
+      model: VISION_MODEL_ID,
+      fallback_reason: fallbackReason,
+      unresolved_fields: finalDraft.unresolvedFields,
+      low_confidence_fields: finalDraft.lowConfidenceFields,
+    }));
+  } else {
+    console.log(JSON.stringify({
+      event: "ai.pass1.accepted",
+      model: TEXT_MODEL_ID,
+      unresolved_fields: pass1.unresolvedFields,
+      low_confidence_fields: pass1.lowConfidenceFields,
+    }));
+  }
+
+  const verification = buildVerificationMetadata({
+    pass1,
+    final: finalDraft,
+    fallbackTriggered: useVision,
+    fallbackReason,
+  });
+
+  console.log(JSON.stringify({
+    event: "ai.generation_complete",
+    used_vision: useVision,
+    verification_status: verification.verificationStatus,
+    unresolved_fields: verification.unresolvedFields,
+    low_confidence_fields: verification.lowConfidenceFields,
+  }));
 
   return {
-    listing: normalizedListing,
+    listing: finalDraft.listing,
     voiceTranscript: transcript || null,
-    aiRawResponse: { listing: normalizedListing, usedVision: useVision, transcript },
+    aiRawResponse: {
+      listing: finalDraft.listing,
+      transcript,
+      usedVision: useVision,
+      verification,
+      pass1: {
+        model: TEXT_MODEL_ID,
+        unresolvedFields: pass1.unresolvedFields,
+        lowConfidenceFields: pass1.lowConfidenceFields,
+      },
+      pass2: useVision
+        ? {
+            model: VISION_MODEL_ID,
+            fallbackReason,
+            unresolvedFields: finalDraft.unresolvedFields,
+            lowConfidenceFields: finalDraft.lowConfidenceFields,
+          }
+        : null,
+    },
     usedVision: useVision,
   };
 }

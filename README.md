@@ -162,11 +162,16 @@ npm run test:preview
 - Native iOS deterministic smoke: `cd apps/mobile && npm run maestro:ebay:deterministic`
 - Native iOS live sandbox flow: `cd apps/mobile && npm run maestro:ebay:live`
 
+Manual local prod eBay simulator run:
+- see `docs/testing-guide.md` → `Real eBay production runbook for local iOS simulator`
+- this path uses real app auth + real prod eBay OAuth
+- no `MOCK_MODE=1`, no Grailed cookies needed for eBay-only testing
+
 Notes:
 - Deterministic Maestro remains the only eBay flow in normal PR CI.
 - Live eBay publish is manual/secrets-gated because it requires a real seller-ready sandbox account.
 
-See `apps/mobile/.maestro/README.md` and `apps/e2e/README.md` for the full setup.
+See `apps/mobile/.maestro/README.md`, `apps/e2e/README.md`, and `docs/testing-guide.md` for the full setup.
 
 ### Manual AI E2E
 This is opt-in and should not run in CI because it uses paid AI services.

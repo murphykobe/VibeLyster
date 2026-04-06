@@ -33,11 +33,30 @@ export function getRemoteListingState(platformListing: PlatformListing): "draft"
   return remoteState === "draft" || remoteState === "live" ? remoteState : null;
 }
 
+export type ListingAIVerification = {
+  verificationStatus: "verified" | "requires_verification";
+  unresolvedFields: string[];
+  lowConfidenceFields: string[];
+  fallbackTriggered: boolean;
+  fallbackReason: string[];
+  fallbackResolvedFields: string[];
+  resolutionSource?: Record<string, "text" | "vision" | "user">;
+};
+
+export type ListingAIRawResponse = {
+  transcript?: string;
+  usedVision?: boolean;
+  verification?: ListingAIVerification;
+  listing?: Record<string, unknown>;
+  pass1?: Record<string, unknown>;
+  pass2?: Record<string, unknown> | null;
+};
+
 export type Listing = {
   id: string;
-  title: string;
-  description: string;
-  price: string;
+  title: string | null;
+  description: string | null;
+  price: string | null;
   size: string | null;
   condition: string | null;
   brand: string | null;
@@ -45,11 +64,18 @@ export type Listing = {
   traits: Record<string, string>;
   photos: string[];
   voice_transcript: string | null;
+  ai_raw_response?: ListingAIRawResponse | null;
   status: "active" | "deleted";
   created_at: string;
   updated_at: string;
   platform_listings: PlatformListing[] | null;
 };
+
+export function getListingVerificationStatus(listing: Listing): "verified" | "requires_verification" {
+  return listing.ai_raw_response?.verification?.verificationStatus === "requires_verification"
+    ? "requires_verification"
+    : "verified";
+}
 
 /** Derived display status for a listing, computed from platform_listings */
 export function getDisplayStatus(listing: Listing): "draft" | "live" | "partially_live" | "sold" {

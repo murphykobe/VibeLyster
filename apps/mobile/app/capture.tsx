@@ -199,16 +199,12 @@ export default function CaptureScreen() {
             <Text style={styles.sectionMeta}>{audioUri ? "Recorded" : "Optional"}</Text>
           </View>
 
-          <VoiceRecorder onRecordingComplete={(uri) => setAudioUri(uri)} disabled={busy} />
-
-          {audioUri && (
-            <View style={styles.audioDoneRow}>
-              <Text style={styles.audioDoneText}>Voice note saved</Text>
-              <Pressable onPress={() => setAudioUri(null)}>
-                <Text style={styles.rerecordText}>Re-record</Text>
-              </Pressable>
-            </View>
-          )}
+          <VoiceRecorder
+            audioUri={audioUri}
+            onRecordingComplete={(uri) => setAudioUri(uri)}
+            onClearRecording={() => setAudioUri(null)}
+            disabled={busy}
+          />
         </View>
 
         {busy && (
@@ -353,22 +349,6 @@ const styles = StyleSheet.create({
   addPhotoLabel: {
     color: theme.colors.textMuted,
     fontFamily: theme.fonts.sans,
-    fontSize: 12,
-  },
-  audioDoneRow: {
-    marginTop: 2,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-  },
-  audioDoneText: {
-    color: theme.colors.success,
-    fontFamily: theme.fonts.sansBold,
-    fontSize: 12,
-  },
-  rerecordText: {
-    color: theme.colors.textMuted,
-    fontFamily: theme.fonts.sansBold,
     fontSize: 12,
   },
   statusBox: {

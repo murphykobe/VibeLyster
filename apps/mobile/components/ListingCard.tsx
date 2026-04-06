@@ -40,6 +40,8 @@ export default function ListingCard({
   const displayStatus = getDisplayStatus(listing);
   const statusColor = STATUS_COLORS[displayStatus] ?? theme.colors.textMuted;
   const firstPhoto = listing.photos?.[0];
+  const title = listing.title?.trim() || "Untitled draft";
+  const priceText = listing.price == null || Number.isNaN(Number(listing.price)) ? "—" : `$${Number(listing.price).toFixed(0)}`;
   const platformListings = listing.platform_listings ?? [];
   const press = usePressScale({ pressedScale: 0.985 });
   const entrance = useFadeSlideIn({
@@ -68,10 +70,10 @@ export default function ListingCard({
         <View style={styles.content}>
           <View style={styles.topRow}>
             <Text style={styles.title} numberOfLines={2}>
-              {listing.title}
+              {title}
             </Text>
             <View style={styles.pricePill}>
-              <Text style={styles.priceText}>${Number(listing.price).toFixed(0)}</Text>
+              <Text style={styles.priceText}>{priceText}</Text>
             </View>
           </View>
 

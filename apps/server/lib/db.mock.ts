@@ -13,9 +13,9 @@ type UserRow = {
 type ListingRow = {
   id: string;
   user_id: string;
-  title: string;
-  description: string;
-  price: string;
+  title: string | null;
+  description: string | null;
+  price: string | null;
   size: string | null;
   condition: string | null;
   brand: string | null;
@@ -147,12 +147,12 @@ export async function getListingById(userId: string, listingId: string) {
 
 export type CreateListingInput = {
   userId: string;
-  title: string;
-  description: string;
-  price: number;
-  size?: string;
-  condition?: string;
-  brand?: string;
+  title: string | null;
+  description: string | null;
+  price: number | null;
+  size?: string | null;
+  condition?: string | null;
+  brand?: string | null;
   category?: string | null;
   traits?: Record<string, unknown>;
   photos: string[];
@@ -166,9 +166,9 @@ export async function createListing(input: CreateListingInput) {
   const row: ListingRow = {
     id: nextId(),
     user_id: input.userId,
-    title: input.title,
-    description: input.description,
-    price: String(input.price),
+    title: input.title ?? null,
+    description: input.description ?? null,
+    price: input.price == null ? null : String(input.price),
     size: input.size ?? null,
     condition: input.condition ?? null,
     brand: input.brand ?? null,

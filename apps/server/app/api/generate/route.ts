@@ -25,9 +25,9 @@ function buildMockListing(photoUrls: string[], hasAudio: boolean, transcript?: s
 }
 
 type GeneratedDraft = {
-  title: string;
-  description: string;
-  price: number;
+  title: string | null;
+  description: string | null;
+  price: number | null;
   size: string | null;
   condition: string | null;
   brand: string | null;
@@ -76,6 +76,15 @@ export async function POST(req: NextRequest) {
           photoCount: photoUrls.length,
           hadAudio: Boolean(audioBuffer),
           hadTranscript: Boolean(transcript),
+          verification: {
+            verificationStatus: "verified",
+            unresolvedFields: [],
+            lowConfidenceFields: [],
+            fallbackTriggered: false,
+            fallbackReason: [],
+            fallbackResolvedFields: [],
+            resolutionSource: {},
+          },
         },
         usedVision: photoUrls.length > 0,
       };

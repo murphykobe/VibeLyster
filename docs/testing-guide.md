@@ -391,7 +391,86 @@ Best for real publish verification.
 
 ---
 
-## 8. Future Work
+## 8. Real eBay production runbook for local iOS simulator
+
+Use this when you want a true local end-to-end eBay run against **production eBay**, not sandbox.
+
+What this setup means:
+- real local server
+- real Expo iOS dev client
+- real app sign-in
+- real prod eBay OAuth
+- real prod token exchange
+
+What you do **not** need:
+- `MOCK_MODE=1`
+- `LOCAL_DEV_AUTH_BYPASS=1` if you want fully real end-to-end auth
+- Grailed cookies or Grailed env for eBay-only testing
+
+### Required env
+
+Server (`apps/server/.env.local`):
+- normal local server env (`DATABASE_URL`, Clerk, encryption, Blob, etc.)
+- `EBAY_CLIENT_ID`
+- `EBAY_CLIENT_SECRET`
+- do **not** set `EBAY_SANDBOX=true`
+
+Mobile (`apps/mobile/.env.local`):
+- `EXPO_PUBLIC_API_URL=http://127.0.0.1:3001`
+- `EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY`
+- `EXPO_PUBLIC_EBAY_CLIENT_ID`
+- `EXPO_PUBLIC_EBAY_RU_NAME`
+- `EXPO_PUBLIC_EBAY_SANDBOX=false`
+
+### Commands
+
+Terminal 1 — server:
+
+```bash
+cd apps/server
+npm run dev
+```
+
+Terminal 2 — Expo Metro:
+
+```bash
+cd apps/mobile
+npx expo start --dev-client --port 8084
+```
+
+Terminal 3 — iOS simulator build/open:
+
+First time or after native changes:
+
+```bash
+cd apps/mobile
+npx expo run:ios --device "iPhone 16 Pro" --port 8084
+```
+
+If the dev client is already installed:
+
+```bash
+xcrun simctl openurl booted "exp+vibelyster://expo-development-client/?url=http://127.0.0.1:8084"
+```
+
+### Manual verification path
+
+1. Open the app in the simulator
+2. Sign in with a real VibeLyster account
+3. Go to `Settings`
+4. Tap `Connect eBay`
+5. Complete the real prod eBay login/consent flow
+6. Confirm the app returns to Settings and shows `Disconnect`
+
+### Notes
+
+- Use `LOCAL_DEV_AUTH_BYPASS=1` only if you want to bypass local server auth for convenience. That is useful for local debugging, but it is **not** fully real end-to-end auth.
+- Server and mobile eBay environment must match. For production runs, both sides must stay off sandbox.
+- If we later add true live eBay production smoke in CI, keep it as a dedicated manual `workflow_dispatch` workflow with explicit prod-only secrets, not a normal PR check.
+
+---
+
+## 9. Future Work
 
 - add route tests for `/api/publish`, `/api/publish/bulk`, and `/api/delist`
 - add crypto round-trip tests
