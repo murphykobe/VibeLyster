@@ -70,7 +70,7 @@ export async function POST(req: NextRequest) {
         generation_status: "generating",
       });
 
-      after((async () => {
+      after(async () => {
         try {
           const generated = await generateListing({ audioBuffer, audioMimeType, photoUrls, transcript });
           await updateListingGeneration(listing.id, {
@@ -97,7 +97,7 @@ export async function POST(req: NextRequest) {
             console.error("POST /api/generate background update failed", updateErr);
           });
         }
-      })());
+      });
 
       return Response.json({ listing }, { status: 201 });
     }
