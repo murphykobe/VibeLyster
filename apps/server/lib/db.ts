@@ -60,10 +60,17 @@ export type ListingRow = {
   photos: string[];
   voice_transcript: string | null;
   ai_raw_response: Record<string, unknown> | null;
+  generation_status: "generating" | "complete" | "failed";
+  generation_error: string | null;
   status: "active" | "deleted";
   created_at: string;
   updated_at: string;
 };
+
+function serializeSize(size: { system: string; value: string } | string | null | undefined) {
+  if (size == null) return null;
+  return typeof size === "string" ? size : JSON.stringify(size);
+}
 
 export type PlatformListingRow = {
   id: string;
@@ -111,7 +118,7 @@ export type CreateListingInput = {
   title: string | null;
   description: string | null;
   price: number | null;
-  size?: string | null;
+  size?: { system: string; value: string } | string | null;
   condition?: string | null;
   brand?: string | null;
   category?: string | null;
@@ -119,6 +126,7 @@ export type CreateListingInput = {
   photos: string[];
   voiceTranscript?: string;
   aiRawResponse?: Record<string, unknown>;
+  generation_status?: ListingRow["generation_status"];
 };
 
 export async function createListing(input: CreateListingInput) {
@@ -126,14 +134,15 @@ export async function createListing(input: CreateListingInput) {
   const rows = await sql`
     INSERT INTO listings (
       user_id, title, description, price, size, condition, brand,
-      category, traits, photos, voice_transcript, ai_raw_response
+      category, traits, photos, voice_transcript, ai_raw_response, generation_status
     ) VALUES (
       ${input.userId}, ${input.title ?? null}, ${input.description ?? null}, ${input.price ?? null},
-      ${input.size ?? null}, ${input.condition ?? null}, ${input.brand ?? null},
+      ${serializeSize(input.size)}, ${input.condition ?? null}, ${input.brand ?? null},
       ${input.category ?? null}, ${JSON.stringify(input.traits ?? {})},
       ${JSON.stringify(input.photos)},
       ${input.voiceTranscript ?? null},
-      ${input.aiRawResponse ? JSON.stringify(input.aiRawResponse) : null}
+      ${input.aiRawResponse ? JSON.stringify(input.aiRawResponse) : null},
+      ${input.generation_status ?? "complete"}
     )
     RETURNING *
   `;
@@ -151,7 +160,7 @@ export async function updateListing(userId: string, listingId: string, input: Up
   if (input.title !== undefined) { updates.push(`title = $${values.push(input.title)}`); }
   if (input.description !== undefined) { updates.push(`description = $${values.push(input.description)}`); }
   if (input.price !== undefined) { updates.push(`price = $${values.push(input.price)}`); }
-  if (input.size !== undefined) { updates.push(`size = $${values.push(input.size)}`); }
+  if (input.size !== undefined) { updates.push(`size = $${values.push(serializeSize(input.size))}`); }
   if (input.condition !== undefined) { updates.push(`condition = $${values.push(input.condition)}`); }
   if (input.brand !== undefined) { updates.push(`brand = $${values.push(input.brand)}`); }
   if (input.category !== undefined) { updates.push(`category = $${values.push(input.category)}`); }
@@ -165,6 +174,55 @@ export async function updateListing(userId: string, listingId: string, input: Up
     UPDATE listings
     SET ${updates.join(", ")}
     WHERE id = $${values.push(listingId)} AND user_id = $${values.push(userId)} AND status = 'active'
+    RETURNING *
+  `;
+  const rows = await rawQuery<ListingRow>(query, values);
+  return rows[0];
+}
+
+export async function updateListingGeneration(
+  listingId: string,
+  updatesInput: {
+    generation_status: string;
+    generation_error?: string | null;
+    title?: string | null;
+    description?: string | null;
+    price?: number | null;
+    size?: string | null;
+    condition?: string | null;
+    brand?: string | null;
+    category?: string | null;
+    traits?: Record<string, unknown>;
+    voiceTranscript?: string | null;
+    aiRawResponse?: Record<string, unknown> | null;
+    photos?: string[];
+  }
+) {
+  if (MOCK_MODE) return mockDb.updateListingGeneration(listingId, updatesInput);
+
+  const updates: string[] = [];
+  const values: unknown[] = [];
+
+  updates.push(`generation_status = $${values.push(updatesInput.generation_status)}`);
+  if (updatesInput.generation_error !== undefined) { updates.push(`generation_error = $${values.push(updatesInput.generation_error)}`); }
+  if (updatesInput.title !== undefined) { updates.push(`title = $${values.push(updatesInput.title)}`); }
+  if (updatesInput.description !== undefined) { updates.push(`description = $${values.push(updatesInput.description)}`); }
+  if (updatesInput.price !== undefined) { updates.push(`price = $${values.push(updatesInput.price)}`); }
+  if (updatesInput.size !== undefined) { updates.push(`size = $${values.push(updatesInput.size)}`); }
+  if (updatesInput.condition !== undefined) { updates.push(`condition = $${values.push(updatesInput.condition)}`); }
+  if (updatesInput.brand !== undefined) { updates.push(`brand = $${values.push(updatesInput.brand)}`); }
+  if (updatesInput.category !== undefined) { updates.push(`category = $${values.push(updatesInput.category)}`); }
+  if (updatesInput.traits !== undefined) { updates.push(`traits = $${values.push(JSON.stringify(updatesInput.traits))}`); }
+  if (updatesInput.voiceTranscript !== undefined) { updates.push(`voice_transcript = $${values.push(updatesInput.voiceTranscript)}`); }
+  if (updatesInput.aiRawResponse !== undefined) {
+    updates.push(`ai_raw_response = $${values.push(updatesInput.aiRawResponse ? JSON.stringify(updatesInput.aiRawResponse) : null)}`);
+  }
+  if (updatesInput.photos !== undefined) { updates.push(`photos = $${values.push(JSON.stringify(updatesInput.photos))}`); }
+
+  const query = `
+    UPDATE listings
+    SET ${updates.join(", ")}
+    WHERE id = $${values.push(listingId)} AND status = 'active'
     RETURNING *
   `;
   const rows = await rawQuery<ListingRow>(query, values);

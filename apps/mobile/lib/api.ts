@@ -140,7 +140,7 @@ export type UpdateListingInput = {
   title?: string;
   description?: string;
   price?: number;
-  size?: string;
+  size?: { system: string; value: string } | string | null;
   condition?: string;
   brand?: string;
   category?: string;
@@ -247,7 +247,13 @@ export async function delistListing(listingId: string, platform: Platform) {
 }
 
 export async function syncStatus(listingId: string) {
-  return apiRequest<{ listingId: string; statuses: Record<string, unknown>; checkedAt: string }>(
+  return apiRequest<{
+    listingId: string;
+    generation_status: "generating" | "complete" | "failed";
+    generation_error: string | null;
+    statuses: Record<string, unknown>;
+    checkedAt: string;
+  }>(
     "GET",
     `/api/status/${listingId}`
   );

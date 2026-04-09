@@ -24,10 +24,17 @@ type ListingRow = {
   photos: string[];
   voice_transcript: string | null;
   ai_raw_response: Record<string, unknown> | null;
+  generation_status: "generating" | "complete" | "failed";
+  generation_error: string | null;
   status: ListingStatus;
   created_at: string;
   updated_at: string;
 };
+
+function serializeSize(size: { system: string; value: string } | string | null | undefined) {
+  if (size == null) return null;
+  return typeof size === "string" ? size : JSON.stringify(size);
+}
 
 type PlatformListingRow = {
   id: string;
@@ -150,7 +157,7 @@ export type CreateListingInput = {
   title: string | null;
   description: string | null;
   price: number | null;
-  size?: string | null;
+  size?: { system: string; value: string } | string | null;
   condition?: string | null;
   brand?: string | null;
   category?: string | null;
@@ -158,6 +165,7 @@ export type CreateListingInput = {
   photos: string[];
   voiceTranscript?: string;
   aiRawResponse?: Record<string, unknown>;
+  generation_status?: ListingRow["generation_status"];
 };
 
 export async function createListing(input: CreateListingInput) {
@@ -169,7 +177,7 @@ export async function createListing(input: CreateListingInput) {
     title: input.title ?? null,
     description: input.description ?? null,
     price: input.price == null ? null : String(input.price),
-    size: input.size ?? null,
+    size: serializeSize(input.size),
     condition: input.condition ?? null,
     brand: input.brand ?? null,
     category: input.category ?? null,
@@ -177,6 +185,8 @@ export async function createListing(input: CreateListingInput) {
     photos: clone(input.photos),
     voice_transcript: input.voiceTranscript ?? null,
     ai_raw_response: input.aiRawResponse ? clone(input.aiRawResponse) : null,
+    generation_status: input.generation_status ?? "complete",
+    generation_error: null,
     status: "active",
     created_at: now,
     updated_at: now,
@@ -195,13 +205,51 @@ export async function updateListing(userId: string, listingId: string, input: Up
 
   if (input.title !== undefined) listing.title = input.title;
   if (input.description !== undefined) listing.description = input.description;
-  if (input.price !== undefined) listing.price = String(input.price);
-  if (input.size !== undefined) listing.size = input.size ?? null;
+  if (input.price !== undefined) listing.price = input.price == null ? null : String(input.price);
+  if (input.size !== undefined) listing.size = serializeSize(input.size);
   if (input.condition !== undefined) listing.condition = input.condition ?? null;
   if (input.brand !== undefined) listing.brand = input.brand ?? null;
   if (input.category !== undefined) listing.category = input.category ?? null;
   if (input.traits !== undefined) listing.traits = clone(input.traits);
   if (input.photos !== undefined) listing.photos = clone(input.photos);
+  listing.updated_at = nowIso();
+  return clone(listing);
+}
+
+export async function updateListingGeneration(
+  listingId: string,
+  updates: {
+    generation_status: string;
+    generation_error?: string | null;
+    title?: string | null;
+    description?: string | null;
+    price?: number | null;
+    size?: string | null;
+    condition?: string | null;
+    brand?: string | null;
+    category?: string | null;
+    traits?: Record<string, unknown>;
+    voiceTranscript?: string | null;
+    aiRawResponse?: Record<string, unknown> | null;
+    photos?: string[];
+  }
+) {
+  const listing = getState().listings.find((l) => l.id === listingId && l.status === "active");
+  if (!listing) return undefined;
+
+  listing.generation_status = updates.generation_status as ListingRow["generation_status"];
+  if (updates.generation_error !== undefined) listing.generation_error = updates.generation_error ?? null;
+  if (updates.title !== undefined) listing.title = updates.title ?? null;
+  if (updates.description !== undefined) listing.description = updates.description ?? null;
+  if (updates.price !== undefined) listing.price = updates.price == null ? null : String(updates.price);
+  if (updates.size !== undefined) listing.size = updates.size ?? null;
+  if (updates.condition !== undefined) listing.condition = updates.condition ?? null;
+  if (updates.brand !== undefined) listing.brand = updates.brand ?? null;
+  if (updates.category !== undefined) listing.category = updates.category ?? null;
+  if (updates.traits !== undefined) listing.traits = clone(updates.traits);
+  if (updates.voiceTranscript !== undefined) listing.voice_transcript = updates.voiceTranscript ?? null;
+  if (updates.aiRawResponse !== undefined) listing.ai_raw_response = updates.aiRawResponse ? clone(updates.aiRawResponse) : null;
+  if (updates.photos !== undefined) listing.photos = clone(updates.photos);
   listing.updated_at = nowIso();
   return clone(listing);
 }

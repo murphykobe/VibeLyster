@@ -1,7 +1,7 @@
-import { NextRequest } from "next/server";
+import { NextRequest, after } from "next/server";
 import { requireAuth, AuthError, authErrorResponse } from "@/lib/auth";
 import { generateListing } from "@/lib/ai";
-import { createListing } from "@/lib/db";
+import { createListing, updateListingGeneration } from "@/lib/db";
 import { isMockMode } from "@/lib/mock";
 
 function buildMockListing(photoUrls: string[], hasAudio: boolean, transcript?: string | null) {
@@ -10,7 +10,7 @@ function buildMockListing(photoUrls: string[], hasAudio: boolean, transcript?: s
     title: `Mock Listing - ${titleSuffix}`,
     description: transcript?.trim() || "Mock-generated listing for local frontend E2E testing.",
     price: 48,
-    size: "M",
+    size: { system: "CLOTHING_LETTER", value: "M" },
     condition: "gently_used",
     brand: "Mock Brand",
     category: "tops.t_shirt",
@@ -28,7 +28,7 @@ type GeneratedDraft = {
   title: string | null;
   description: string | null;
   price: number | null;
-  size: string | null;
+  size: { system: string; value: string } | null;
   condition: string | null;
   brand: string | null;
   category: string | null;
@@ -58,6 +58,48 @@ export async function POST(req: NextRequest) {
 
     if (!transcript && !audioBuffer && photoUrls.length === 0) {
       return Response.json({ error: "At least one photo URL, transcript, or audio file is required" }, { status: 400 });
+    }
+
+    if (!isMockMode()) {
+      const listing = await createListing({
+        userId: user.id,
+        title: null,
+        description: null,
+        price: null,
+        photos: photoUrls,
+        generation_status: "generating",
+      });
+
+      after((async () => {
+        try {
+          const generated = await generateListing({ audioBuffer, audioMimeType, photoUrls, transcript });
+          await updateListingGeneration(listing.id, {
+            generation_status: "complete",
+            generation_error: null,
+            title: generated.listing.title,
+            description: generated.listing.description,
+            price: generated.listing.price,
+            size: generated.listing.size ? JSON.stringify(generated.listing.size) : null,
+            condition: generated.listing.condition,
+            brand: generated.listing.brand,
+            category: generated.listing.category,
+            traits: generated.listing.traits,
+            voiceTranscript: generated.voiceTranscript,
+            aiRawResponse: generated.aiRawResponse,
+            photos: photoUrls,
+          });
+        } catch (err) {
+          console.error("POST /api/generate background", err);
+          await updateListingGeneration(listing.id, {
+            generation_status: "failed",
+            generation_error: err instanceof Error ? err.message : "Generation failed",
+          }).catch((updateErr) => {
+            console.error("POST /api/generate background update failed", updateErr);
+          });
+        }
+      })());
+
+      return Response.json({ listing }, { status: 201 });
     }
 
     let generated: {
@@ -104,7 +146,7 @@ export async function POST(req: NextRequest) {
       title: generated.listing.title,
       description: generated.listing.description,
       price: generated.listing.price,
-      size: generated.listing.size ?? undefined,
+      size: generated.listing.size ? JSON.stringify(generated.listing.size) : undefined,
       condition: generated.listing.condition ?? undefined,
       brand: generated.listing.brand ?? undefined,
       category: generated.listing.category ?? undefined,
@@ -112,6 +154,7 @@ export async function POST(req: NextRequest) {
       photos: photoUrls,
       voiceTranscript: generated.voiceTranscript ?? undefined,
       aiRawResponse: generated.aiRawResponse,
+      generation_status: "complete",
     });
 
     console.log(JSON.stringify({

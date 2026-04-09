@@ -3,13 +3,18 @@ import { z } from "zod";
 export const PlatformEnum = z.enum(["grailed", "depop", "ebay"]);
 export const PublishModeEnum = z.enum(["live", "draft"]);
 
+const StructuredSizeBody = z.object({
+  system: z.string().min(1).max(50),
+  value: z.string().min(1).max(50),
+});
+
 // ─── Listings ─────────────────────────────────────────────────────────────────
 
 export const CreateListingBody = z.object({
   title: z.string().min(1, "title is required").max(200),
   description: z.string().min(1, "description is required").max(5000),
   price: z.coerce.number().positive("price must be positive"),
-  size: z.string().max(50).nullish(),
+  size: z.union([z.string().max(50), StructuredSizeBody]).nullish(),
   condition: z.string().max(50).nullish(),
   brand: z.string().max(100).nullish(),
   category: z.string().max(100).nullish(),
@@ -23,7 +28,7 @@ export const UpdateListingBody = z.object({
   title: z.string().min(1).max(200).optional(),
   description: z.string().min(1).max(5000).optional(),
   price: z.coerce.number().positive().optional(),
-  size: z.string().max(50).nullish(),
+  size: z.union([z.string().max(50), StructuredSizeBody]).nullish(),
   condition: z.string().max(50).nullish(),
   brand: z.string().max(100).nullish(),
   category: z.string().max(100).nullish(),

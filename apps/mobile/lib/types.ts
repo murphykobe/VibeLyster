@@ -57,7 +57,7 @@ export type Listing = {
   title: string | null;
   description: string | null;
   price: string | null;
-  size: string | null;
+  size: { system: string; value: string } | string | null;
   condition: string | null;
   brand: string | null;
   category: string | null;
@@ -65,6 +65,8 @@ export type Listing = {
   photos: string[];
   voice_transcript: string | null;
   ai_raw_response?: ListingAIRawResponse | null;
+  generation_status: "generating" | "complete" | "failed";
+  generation_error: string | null;
   status: "active" | "deleted";
   created_at: string;
   updated_at: string;

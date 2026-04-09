@@ -20,6 +20,7 @@ import { createOpenAI } from "@ai-sdk/openai";
 import { generateObject } from "ai";
 import { z } from "zod";
 import { CANONICAL_CATEGORY_KEYS, normalizeCategoryForStorage } from "./categories";
+import { ALL_SIZE_SYSTEMS, getSizeSystemsForCategory, type SizeSystem } from "./sizes";
 
 // ─── Vercel AI Gateway client ─────────────────────────────────────────────────
 
@@ -37,7 +38,7 @@ function getGatewayClient() {
 
 // ─── Models & verification metadata ──────────────────────────────────────────
 
-const TEXT_MODEL_ID = "minimax/minimax-m2.5";
+const TEXT_MODEL_ID = "google/gemini-2.5-flash";
 const VISION_MODEL_ID = "google/gemini-2.5-flash";
 
 const VerificationFieldEnum = z.enum(["title", "description", "brand", "size", "condition", "category", "color", "price"]);
@@ -103,7 +104,9 @@ const ListingSchema = z.object({
   title: z.string().nullable().describe("Short, keyword-rich listing title (max 70 chars). Platform-optimized for search. Use null if unknown."),
   description: z.string().nullable().describe("Detailed item description including condition notes, measurements, and any flaws. Use null if unknown."),
   price: z.number().positive().nullable().describe("Listing price in USD. Use null if unknown; do not guess."),
-  size: z.string().nullable().describe("Size (e.g. 'M', 'L', '32x30', 'one size'). null if unknown."),
+  size: z.object({ system: z.string(), value: z.string() }).nullable().describe(
+    "Structured size with system (e.g. US_MENS_SHOE, CLOTHING_LETTER, PANTS_WAIST) and value. null if unknown."
+  ),
   condition: z.enum(["new", "gently_used", "used", "heavily_used"]).nullable().describe("Item condition. null if unknown."),
   brand: z.string().nullable().describe("Brand name (e.g. 'Nike', 'Levi\'s'). null if unknown."),
   category: z.enum(CANONICAL_CATEGORY_KEYS).nullable().describe(
@@ -153,6 +156,7 @@ function sleep(ms: number) {
 }
 
 export async function transcribeAudio(audioBuffer: ArrayBuffer, mimeType: string): Promise<string> {
+  const startMs = Date.now();
   const apiKey = process.env.SONIOX_API_KEY;
   if (!apiKey) throw new Error("SONIOX_API_KEY is required");
 
@@ -175,6 +179,10 @@ export async function transcribeAudio(audioBuffer: ArrayBuffer, mimeType: string
   }
 
   const uploadedFile = await uploadResponse.json() as SonioxFileResponse;
+  console.log(JSON.stringify({
+    event: "ai.transcription.upload_complete",
+    latency_ms: Date.now() - startMs,
+  }));
 
   const createResponse = await fetch(`${SONIOX_API_BASE}/transcriptions`, {
     method: "POST",
@@ -194,8 +202,13 @@ export async function transcribeAudio(audioBuffer: ArrayBuffer, mimeType: string
   }
 
   let transcription = await createResponse.json() as SonioxTranscriptionResponse;
+  console.log(JSON.stringify({
+    event: "ai.transcription.create_complete",
+    latency_ms: Date.now() - startMs,
+  }));
 
-  for (let attempt = 0; attempt < SONIOX_MAX_POLL_ATTEMPTS && transcription.status !== "completed"; attempt++) {
+  let attempt = 0;
+  for (; attempt < SONIOX_MAX_POLL_ATTEMPTS && transcription.status !== "completed"; attempt++) {
     if (transcription.status === "error") {
       throw new Error(`Soniox transcription failed: ${transcription.error_message ?? "Unknown error"}`);
     }
@@ -214,6 +227,12 @@ export async function transcribeAudio(audioBuffer: ArrayBuffer, mimeType: string
     transcription = await pollResponse.json() as SonioxTranscriptionResponse;
   }
 
+  console.log(JSON.stringify({
+    event: "ai.transcription.poll_complete",
+    latency_ms: Date.now() - startMs,
+    poll_attempts: attempt,
+  }));
+
   if (transcription.status !== "completed") {
     throw new Error(`Soniox transcription did not complete in time (last status: ${transcription.status})`);
   }
@@ -228,10 +247,19 @@ export async function transcribeAudio(audioBuffer: ArrayBuffer, mimeType: string
   }
 
   const transcript = await transcriptResponse.json() as SonioxTranscriptResponse;
+  console.log(JSON.stringify({
+    event: "ai.transcription.total",
+    latency_ms: Date.now() - startMs,
+    transcript_length: transcript.text.trim().length,
+  }));
   return transcript.text.trim();
 }
 
 // ─── Listing generation ───────────────────────────────────────────────────────
+
+const SIZE_SYSTEM_PROMPT = Object.entries(ALL_SIZE_SYSTEMS)
+  .map(([system, values]) => `- ${system}: ${values.join(", ")}`)
+  .join("\n");
 
 const SYSTEM_PROMPT = `You are an expert reseller who creates optimized marketplace listings.
 Generate a canonical listing draft from the provided information.
@@ -239,6 +267,19 @@ Generate a canonical listing draft from the provided information.
 - Descriptions should mention condition notes, measurements, and any flaws when known
 - Be accurate — do not invent details not supported by the transcript or images
 - Use null for unknown brand, size, condition, and category
+- Size must be a structured object { system, value } when known
+- Use only these size systems. The values listed below are common examples, not an exhaustive allowed list:
+${SIZE_SYSTEM_PROMPT}
+- Category group to allowed size systems:
+  - footwear -> US_MENS_SHOE, US_WOMENS_SHOE, EU_SHOE, UK_SHOE
+  - tops, outerwear, tailoring -> CLOTHING_LETTER, EU_CLOTHING, IT_CLOTHING
+  - bottoms -> PANTS_WAIST, CLOTHING_LETTER, EU_CLOTHING
+  - accessories, bags -> ONE_SIZE, CLOTHING_LETTER
+- Examples:
+  - Sneakers size 10.5 -> { "system": "US_MENS_SHOE", "value": "10.5" }
+  - Hoodie medium -> { "system": "CLOTHING_LETTER", "value": "M" }
+  - Jeans waist 32 -> { "system": "PANTS_WAIST", "value": "32" }
+  - Bag one size -> { "system": "ONE_SIZE", "value": "ONE SIZE" }
 - Omit unknown traits (for example omit color if unknown)
 - If a field is unresolved, include it in unresolvedFields
 - If you provide a weak best-effort value that still needs human review, include it in lowConfidenceFields
@@ -292,7 +333,7 @@ function hasFieldValue(listing: GeneratedListing, field: VerificationField) {
     case "brand":
       return Boolean(listing.brand?.trim());
     case "size":
-      return Boolean(listing.size?.trim());
+      return Boolean(listing.size?.system && listing.size?.value);
     case "condition":
       return Boolean(listing.condition);
     case "category":
@@ -302,6 +343,28 @@ function hasFieldValue(listing: GeneratedListing, field: VerificationField) {
     case "price":
       return listing.price != null && Number.isFinite(listing.price) && listing.price > 0;
   }
+}
+
+export function normalizeGeneratedSizeForTest(
+  size: GeneratedListing["size"],
+  category: GeneratedListing["category"],
+): GeneratedListing["size"] {
+  if (!size) return null;
+
+  const system = size.system.trim().toUpperCase() as SizeSystem;
+  if (!(system in ALL_SIZE_SYSTEMS)) return null;
+
+  const rawValue = size.value.trim();
+  if (!rawValue) return null;
+
+  const value = system === "CLOTHING_LETTER" || system === "ONE_SIZE"
+    ? rawValue.toUpperCase()
+    : rawValue;
+
+  const allowedSystems = getSizeSystemsForCategory(category);
+  if (allowedSystems.length > 0 && !allowedSystems.includes(system)) return null;
+
+  return { system, value };
 }
 
 function normalizeGeneratedListing(listing: GeneratedListing, transcript: string): GeneratedListing {
@@ -318,6 +381,7 @@ function normalizeGeneratedListing(listing: GeneratedListing, transcript: string
     ...listing,
     title: listing.title?.trim() || null,
     description: listing.description?.trim() || null,
+    size: normalizeGeneratedSizeForTest(listing.size, listing.category),
     category: listing.category ? normalizeCategoryForStorage(listing.category) : null,
     traits,
   };
@@ -478,12 +542,20 @@ export async function generateEbayAspects(input: {
 }
 
 export async function generateListing(input: GenerateListingInput): Promise<GenerateListingResult> {
+  const generateStartMs = Date.now();
   const { audioBuffer, audioMimeType, photoUrls, transcript: providedTranscript } = input;
 
   let transcript = providedTranscript?.trim() ?? "";
+  let transcriptionMs: number | null = null;
   if (!transcript && audioBuffer && audioMimeType) {
+    const transcriptionStartMs = Date.now();
     transcript = await transcribeAudio(audioBuffer, audioMimeType);
-    console.log(JSON.stringify({ event: "ai.transcription_complete", transcript_length: transcript.length }));
+    transcriptionMs = Date.now() - transcriptionStartMs;
+    console.log(JSON.stringify({
+      event: "ai.transcription_complete",
+      transcript_length: transcript.length,
+      transcription_latency_ms: transcriptionMs,
+    }));
   } else if (transcript) {
     console.log(JSON.stringify({ event: "ai.transcript_provided", transcript_length: transcript.length }));
   }
@@ -514,6 +586,7 @@ export async function generateListing(input: GenerateListingInput): Promise<Gene
   });
 
   let finalDraft = pass1;
+  let pass2LatencyMs: number | null = null;
 
   if (useVision) {
     console.log(JSON.stringify({
@@ -531,7 +604,7 @@ export async function generateListing(input: GenerateListingInput): Promise<Gene
       fallbackFields: fallbackReason,
     });
     finalDraft = normalizeStructuredDraft(pass2Raw, transcript);
-    const pass2LatencyMs = Date.now() - pass2StartMs;
+    pass2LatencyMs = Date.now() - pass2StartMs;
 
     console.log(JSON.stringify({
       event: "ai.pass2.completed",
@@ -563,6 +636,13 @@ export async function generateListing(input: GenerateListingInput): Promise<Gene
     verification_status: verification.verificationStatus,
     unresolved_fields: verification.unresolvedFields,
     low_confidence_fields: verification.lowConfidenceFields,
+  }));
+  console.log(JSON.stringify({
+    event: "ai.generate_total",
+    total_ms: Date.now() - generateStartMs,
+    transcription_ms: transcriptionMs ?? null,
+    pass1_ms: pass1LatencyMs,
+    pass2_ms: pass2LatencyMs ?? null,
   }));
 
   return {
