@@ -13,6 +13,10 @@ import { Ionicons } from "@expo/vector-icons";
 import { theme } from "@/lib/theme";
 import { useToast } from "@/lib/toast";
 
+function logVoiceRecorderEvent(event: string, data: Record<string, unknown> = {}) {
+  console.log(JSON.stringify({ event, ...data }));
+}
+
 type Props = {
   audioUri: string | null;
   onRecordingComplete: (uri: string) => void;
@@ -60,32 +64,86 @@ export default function VoiceRecorder({
   }, [pulse, recorderState.isRecording]);
 
   async function startRecording() {
-    if (disabled || audioUri || recorderState.isRecording) return;
+    logVoiceRecorderEvent("voice.record.start_requested", {
+      disabled: Boolean(disabled),
+      hasSavedAudio: Boolean(audioUri),
+      isRecording: recorderState.isRecording,
+    });
+
+    if (disabled || audioUri || recorderState.isRecording) {
+      logVoiceRecorderEvent("voice.record.start_ignored", {
+        disabled: Boolean(disabled),
+        hasSavedAudio: Boolean(audioUri),
+        isRecording: recorderState.isRecording,
+      });
+      return;
+    }
 
     const permission = await AudioModule.requestRecordingPermissionsAsync();
-    if (!permission.granted) return;
+    logVoiceRecorderEvent("voice.record.permission_result", {
+      granted: permission.granted,
+      canAskAgain: permission.canAskAgain,
+      status: permission.status,
+    });
+    if (!permission.granted) {
+      showToast("Microphone permission is required to record.");
+      return;
+    }
 
     try {
+      logVoiceRecorderEvent("voice.record.preparing");
       await setAudioModeAsync({
         allowsRecording: true,
         playsInSilentMode: true,
       });
       await recorder.prepareToRecordAsync();
       recorder.record();
-    } catch {
+      logVoiceRecorderEvent("voice.record.started");
+    } catch (error) {
       pulseAnimationRef.current?.stop();
       pulse.setValue(1);
+      console.error(JSON.stringify({
+        event: "voice.record.start_failed",
+        message: error instanceof Error ? error.message : String(error),
+      }));
+      showToast("Couldn’t start recording. Check microphone access and try again.");
     }
   }
 
   async function stopRecording() {
-    if (!recorderState.isRecording) return;
+    logVoiceRecorderEvent("voice.record.stop_requested", {
+      isRecording: recorderState.isRecording,
+    });
+
+    if (!recorderState.isRecording) {
+      logVoiceRecorderEvent("voice.record.stop_ignored", {
+        reason: "not_recording",
+      });
+      return;
+    }
 
     try {
       await recorder.stop();
       const uri = recorder.uri ?? recorderState.url;
-      if (uri) onRecordingComplete(uri);
-    } catch {}
+      if (uri) {
+        logVoiceRecorderEvent("voice.record.saved", {
+          hasUri: true,
+        });
+        onRecordingComplete(uri);
+        return;
+      }
+
+      logVoiceRecorderEvent("voice.record.saved_empty", {
+        hasUri: false,
+      });
+      showToast("Recording saved without audio. Try again.");
+    } catch (error) {
+      console.error(JSON.stringify({
+        event: "voice.record.stop_failed",
+        message: error instanceof Error ? error.message : String(error),
+      }));
+      showToast("Couldn’t finish recording. Try again.");
+    }
   }
 
   async function togglePlayback() {
