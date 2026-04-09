@@ -3,7 +3,7 @@ import { getListingGenerationModelId, getVisionFallbackFields, shouldUseVisionFa
 
 describe("getListingGenerationModelId", () => {
   it("uses the current text model for transcript-only generation", () => {
-    expect(getListingGenerationModelId({ useVision: false })).toBe("minimax/minimax-m2.7");
+    expect(getListingGenerationModelId({ useVision: false })).toBe("minimax/minimax-m2.5");
   });
 
   it("uses the current vision-capable model for image generation", () => {

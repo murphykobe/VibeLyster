@@ -37,7 +37,7 @@ function getGatewayClient() {
 
 // ─── Models & verification metadata ──────────────────────────────────────────
 
-const TEXT_MODEL_ID = "minimax/minimax-m2.7";
+const TEXT_MODEL_ID = "minimax/minimax-m2.5";
 const VISION_MODEL_ID = "google/gemini-2.5-flash";
 
 const VerificationFieldEnum = z.enum(["title", "description", "brand", "size", "condition", "category", "color", "price"]);
