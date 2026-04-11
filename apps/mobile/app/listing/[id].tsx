@@ -16,7 +16,19 @@ import { getListing, updateListing, publishListing, delistListing, deleteListing
 import { getListingVerificationStatus, getRemoteListingState, type EbayListingMetadata, type Listing, type MarketplaceConnection, type Platform, type PlatformListing } from "@/lib/types";
 import { CATEGORY_GROUPS, getCategoryOption } from "@/lib/categories";
 import { getPublishMode, type PublishMode } from "@/lib/publish-mode";
-import { ALL_SIZE_SYSTEMS, getSizeSystemsForCategory, getValuesForSystem, parseStructuredSize, toDisplaySize, type SizeSystem } from "@/lib/sizes";
+import {
+  ALL_SIZE_SYSTEMS,
+  getSizeFieldLabel,
+  getSizeSystemLabel,
+  getSizeSystemsForCategory,
+  getTraitLabel,
+  getValuesForSystem,
+  isTopCategory,
+  parseStructuredSize,
+  toDisplaySize,
+  translateApparelSizeToTopSize,
+  type SizeSystem,
+} from "@/lib/sizes";
 import PhotoCarousel from "@/components/PhotoCarousel";
 import PlatformRow from "@/components/PlatformRow";
 import EbayMetadataEditor from "@/components/EbayMetadataEditor";
@@ -34,6 +46,12 @@ function normalizeSizeValue(system: SizeSystem, value: string) {
 function parseListingSize(size: Listing["size"], categoryKey: string | null | undefined) {
   const parsed = parseStructuredSize(size);
   if (parsed) {
+    if (isTopCategory(categoryKey)) {
+      const translated = translateApparelSizeToTopSize(parsed.system, parsed.value);
+      if (translated) {
+        return { system: "CLOTHING_LETTER", value: translated, legacy: false };
+      }
+    }
     return { system: parsed.system, value: parsed.value, legacy: false };
   }
 
@@ -424,6 +442,7 @@ export default function ListingDetailScreen() {
     ? getValuesForSystem(sizeSystem as SizeSystem)
     : [];
   const editableTraitKeys = Array.from(new Set(["color", "country_of_origin", ...Object.keys(traits)]));
+  const sizeFieldLabel = getSizeFieldLabel(visibleCategoryGroup);
   const editingDisabled = listing?.generation_status === "generating";
 
   function getPublishLabel(platformListing: PlatformListing) {
@@ -530,13 +549,13 @@ export default function ListingDetailScreen() {
 
           <View style={styles.twoCol}>
             <View style={styles.twoColItem}>
-              <Field label="Size">
+              <Field label={sizeFieldLabel}>
                 <Text style={styles.categorySummary}>
                   {sizeSystem && sizeValue
-                    ? `${sizeSystem} / ${sizeValue}`
+                    ? `${getSizeSystemLabel(sizeSystem as SizeSystem, visibleCategoryGroup)} / ${sizeValue}`
                     : legacySize || sizeValue
                       ? `Legacy size: ${legacySize || sizeValue}`
-                      : "Choose a size system and value"}
+                      : `Choose ${sizeFieldLabel.toLowerCase()} and value`}
                 </Text>
                 <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipsRow}>
                   {sizeSystemOptions.map((system) => (
@@ -552,13 +571,13 @@ export default function ListingDetailScreen() {
                       style={[styles.chip, sizeSystem === system && styles.chipActive, editingDisabled && styles.buttonDisabled]}
                     >
                       <Text style={[styles.chipText, sizeSystem === system && styles.chipTextActive]}>
-                        {system}
+                        {getSizeSystemLabel(system, visibleCategoryGroup)}
                       </Text>
                     </Pressable>
                   ))}
                 </ScrollView>
                 {legacySize || (!sizeSystem && sizeValue) ? (
-                  <Text style={styles.selectorHelper}>Existing free-form size kept for compatibility. Pick a system to standardize it.</Text>
+                  <Text style={styles.selectorHelper}>Existing free-form size kept for compatibility. Pick a size system to standardize it.</Text>
                 ) : null}
                 {sizeSystem ? (
                   <>
@@ -571,7 +590,7 @@ export default function ListingDetailScreen() {
                       }}
                       editable={!editingDisabled}
                       autoCapitalize="characters"
-                      placeholder="Enter size value"
+                      placeholder={`Enter ${sizeFieldLabel.toLowerCase()} value`}
                       placeholderTextColor={theme.colors.textMuted}
                     />
                     <Text style={styles.selectorHelper}>Suggested values:</Text>
@@ -692,7 +711,7 @@ export default function ListingDetailScreen() {
           {showAdvanced && (
             <View style={styles.advancedWrap}>
               {editableTraitKeys.map((key) => (
-                <Field key={key} label={key}>
+                <Field key={key} label={getTraitLabel(key)}>
                   <TextInput
                     style={[styles.input, editingDisabled && styles.inputDisabled]}
                     value={traits[key] ?? ""}

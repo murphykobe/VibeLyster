@@ -19,6 +19,41 @@ describe("structured size normalization", () => {
     )).toEqual({ system: "CLOTHING_LETTER", value: "MEDIUM" });
   });
 
+  it("translates eu clothing sizes into canonical letter sizes for tops", () => {
+    expect(normalizeGeneratedSizeForTest(
+      { system: "EU_CLOTHING", value: "48" },
+      "tops.t_shirt",
+    )).toEqual({ system: "CLOTHING_LETTER", value: "M" });
+  });
+
+  it("translates italian clothing sizes into canonical letter sizes for outerwear", () => {
+    expect(normalizeGeneratedSizeForTest(
+      { system: "IT_CLOTHING", value: "48" },
+      "outerwear.jacket",
+    )).toEqual({ system: "CLOTHING_LETTER", value: "M" });
+  });
+
+  it("translates us clothing sizes into canonical letter sizes for tops", () => {
+    expect(normalizeGeneratedSizeForTest(
+      { system: "US_CLOTHING", value: "38" },
+      "tops.t_shirt",
+    )).toEqual({ system: "CLOTHING_LETTER", value: "M" });
+  });
+
+  it("translates jp clothing sizes into canonical letter sizes for tops", () => {
+    expect(normalizeGeneratedSizeForTest(
+      { system: "JP_CLOTHING", value: "2" },
+      "tops.t_shirt",
+    )).toEqual({ system: "CLOTHING_LETTER", value: "M" });
+  });
+
+  it("does not collapse bottom waist sizes into top letter sizes", () => {
+    expect(normalizeGeneratedSizeForTest(
+      { system: "PANTS_WAIST", value: "32" },
+      "bottoms.jeans",
+    )).toEqual({ system: "PANTS_WAIST", value: "32" });
+  });
+
   it("rejects a size system that is not allowed for the category group", () => {
     expect(normalizeGeneratedSizeForTest(
       { system: "US_MENS_SHOE", value: "10" },

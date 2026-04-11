@@ -12,6 +12,14 @@ describe("sizes helpers", () => {
     expect(getSizeSystemsForCategory("tops.t_shirt")).toContain("CLOTHING_LETTER");
   });
 
+  it("shows only clothing letter sizes for tops", () => {
+    expect(getSizeSystemsForCategory("tops.t_shirt")).toEqual(["CLOTHING_LETTER"]);
+  });
+
+  it("keeps waist sizing first for bottoms", () => {
+    expect(getSizeSystemsForCategory("bottoms.denim")).toContain("PANTS_WAIST");
+  });
+
   it("parses a JSON string structured size", () => {
     expect(parseStructuredSize('{"system":"CLOTHING_LETTER","value":"M"}')).toEqual({
       system: "CLOTHING_LETTER",
@@ -35,5 +43,9 @@ describe("sizes helpers", () => {
 
   it("exposes suggested values for picker UIs", () => {
     expect(getValuesForSystem("CLOTHING_LETTER")).toContain("M");
+  });
+
+  it("uses the simplified top-size scale", () => {
+    expect(getValuesForSystem("CLOTHING_LETTER")).toEqual(["XS", "S", "M", "L", "XL", "XXL", "3XL"]);
   });
 });

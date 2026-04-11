@@ -20,7 +20,7 @@ import { createOpenAI } from "@ai-sdk/openai";
 import { generateObject } from "ai";
 import { z } from "zod";
 import { CANONICAL_CATEGORY_KEYS, normalizeCategoryForStorage } from "./categories";
-import { ALL_SIZE_SYSTEMS, getSizeSystemsForCategory, type SizeSystem } from "./sizes";
+import { ALL_SIZE_SYSTEMS, getSizeSystemsForCategory, isTopCategory, translateApparelSizeToTopSize, type SizeSystem } from "./sizes";
 
 // ─── Vercel AI Gateway client ─────────────────────────────────────────────────
 
@@ -356,6 +356,12 @@ export function normalizeGeneratedSizeForTest(
 
   const rawValue = size.value.trim();
   if (!rawValue) return null;
+
+  if (isTopCategory(category)) {
+    const translated = translateApparelSizeToTopSize(system, rawValue);
+    if (!translated) return null;
+    return { system: "CLOTHING_LETTER", value: translated };
+  }
 
   const value = system === "CLOTHING_LETTER" || system === "ONE_SIZE"
     ? rawValue.toUpperCase()
