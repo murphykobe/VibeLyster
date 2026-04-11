@@ -33,6 +33,8 @@ CREATE TABLE listings (
   photos JSONB NOT NULL DEFAULT '[]',
   voice_transcript TEXT,
   ai_raw_response JSONB,
+  generation_status TEXT NOT NULL DEFAULT 'complete' CHECK (generation_status IN ('generating', 'complete', 'failed')),
+  generation_error TEXT,
   -- 'active' = not deleted; display status (draft/live/sold) derived from platform_listings
   status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'deleted')),
   created_at TIMESTAMPTZ DEFAULT now(),

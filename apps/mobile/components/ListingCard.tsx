@@ -1,4 +1,4 @@
-import { View, Text, StyleSheet, Pressable, Image, Animated } from "react-native";
+import { View, Text, StyleSheet, Pressable, Image, Animated, ActivityIndicator } from "react-native";
 import type { Listing, Platform } from "@/lib/types";
 import { getDisplayStatus } from "@/lib/types";
 import { theme } from "@/lib/theme";
@@ -60,10 +60,24 @@ export default function ListingCard({
         onPressOut={press.onPressOut}
       >
         {firstPhoto ? (
-          <Image source={{ uri: firstPhoto }} style={styles.thumb} />
+          <View style={styles.thumbWrap}>
+            <Image source={{ uri: firstPhoto }} style={styles.thumb} />
+            {listing.generation_status === "generating" ? (
+              <View style={styles.generatingBadge}>
+                <ActivityIndicator size="small" color={theme.colors.white} />
+                <Text style={styles.generatingBadgeText}>Generating</Text>
+              </View>
+            ) : null}
+          </View>
         ) : (
-          <View style={[styles.thumb, styles.thumbPlaceholder]}>
+          <View style={[styles.thumbWrap, styles.thumb, styles.thumbPlaceholder]}>
             <Text style={styles.thumbPlaceholderText}>No Photo</Text>
+            {listing.generation_status === "generating" ? (
+              <View style={styles.generatingBadge}>
+                <ActivityIndicator size="small" color={theme.colors.white} />
+                <Text style={styles.generatingBadgeText}>Generating</Text>
+              </View>
+            ) : null}
           </View>
         )}
 
@@ -127,6 +141,10 @@ const styles = StyleSheet.create({
     height: 104,
     backgroundColor: theme.colors.surfaceStrong,
   },
+  thumbWrap: {
+    width: 104,
+    height: 104,
+  },
   thumbPlaceholder: {
     alignItems: "center",
     justifyContent: "center",
@@ -135,6 +153,23 @@ const styles = StyleSheet.create({
     fontFamily: theme.fonts.sans,
     fontSize: 12,
     color: theme.colors.textMuted,
+  },
+  generatingBadge: {
+    position: "absolute",
+    left: 8,
+    top: 8,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    borderRadius: theme.radius.sm,
+    backgroundColor: "rgba(16, 20, 35, 0.78)",
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+  },
+  generatingBadgeText: {
+    color: theme.colors.white,
+    fontFamily: theme.fonts.sansBold,
+    fontSize: 11,
   },
   content: {
     flex: 1,

@@ -9,6 +9,7 @@ import { fetchEbaySellerReadiness } from "@/lib/marketplace/ebay-seller";
 import { buildEbayListingMetadata } from "@/lib/marketplace/ebay-metadata";
 import { generateEbayAspects } from "@/lib/ai";
 import { PublishBody, parseBody } from "@/lib/validation";
+import { getDisplaySizeValue } from "@/lib/sizes";
 import type {
   GrailedTokens,
   DepopTokens,
@@ -96,7 +97,7 @@ export async function POST(req: NextRequest) {
       title: dbListing.title!,
       description: dbListing.description!,
       price: Number(dbListing.price),
-      size: dbListing.size,
+      size: getDisplaySizeValue(dbListing.size),
       condition: dbListing.condition,
       brand: dbListing.brand,
       category: dbListing.category,

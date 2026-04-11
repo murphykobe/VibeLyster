@@ -80,7 +80,13 @@ export async function GET(req: NextRequest, { params }: Params) {
       }
     }
 
-    return Response.json({ listingId, statuses: statusResults, checkedAt: new Date().toISOString() });
+    return Response.json({
+      listingId,
+      generation_status: dbListing.generation_status,
+      generation_error: dbListing.generation_error,
+      statuses: statusResults,
+      checkedAt: new Date().toISOString(),
+    });
   } catch (err) {
     if (err instanceof AuthError) return authErrorResponse(err);
     console.error("GET /api/status/[id]", err);

@@ -1,4 +1,4 @@
-import { useState, useCallback, type ReactNode } from "react";
+import { useState, useEffect, useCallback, type ReactNode } from "react";
 import {
   View,
   Text,
@@ -16,6 +16,19 @@ import { getListing, updateListing, publishListing, delistListing, deleteListing
 import { getListingVerificationStatus, getRemoteListingState, type EbayListingMetadata, type Listing, type MarketplaceConnection, type Platform, type PlatformListing } from "@/lib/types";
 import { CATEGORY_GROUPS, getCategoryOption } from "@/lib/categories";
 import { getPublishMode, type PublishMode } from "@/lib/publish-mode";
+import {
+  ALL_SIZE_SYSTEMS,
+  getSizeFieldLabel,
+  getSizeSystemLabel,
+  getSizeSystemsForCategory,
+  getTraitLabel,
+  getValuesForSystem,
+  isTopCategory,
+  parseStructuredSize,
+  toDisplaySize,
+  translateApparelSizeToTopSize,
+  type SizeSystem,
+} from "@/lib/sizes";
 import PhotoCarousel from "@/components/PhotoCarousel";
 import PlatformRow from "@/components/PlatformRow";
 import EbayMetadataEditor from "@/components/EbayMetadataEditor";
@@ -24,6 +37,40 @@ import { useToast } from "@/lib/toast";
 
 const CONDITIONS = ["new", "gently_used", "used", "heavily_used"];
 const MVP_PLATFORMS: Platform[] = ["grailed", "depop", "ebay"];
+
+function normalizeSizeValue(system: SizeSystem, value: string) {
+  const trimmed = value.trim();
+  return system === "CLOTHING_LETTER" || system === "ONE_SIZE" ? trimmed.toUpperCase() : trimmed;
+}
+
+function parseListingSize(size: Listing["size"], categoryKey: string | null | undefined) {
+  const parsed = parseStructuredSize(size);
+  if (parsed) {
+    if (isTopCategory(categoryKey)) {
+      const translated = translateApparelSizeToTopSize(parsed.system, parsed.value);
+      if (translated) {
+        return { system: "CLOTHING_LETTER", value: translated, legacy: false };
+      }
+    }
+    return { system: parsed.system, value: parsed.value, legacy: false };
+  }
+
+  const legacyValue = toDisplaySize(size) ?? "";
+  if (!legacyValue) return { system: "", value: "", legacy: false };
+
+  const candidateSystems = getSizeSystemsForCategory(categoryKey).filter((system) =>
+    getValuesForSystem(system).includes(normalizeSizeValue(system, legacyValue))
+  );
+  if (candidateSystems.length === 1) {
+    return {
+      system: candidateSystems[0],
+      value: normalizeSizeValue(candidateSystems[0], legacyValue),
+      legacy: false,
+    };
+  }
+
+  return { system: "", value: legacyValue, legacy: true };
+}
 
 function confirmAction(title: string, message: string, confirmText = "Confirm") {
   if (typeof window !== "undefined" && typeof window.confirm === "function") {
@@ -81,7 +128,9 @@ export default function ListingDetailScreen() {
   const [title, setTitle] = useState("");
   const [price, setPrice] = useState("");
   const [description, setDescription] = useState("");
-  const [size, setSize] = useState("");
+  const [sizeSystem, setSizeSystem] = useState("");
+  const [sizeValue, setSizeValue] = useState("");
+  const [legacySize, setLegacySize] = useState<string | null>(null);
   const [condition, setCondition] = useState("");
   const [brand, setBrand] = useState("");
   const [category, setCategory] = useState("");
@@ -92,7 +141,10 @@ export default function ListingDetailScreen() {
     setTitle(data.title ?? "");
     setPrice(data.price == null ? "" : String(data.price));
     setDescription(data.description ?? "");
-    setSize(data.size ?? "");
+    const parsedSize = parseListingSize(data.size, data.category);
+    setSizeSystem(parsedSize.system);
+    setSizeValue(parsedSize.value);
+    setLegacySize(parsedSize.legacy ? parsedSize.value : null);
     setCondition(data.condition ?? "");
     setBrand(data.brand ?? "");
     setCategory(data.category ?? "");
@@ -168,6 +220,49 @@ export default function ListingDetailScreen() {
     }, [id, load, loadConnections, loadPublishMode])
   );
 
+  useEffect(() => {
+    if (listing?.generation_status !== "generating") return;
+
+    let cancelled = false;
+    const interval = setInterval(() => {
+      void (async () => {
+        try {
+          const result = await syncStatus(id);
+          if (cancelled) return;
+          setLastSynced(result.checkedAt);
+          if (result.generation_status !== "generating") {
+            await load();
+          }
+        } catch (err) {
+          console.error(err);
+        }
+      })();
+    }, 2000);
+
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, [id, listing?.generation_status, load]);
+
+  useEffect(() => {
+    if (!sizeSystem || !(sizeSystem in ALL_SIZE_SYSTEMS)) return;
+    const normalizedValue = normalizeSizeValue(sizeSystem as SizeSystem, sizeValue);
+    if (!normalizedValue) return;
+    if (normalizedValue !== sizeValue) {
+      setSizeValue(normalizedValue);
+    }
+  }, [sizeSystem, sizeValue]);
+
+  useEffect(() => {
+    if (!sizeSystem) return;
+    const sizeSystems = getSizeSystemsForCategory(category || CATEGORY_GROUPS[0].key);
+    if (sizeSystems.length > 0 && !sizeSystems.includes(sizeSystem as SizeSystem)) {
+      if (sizeValue) setLegacySize(sizeValue);
+      setSizeSystem("");
+    }
+  }, [category, sizeSystem]);
+
   async function handleSave() {
     const numericPrice = Number(price);
     if (Number.isNaN(numericPrice) || numericPrice < 0) {
@@ -175,13 +270,19 @@ export default function ListingDetailScreen() {
       return;
     }
 
+    const nextSize = sizeSystem && sizeValue
+      ? { system: sizeSystem, value: normalizeSizeValue(sizeSystem as SizeSystem, sizeValue) }
+      : sizeValue.trim()
+        ? sizeValue.trim()
+        : null;
+
     setSaving(true);
     try {
       await updateListing(id, {
         title,
         description,
         price: numericPrice,
-        size,
+        size: nextSize,
         condition,
         brand,
         category,
@@ -336,7 +437,13 @@ export default function ListingDetailScreen() {
   const selectedCategoryOption = getCategoryOption(category);
   const visibleCategoryGroup = selectedCategoryOption?.group ?? CATEGORY_GROUPS[0].key;
   const visibleCategoryOptions = CATEGORY_GROUPS.find((group) => group.key === visibleCategoryGroup)?.options ?? [];
+  const sizeSystemOptions = getSizeSystemsForCategory(visibleCategoryGroup);
+  const sizeValueOptions = sizeSystem && sizeSystem in ALL_SIZE_SYSTEMS
+    ? getValuesForSystem(sizeSystem as SizeSystem)
+    : [];
   const editableTraitKeys = Array.from(new Set(["color", "country_of_origin", ...Object.keys(traits)]));
+  const sizeFieldLabel = getSizeFieldLabel(visibleCategoryGroup);
+  const editingDisabled = listing?.generation_status === "generating";
 
   function getPublishLabel(platformListing: PlatformListing) {
     const remoteState = getRemoteListingState(platformListing);
@@ -369,7 +476,7 @@ export default function ListingDetailScreen() {
         <Pressable onPress={() => router.back()} style={styles.backBtn}>
           <Text style={styles.backText}>Back</Text>
         </Pressable>
-        <Pressable style={styles.saveBtn} onPress={handleSave} disabled={saving}>
+        <Pressable style={[styles.saveBtn, editingDisabled && styles.buttonDisabled]} onPress={handleSave} disabled={saving || editingDisabled}>
           {saving ? <ActivityIndicator size="small" color={theme.colors.white} /> : <Text style={styles.saveBtnText}>Save</Text>}
         </Pressable>
       </View>
@@ -383,6 +490,17 @@ export default function ListingDetailScreen() {
           <Text style={styles.heroSub}>
             Edit details and {publishMode === "draft" ? "save marketplace drafts." : "publish to marketplaces."}
           </Text>
+          {listing.generation_status === "generating" ? (
+            <View style={styles.statusBanner}>
+              <ActivityIndicator size="small" color={theme.colors.white} />
+              <Text style={styles.statusBannerText}>Generating listing details. Editing is disabled until the draft is ready.</Text>
+            </View>
+          ) : null}
+          {listing.generation_status === "failed" ? (
+            <View style={styles.errorBanner}>
+              <Text style={styles.errorBannerText}>{listing.generation_error || "Draft generation failed."}</Text>
+            </View>
+          ) : null}
           {verificationStatus === "requires_verification" ? (
             <View style={styles.verificationBadge}>
               <Text style={styles.verificationBadgeText}>Requires verification</Text>
@@ -394,26 +512,110 @@ export default function ListingDetailScreen() {
 
         <View style={styles.card}>
           <Field label="Title">
-            <TextInput style={styles.input} value={title} onChangeText={setTitle} placeholderTextColor={theme.colors.textMuted} />
+            <TextInput
+              style={[styles.input, editingDisabled && styles.inputDisabled]}
+              value={title}
+              onChangeText={setTitle}
+              editable={!editingDisabled}
+              placeholderTextColor={theme.colors.textMuted}
+            />
           </Field>
 
           <View style={styles.twoCol}>
             <View style={styles.twoColItem}>
               <Field label="Price">
-                <TextInput style={styles.input} value={price} onChangeText={setPrice} keyboardType="decimal-pad" placeholderTextColor={theme.colors.textMuted} />
+                <TextInput
+                  style={[styles.input, editingDisabled && styles.inputDisabled]}
+                  value={price}
+                  onChangeText={setPrice}
+                  editable={!editingDisabled}
+                  keyboardType="decimal-pad"
+                  placeholderTextColor={theme.colors.textMuted}
+                />
               </Field>
             </View>
             <View style={styles.twoColItem}>
               <Field label="Brand">
-                <TextInput style={styles.input} value={brand} onChangeText={setBrand} placeholderTextColor={theme.colors.textMuted} />
+                <TextInput
+                  style={[styles.input, editingDisabled && styles.inputDisabled]}
+                  value={brand}
+                  onChangeText={setBrand}
+                  editable={!editingDisabled}
+                  placeholderTextColor={theme.colors.textMuted}
+                />
               </Field>
             </View>
           </View>
 
           <View style={styles.twoCol}>
             <View style={styles.twoColItem}>
-              <Field label="Size">
-                <TextInput style={styles.input} value={size} onChangeText={setSize} placeholderTextColor={theme.colors.textMuted} />
+              <Field label={sizeFieldLabel}>
+                <Text style={styles.categorySummary}>
+                  {sizeSystem && sizeValue
+                    ? `${getSizeSystemLabel(sizeSystem as SizeSystem, visibleCategoryGroup)} / ${sizeValue}`
+                    : legacySize || sizeValue
+                      ? `Legacy size: ${legacySize || sizeValue}`
+                      : `Choose ${sizeFieldLabel.toLowerCase()} and value`}
+                </Text>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipsRow}>
+                  {sizeSystemOptions.map((system) => (
+                    <Pressable
+                      key={system}
+                      onPress={() => {
+                        if (editingDisabled) return;
+                        setSizeSystem(system);
+                        setLegacySize(null);
+                        setSizeValue((current) => normalizeSizeValue(system, current));
+                      }}
+                      disabled={editingDisabled}
+                      style={[styles.chip, sizeSystem === system && styles.chipActive, editingDisabled && styles.buttonDisabled]}
+                    >
+                      <Text style={[styles.chipText, sizeSystem === system && styles.chipTextActive]}>
+                        {getSizeSystemLabel(system, visibleCategoryGroup)}
+                      </Text>
+                    </Pressable>
+                  ))}
+                </ScrollView>
+                {legacySize || (!sizeSystem && sizeValue) ? (
+                  <Text style={styles.selectorHelper}>Existing free-form size kept for compatibility. Pick a size system to standardize it.</Text>
+                ) : null}
+                {sizeSystem ? (
+                  <>
+                    <TextInput
+                      style={[styles.input, editingDisabled && styles.inputDisabled]}
+                      value={sizeValue}
+                      onChangeText={(value) => {
+                        setSizeValue(value);
+                        setLegacySize(null);
+                      }}
+                      editable={!editingDisabled}
+                      autoCapitalize="characters"
+                      placeholder={`Enter ${sizeFieldLabel.toLowerCase()} value`}
+                      placeholderTextColor={theme.colors.textMuted}
+                    />
+                    <Text style={styles.selectorHelper}>Suggested values:</Text>
+                    <View style={styles.categoryOptionsWrap}>
+                      {sizeValueOptions.map((value) => (
+                        <Pressable
+                          key={value}
+                          onPress={() => {
+                            if (editingDisabled) return;
+                            setSizeValue(value);
+                            setLegacySize(null);
+                          }}
+                          disabled={editingDisabled}
+                          style={[styles.chip, sizeValue === value && styles.chipActive, editingDisabled && styles.buttonDisabled]}
+                        >
+                          <Text style={[styles.chipText, sizeValue === value && styles.chipTextActive]}>
+                            {value}
+                          </Text>
+                        </Pressable>
+                      ))}
+                    </View>
+                  </>
+                ) : (
+                  <Text style={styles.selectorHelper}>Select a size system first.</Text>
+                )}
               </Field>
             </View>
             <View style={styles.twoColItem}>
@@ -428,11 +630,13 @@ export default function ListingDetailScreen() {
                     <Pressable
                       key={group.key}
                       onPress={() => {
+                        if (editingDisabled) return;
                         if (selectedCategoryOption?.group !== group.key) {
                           setCategory(group.options[0]?.key ?? "");
                         }
                       }}
-                      style={[styles.chip, visibleCategoryGroup === group.key && styles.chipActive]}
+                      disabled={editingDisabled}
+                      style={[styles.chip, visibleCategoryGroup === group.key && styles.chipActive, editingDisabled && styles.buttonDisabled]}
                     >
                       <Text style={[styles.chipText, visibleCategoryGroup === group.key && styles.chipTextActive]}>
                         {group.label}
@@ -444,8 +648,12 @@ export default function ListingDetailScreen() {
                   {visibleCategoryOptions.map((option) => (
                     <Pressable
                       key={option.key}
-                      onPress={() => setCategory(option.key)}
-                      style={[styles.chip, category === option.key && styles.chipActive]}
+                      onPress={() => {
+                        if (editingDisabled) return;
+                        setCategory(option.key);
+                      }}
+                      disabled={editingDisabled}
+                      style={[styles.chip, category === option.key && styles.chipActive, editingDisabled && styles.buttonDisabled]}
                     >
                       <Text style={[styles.chipText, category === option.key && styles.chipTextActive]}>
                         {option.label}
@@ -462,8 +670,12 @@ export default function ListingDetailScreen() {
               {CONDITIONS.map((item) => (
                 <Pressable
                   key={item}
-                  onPress={() => setCondition(item)}
-                  style={[styles.chip, condition === item && styles.chipActive]}
+                  onPress={() => {
+                    if (editingDisabled) return;
+                    setCondition(item);
+                  }}
+                  disabled={editingDisabled}
+                  style={[styles.chip, condition === item && styles.chipActive, editingDisabled && styles.buttonDisabled]}
                 >
                   <Text style={[styles.chipText, condition === item && styles.chipTextActive]}>
                     {item.replace(/_/g, " ")}
@@ -475,27 +687,36 @@ export default function ListingDetailScreen() {
 
           <Field label="Description">
             <TextInput
-              style={[styles.input, styles.textArea]}
+              style={[styles.input, styles.textArea, editingDisabled && styles.inputDisabled]}
               value={description}
               onChangeText={setDescription}
+              editable={!editingDisabled}
               multiline
               numberOfLines={5}
               placeholderTextColor={theme.colors.textMuted}
             />
           </Field>
 
-          <Pressable onPress={() => setShowAdvanced((prev) => !prev)} style={styles.advancedToggle}>
+          <Pressable
+            onPress={() => {
+              if (editingDisabled) return;
+              setShowAdvanced((prev) => !prev);
+            }}
+            disabled={editingDisabled}
+            style={[styles.advancedToggle, editingDisabled && styles.buttonDisabled]}
+          >
             <Text style={styles.advancedToggleText}>{showAdvanced ? "Hide" : "Show"} advanced fields</Text>
           </Pressable>
 
           {showAdvanced && (
             <View style={styles.advancedWrap}>
               {editableTraitKeys.map((key) => (
-                <Field key={key} label={key}>
+                <Field key={key} label={getTraitLabel(key)}>
                   <TextInput
-                    style={styles.input}
+                    style={[styles.input, editingDisabled && styles.inputDisabled]}
                     value={traits[key] ?? ""}
                     onChangeText={(text) => setTraits((prev) => ({ ...prev, [key]: text }))}
+                    editable={!editingDisabled}
                     placeholderTextColor={theme.colors.textMuted}
                   />
                 </Field>
@@ -619,6 +840,9 @@ const styles = StyleSheet.create({
     fontFamily: theme.fonts.sansBold,
     fontSize: 13,
   },
+  buttonDisabled: {
+    opacity: 0.5,
+  },
   scroll: {
     paddingBottom: 48,
     gap: 14,
@@ -639,6 +863,34 @@ const styles = StyleSheet.create({
     color: theme.colors.textMuted,
     fontFamily: theme.fonts.sans,
     fontSize: 14,
+  },
+  statusBanner: {
+    marginTop: 10,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    borderRadius: theme.radius.sm,
+    backgroundColor: theme.colors.accent,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  statusBannerText: {
+    flex: 1,
+    color: theme.colors.white,
+    fontFamily: theme.fonts.sansBold,
+    fontSize: 12,
+  },
+  errorBanner: {
+    marginTop: 10,
+    borderRadius: theme.radius.sm,
+    backgroundColor: theme.colors.surfaceStrong,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  errorBannerText: {
+    color: theme.colors.danger,
+    fontFamily: theme.fonts.sansBold,
+    fontSize: 12,
   },
   verificationBadge: {
     alignSelf: "flex-start",
@@ -682,6 +934,9 @@ const styles = StyleSheet.create({
     fontFamily: theme.fonts.sans,
     fontSize: 14,
   },
+  inputDisabled: {
+    opacity: 0.6,
+  },
   textArea: {
     minHeight: 120,
     textAlignVertical: "top",
@@ -700,6 +955,11 @@ const styles = StyleSheet.create({
     color: theme.colors.textMuted,
     fontFamily: theme.fonts.sans,
     fontSize: 13,
+  },
+  selectorHelper: {
+    color: theme.colors.textMuted,
+    fontFamily: theme.fonts.sans,
+    fontSize: 12,
   },
   categoryOptionsWrap: {
     flexDirection: "row",

@@ -5,6 +5,7 @@ import { decryptTokens } from "@/lib/crypto";
 import { publishToGrailed } from "@/lib/marketplace/grailed";
 import { publishToDepop } from "@/lib/marketplace/depop";
 import { BulkPublishBody, parseBody } from "@/lib/validation";
+import { getDisplaySizeValue } from "@/lib/sizes";
 import type { GrailedTokens, DepopTokens, Platform, CanonicalListing } from "@/lib/marketplace/types";
 import { isMockMode, mockPlatformListingId } from "@/lib/mock";
 
@@ -84,7 +85,7 @@ async function processInBackground(userId: string, listingIds: string[], platfor
       title: dbListing.title!,
       description: dbListing.description!,
       price: Number(dbListing.price),
-      size: dbListing.size,
+      size: getDisplaySizeValue(dbListing.size),
       condition: dbListing.condition,
       brand: dbListing.brand,
       category: dbListing.category,

@@ -13,6 +13,7 @@ import { POST as connectPlatform, DELETE as disconnectPlatform } from "../connec
 import { GET as listConnections } from "../connections/route";
 import { POST as publishListing } from "../publish/route";
 import { POST as delistListing } from "../delist/route";
+import { GET as getStatus } from "../status/[id]/route";
 import { POST as uploadPhoto } from "../upload/route";
 import { createListing as createDbListing, upsertUser } from "@/lib/db";
 
@@ -669,6 +670,22 @@ describe("POST /api/publish", () => {
     expect(data.results.grailed.platformListingId).toMatch(/^mock-grailed-/);
   });
 
+  it("publishes a listing with a structured size stored in the DB", async () => {
+    const createRes = await createListing(req("POST", "/api/listings", {
+      body: {
+        ...VALID_LISTING,
+        size: { system: "CLOTHING_LETTER", value: "M" },
+      },
+    }));
+    const { id } = await createRes.json();
+    await connectPlatform(req("POST", "/api/connect", { body: { platform: "grailed", tokens: { csrf_token: "x", cookies: "y" } } }));
+
+    const res = await publishListing(req("POST", "/api/publish", { body: { listingId: id, platforms: ["grailed"] } }));
+    expect(res.status).toBe(200);
+    const data = await res.json();
+    expect(data.results.grailed.ok).toBe(true);
+  });
+
   it("publishes to multiple platforms in one call", async () => {
     const id = await setup();
     const res = await publishListing(req("POST", "/api/publish", { body: { listingId: id, platforms: ["grailed", "depop"] } }));
@@ -790,6 +807,26 @@ describe("POST /api/publish", () => {
     const ebayRow = listing.platform_listings.find((pl: { platform: string }) => pl.platform === "ebay");
     expect(ebayRow.status).toBe("pending");
     expect(ebayRow.platform_data.remote_state).toBe("draft");
+  });
+
+});
+
+describe("GET /api/status/[id]", () => {
+  it("includes generation status fields in the response", async () => {
+    const created = await createDbListing({
+      userId: (await upsertUser("user-a", "user-a@example.com")).id,
+      title: null,
+      description: null,
+      price: null,
+      photos: ["https://blob.vercel-storage.com/photo.jpg"],
+      generation_status: "failed",
+    });
+
+    const res = await getStatus(req("GET", `/api/status/${created.id}`), params(created.id));
+    expect(res.status).toBe(200);
+    const data = await res.json();
+    expect(data.generation_status).toBe("failed");
+    expect(data.generation_error).toBeNull();
   });
 });
 
