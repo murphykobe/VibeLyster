@@ -54,7 +54,7 @@ export default function ConnectPlatformWebScreen() {
         });
       }
 
-      Alert.alert("Connected", `${title} saved (mock).`, [{ text: "OK", onPress: () => router.back() }]);
+      Alert.alert("Connected", `${title} saved (mock).`, [{ text: "OK", onPress: () => router.dismissTo("/settings") }]);
     } catch (err) {
       Alert.alert("Error", "Failed to save connection.");
     } finally {
