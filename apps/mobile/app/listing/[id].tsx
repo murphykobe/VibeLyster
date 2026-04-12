@@ -14,6 +14,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { useFocusEffect, useRouter, useLocalSearchParams } from "expo-router";
 import { getListing, updateListing, publishListing, delistListing, deleteListing, syncStatus, getConnections, saveEbayListingMetadata } from "@/lib/api";
 import { getListingVerificationStatus, getRemoteListingState, type EbayListingMetadata, type Listing, type MarketplaceConnection, type Platform, type PlatformListing } from "@/lib/types";
+import TraitPickerField from "@/components/TraitPickerField";
 import { CATEGORY_GROUPS, getCategoryOption } from "@/lib/categories";
 import { getPublishMode, type PublishMode } from "@/lib/publish-mode";
 import {
@@ -34,6 +35,12 @@ import PlatformRow from "@/components/PlatformRow";
 import EbayMetadataEditor from "@/components/EbayMetadataEditor";
 import { theme } from "@/lib/theme";
 import { useToast } from "@/lib/toast";
+import {
+  formatPublishFeedbackMessage,
+  getSelectableTraitOptions,
+  isSelectableTraitKey,
+  normalizeEditableTraits,
+} from "@/lib/listing-traits";
 
 const CONDITIONS = ["new", "gently_used", "used", "heavily_used"];
 const MVP_PLATFORMS: Platform[] = ["grailed", "depop", "ebay"];
@@ -119,6 +126,7 @@ export default function ListingDetailScreen() {
   const [publishingAll, setPublishingAll] = useState(false);
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [publishMode, setPublishMode] = useState<PublishMode>("live");
+  const [publishFeedback, setPublishFeedback] = useState<string | null>(null);
   const [showEbayMetadata, setShowEbayMetadata] = useState(false);
   const [savingEbayMetadata, setSavingEbayMetadata] = useState(false);
   const [ebayMetadata, setEbayMetadata] = useState<EbayListingMetadata>({});
@@ -134,6 +142,7 @@ export default function ListingDetailScreen() {
   const [condition, setCondition] = useState("");
   const [brand, setBrand] = useState("");
   const [category, setCategory] = useState("");
+  const [acceptOffers, setAcceptOffers] = useState(false);
   const [traits, setTraits] = useState<Record<string, string>>({});
 
   function hydrateListing(data: Listing) {
@@ -148,7 +157,8 @@ export default function ListingDetailScreen() {
     setCondition(data.condition ?? "");
     setBrand(data.brand ?? "");
     setCategory(data.category ?? "");
-    setTraits(data.traits ?? {});
+    setAcceptOffers((data.traits?.accept_offers ?? "false") === "true");
+    setTraits(normalizeEditableTraits(data.traits ?? {}));
 
     const ebayPlatform = (data.platform_listings ?? []).find((row) => row.platform === "ebay");
     setEbayMetadata((ebayPlatform?.platform_data ?? {}) as EbayListingMetadata);
@@ -276,6 +286,11 @@ export default function ListingDetailScreen() {
         ? sizeValue.trim()
         : null;
 
+    const nextTraits = {
+      ...traits,
+      accept_offers: acceptOffers ? "true" : "false",
+    };
+
     setSaving(true);
     try {
       await updateListing(id, {
@@ -286,8 +301,9 @@ export default function ListingDetailScreen() {
         condition,
         brand,
         category,
-        traits,
+        traits: nextTraits,
       });
+      setPublishFeedback(null);
       await load();
     } catch {
       showToast("Failed to save. Try again.");
@@ -328,12 +344,18 @@ export default function ListingDetailScreen() {
             setEbayMetadata(platformResult.platformData as EbayListingMetadata);
           }
         }
-        showToast(platformResult.error ?? "Publish failed.");
-      } else if (platformResult.remoteState === "draft") {
-        showToast(`${platform} draft created.`, "success");
+        const message = formatPublishFeedbackMessage(platform, platformResult.error);
+        setPublishFeedback(message);
+        showToast(message);
+      } else {
+        setPublishFeedback(null);
+        if (platformResult.remoteState === "draft") {
+          showToast(`${platform} draft created.`, "success");
+        }
       }
       await load();
     } catch {
+      setPublishFeedback(formatPublishFeedbackMessage(platform));
       showToast("Publish failed. Try again.");
     } finally {
       setPublishing(null);
@@ -349,9 +371,22 @@ export default function ListingDetailScreen() {
 
     setPublishingAll(true);
     try {
-      await publishListing(id, connectedPlatforms, publishMode);
+      const result = await publishListing(id, connectedPlatforms, publishMode);
+      const firstFailure = connectedPlatforms.find((platform) => {
+        const platformResult = result.results[platform] as { ok?: boolean } | undefined;
+        return platformResult?.ok === false;
+      });
+      if (firstFailure) {
+        const platformResult = result.results[firstFailure] as { error?: string } | undefined;
+        const message = formatPublishFeedbackMessage(firstFailure, platformResult?.error);
+        setPublishFeedback(message);
+        showToast(message);
+      } else {
+        setPublishFeedback(null);
+      }
       await load();
     } catch {
+      setPublishFeedback("Publish failed. Try again.");
       showToast("Publish failed. Try again.");
     } finally {
       setPublishingAll(false);
@@ -441,7 +476,8 @@ export default function ListingDetailScreen() {
   const sizeValueOptions = sizeSystem && sizeSystem in ALL_SIZE_SYSTEMS
     ? getValuesForSystem(sizeSystem as SizeSystem)
     : [];
-  const editableTraitKeys = Array.from(new Set(["color", "country_of_origin", ...Object.keys(traits)]));
+  const mainTraitKeys = ["color", "country_of_origin"] as const;
+  const editableTraitKeys = Array.from(new Set(Object.keys(traits).filter((key) => key !== "accept_offers" && !mainTraitKeys.includes(key as typeof mainTraitKeys[number]))));
   const sizeFieldLabel = getSizeFieldLabel(visibleCategoryGroup);
   const editingDisabled = listing?.generation_status === "generating";
 
@@ -475,9 +511,6 @@ export default function ListingDetailScreen() {
       <View style={styles.header}>
         <Pressable onPress={() => router.back()} style={styles.backBtn}>
           <Text style={styles.backText}>Back</Text>
-        </Pressable>
-        <Pressable style={[styles.saveBtn, editingDisabled && styles.buttonDisabled]} onPress={handleSave} disabled={saving || editingDisabled}>
-          {saving ? <ActivityIndicator size="small" color={theme.colors.white} /> : <Text style={styles.saveBtnText}>Save</Text>}
         </Pressable>
       </View>
 
@@ -685,6 +718,55 @@ export default function ListingDetailScreen() {
             </ScrollView>
           </Field>
 
+          <View style={styles.twoCol}>
+            <View style={styles.twoColItem}>
+              <Field label="Color">
+                <TraitPickerField
+                  traitKey="color"
+                  label="Color"
+                  value={traits.color ?? ""}
+                  options={getSelectableTraitOptions("color")}
+                  placeholder="Choose a color"
+                  disabled={editingDisabled}
+                  onChange={(value) => setTraits((prev) => ({ ...prev, color: value }))}
+                />
+              </Field>
+            </View>
+            <View style={styles.twoColItem}>
+              <Field label="Country Of Origin">
+                <TraitPickerField
+                  traitKey="country_of_origin"
+                  label="Country Of Origin"
+                  value={traits.country_of_origin ?? ""}
+                  options={getSelectableTraitOptions("country_of_origin")}
+                  placeholder="Choose country of origin"
+                  searchable
+                  searchPlaceholder="Search country of origin"
+                  disabled={editingDisabled}
+                  onChange={(value) => setTraits((prev) => ({ ...prev, country_of_origin: value }))}
+                />
+              </Field>
+            </View>
+          </View>
+
+          <Field label="Accept Offers">
+            <Pressable
+              onPress={() => {
+                if (editingDisabled) return;
+                setAcceptOffers((current) => !current);
+              }}
+              disabled={editingDisabled}
+              style={[styles.toggleRow, acceptOffers && styles.toggleRowActive, editingDisabled && styles.buttonDisabled]}
+            >
+              <Text style={[styles.toggleLabel, acceptOffers && styles.toggleLabelActive]}>
+                {acceptOffers ? "Offers accepted" : "Offers disabled"}
+              </Text>
+              <View style={[styles.toggleTrack, acceptOffers && styles.toggleTrackActive]}>
+                <View style={[styles.toggleThumb, acceptOffers && styles.toggleThumbActive]} />
+              </View>
+            </Pressable>
+          </Field>
+
           <Field label="Description">
             <TextInput
               style={[styles.input, styles.textArea, editingDisabled && styles.inputDisabled]}
@@ -710,15 +792,32 @@ export default function ListingDetailScreen() {
 
           {showAdvanced && (
             <View style={styles.advancedWrap}>
+              {editableTraitKeys.length === 0 ? (
+                <Text style={styles.selectorHelper}>No additional advanced fields yet.</Text>
+              ) : null}
               {editableTraitKeys.map((key) => (
                 <Field key={key} label={getTraitLabel(key)}>
-                  <TextInput
-                    style={[styles.input, editingDisabled && styles.inputDisabled]}
-                    value={traits[key] ?? ""}
-                    onChangeText={(text) => setTraits((prev) => ({ ...prev, [key]: text }))}
-                    editable={!editingDisabled}
-                    placeholderTextColor={theme.colors.textMuted}
-                  />
+                  {isSelectableTraitKey(key) ? (
+                    <TraitPickerField
+                      traitKey={key}
+                      label={getTraitLabel(key)}
+                      value={traits[key] ?? ""}
+                      options={getSelectableTraitOptions(key)}
+                      placeholder={key === "color" ? "Choose a color" : "Choose country of origin"}
+                      searchable={key === "country_of_origin"}
+                      searchPlaceholder={key === "country_of_origin" ? "Search country of origin" : undefined}
+                      disabled={editingDisabled}
+                      onChange={(value) => setTraits((prev) => ({ ...prev, [key]: value }))}
+                    />
+                  ) : (
+                    <TextInput
+                      style={[styles.input, editingDisabled && styles.inputDisabled]}
+                      value={traits[key] ?? ""}
+                      onChangeText={(text) => setTraits((prev) => ({ ...prev, [key]: text }))}
+                      editable={!editingDisabled}
+                      placeholderTextColor={theme.colors.textMuted}
+                    />
+                  )}
                 </Field>
               ))}
             </View>
@@ -742,6 +841,12 @@ export default function ListingDetailScreen() {
           </View>
 
           {lastSynced && <Text style={styles.syncTime}>Last synced {new Date(lastSynced).toLocaleTimeString()}</Text>}
+
+          {publishFeedback ? (
+            <View style={styles.errorBanner} testID="publish-feedback-banner">
+              <Text style={styles.errorBannerText}>{publishFeedback}</Text>
+            </View>
+          ) : null}
 
           <View style={styles.platformList}>
             {platformRows.map((platformListing) => (
@@ -782,6 +887,16 @@ export default function ListingDetailScreen() {
           <Text style={styles.deleteText}>Delete Listing</Text>
         </Pressable>
       </ScrollView>
+
+      <View style={styles.bottomSaveBar}>
+        <Pressable
+          style={[styles.bottomSaveBtn, (saving || editingDisabled) && styles.buttonDisabled]}
+          onPress={handleSave}
+          disabled={saving || editingDisabled}
+        >
+          {saving ? <ActivityIndicator size="small" color={theme.colors.white} /> : <Text style={styles.bottomSaveText}>Save Listing</Text>}
+        </Pressable>
+      </View>
     </SafeAreaView>
   );
 }
@@ -825,26 +940,11 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontFamily: theme.fonts.sansBold,
   },
-  saveBtn: {
-    borderRadius: theme.radius.sm,
-    backgroundColor: theme.colors.accent,
-    paddingHorizontal: 14,
-    paddingVertical: 9,
-    minWidth: 72,
-    alignItems: "center",
-    ...theme.shadow.raised,
-    shadowColor: "#6C63FF",
-  },
-  saveBtnText: {
-    color: theme.colors.white,
-    fontFamily: theme.fonts.sansBold,
-    fontSize: 13,
-  },
   buttonDisabled: {
     opacity: 0.5,
   },
   scroll: {
-    paddingBottom: 48,
+    paddingBottom: 120,
     gap: 14,
   },
   hero: {
@@ -998,6 +1098,46 @@ const styles = StyleSheet.create({
   advancedWrap: {
     gap: 10,
   },
+  toggleRow: {
+    borderRadius: theme.radius.sm,
+    backgroundColor: theme.colors.surfaceStrong,
+    paddingHorizontal: 12,
+    paddingVertical: 11,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  toggleRowActive: {
+    backgroundColor: theme.colors.accentSoft,
+  },
+  toggleLabel: {
+    color: theme.colors.text,
+    fontFamily: theme.fonts.sansBold,
+    fontSize: 14,
+  },
+  toggleLabelActive: {
+    color: theme.colors.accent,
+  },
+  toggleTrack: {
+    width: 42,
+    height: 24,
+    borderRadius: 999,
+    backgroundColor: theme.colors.border,
+    padding: 3,
+    justifyContent: "center",
+  },
+  toggleTrackActive: {
+    backgroundColor: theme.colors.accent,
+  },
+  toggleThumb: {
+    width: 18,
+    height: 18,
+    borderRadius: 999,
+    backgroundColor: theme.colors.white,
+  },
+  toggleThumbActive: {
+    alignSelf: "flex-end",
+  },
   publishHeader: {
     flexDirection: "row",
     alignItems: "center",
@@ -1058,5 +1198,32 @@ const styles = StyleSheet.create({
     color: theme.colors.danger,
     fontFamily: theme.fonts.sansBold,
     fontSize: 13,
+  },
+  bottomSaveBar: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    bottom: 0,
+    paddingHorizontal: 16,
+    paddingTop: 10,
+    paddingBottom: 18,
+    backgroundColor: theme.colors.bg,
+    borderTopWidth: 1,
+    borderTopColor: theme.colors.border,
+  },
+  bottomSaveBtn: {
+    borderRadius: theme.radius.md,
+    backgroundColor: theme.colors.accent,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 14,
+    minHeight: 52,
+    ...theme.shadow.raised,
+    shadowColor: "#6C63FF",
+  },
+  bottomSaveText: {
+    color: theme.colors.white,
+    fontFamily: theme.fonts.sansBold,
+    fontSize: 14,
   },
 });

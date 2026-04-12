@@ -16,7 +16,14 @@ import type {
   PublishOptions,
 } from "./types";
 import { mapCanonicalCategoryToGrailed } from "../categories";
+import { getCategoryGroupKey, getSizeSystemsForCategory, type SizeSystem, type StructuredSize } from "../sizes";
 import GRAILED_DRAFT_CATEGORY_MAP from "./grailed-draft-category-map.json";
+import {
+  attachMarketplaceDebugData,
+  createMarketplaceDebugData,
+  debugPlatformData,
+  recordMarketplaceRequest,
+} from "./debug";
 
 const GRAILED_DRAFT_CATEGORY_LOOKUP = GRAILED_DRAFT_CATEGORY_MAP as Record<string, string>;
 
@@ -70,6 +77,37 @@ const GRAILED_ALLOWED_COLORS = [
   "cream",
 ] as const;
 
+const GRAILED_LETTER_SIZES = ["xxs", "xs", "s", "m", "l", "xl", "xxl"] as const;
+const GRAILED_LETTER_SIZE_SET = new Set<string>(GRAILED_LETTER_SIZES);
+const GRAILED_ONE_SIZE_ALIASES = new Set(["one size", "one-size", "onesize", "os"]);
+const GRAILED_COUNTRY_CODES = [
+  "AF", "AL", "DZ", "AD", "AO", "AG", "AR", "AM", "AU", "AT", "AZ", "BS", "BH", "BD", "BB", "BY", "BE", "BZ", "BJ", "BT",
+  "BO", "BA", "BW", "BR", "BN", "BG", "BF", "BI", "CV", "KH", "CM", "CA", "CF", "TD", "CL", "CN", "CO", "KM", "CG", "CR",
+  "CI", "HR", "CU", "CY", "CZ", "CD", "DK", "DJ", "DM", "DO", "EC", "EG", "SV", "GQ", "ER", "EE", "SZ", "ET", "FJ", "FI",
+  "FR", "GA", "GM", "GE", "DE", "GH", "GR", "GD", "GT", "GN", "GW", "GY", "HT", "HN", "HU", "IS", "IN", "ID", "IR", "IQ",
+  "IE", "IL", "IT", "JM", "JP", "JO", "KZ", "KE", "KI", "KW", "KG", "LA", "LV", "LB", "LS", "LR", "LY", "LI", "LT", "LU",
+  "MG", "MW", "MY", "MV", "ML", "MT", "MH", "MR", "MU", "MX", "FM", "MD", "MC", "MN", "ME", "MA", "MZ", "MM", "NA", "NR",
+  "NP", "NL", "NZ", "NI", "NE", "NG", "KP", "MK", "NO", "OM", "PK", "PW", "PS", "PA", "PG", "PY", "PE", "PH", "PL", "PT",
+  "QA", "RO", "RU", "RW", "KN", "LC", "VC", "WS", "SM", "ST", "SA", "SN", "RS", "SC", "SL", "SG", "SK", "SI", "SB", "SO",
+  "ZA", "KR", "SS", "ES", "LK", "SD", "SR", "SE", "CH", "SY", "TW", "TJ", "TZ", "TH", "TL", "TG", "TO", "TT", "TN", "TR",
+  "TM", "TV", "UG", "UA", "AE", "GB", "US", "UY", "UZ", "VU", "VA", "VE", "VN", "YE", "ZM", "ZW",
+] as const;
+const GRAILED_COUNTRY_CODE_SET = new Set<string>(GRAILED_COUNTRY_CODES);
+const GRAILED_COUNTRY_ALIASES: Record<string, string> = {
+  usa: "US",
+  "united states of america": "US",
+  uk: "GB",
+  england: "GB",
+  scotland: "GB",
+  wales: "GB",
+  "ivory coast": "CI",
+  czechia: "CZ",
+  "south korea": "KR",
+  "republic of korea": "KR",
+  "north korea": "KP",
+  uae: "AE",
+};
+
 const COLOR_ALIASES: Record<string, typeof GRAILED_ALLOWED_COLORS[number]> = {
   gray: "grey",
   grey: "grey",
@@ -87,6 +125,7 @@ const COLOR_ALIASES: Record<string, typeof GRAILED_ALLOWED_COLORS[number]> = {
 
 type GrailedTrait = { name: "color" | "country_of_origin"; value: string };
 type GrailedDesigner = { id?: number; name: string; slug?: string };
+type CanonicalListingWithStructuredSize = CanonicalListing & { structuredSize?: StructuredSize | null };
 
 export function mapCondition(condition: string | null): string {
   if (!condition) return "is_gently_used";
@@ -179,6 +218,156 @@ function inferGrailedColor(...sources: Array<string | null | undefined>) {
   return null;
 }
 
+function normalizeCountryLookupKey(value: string) {
+  return value
+    .trim()
+    .toLowerCase()
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
+const GRAILED_COUNTRY_LOOKUP = (() => {
+  const displayNames = typeof Intl !== "undefined" && typeof Intl.DisplayNames === "function"
+    ? new Intl.DisplayNames(["en"], { type: "region" })
+    : null;
+
+  const lookup = new Map<string, string>();
+  for (const code of GRAILED_COUNTRY_CODES) {
+    lookup.set(code.toLowerCase(), code);
+    const displayName = displayNames?.of(code);
+    if (displayName && displayName !== code) {
+      lookup.set(normalizeCountryLookupKey(displayName), code);
+    }
+  }
+
+  for (const [alias, code] of Object.entries(GRAILED_COUNTRY_ALIASES)) {
+    lookup.set(normalizeCountryLookupKey(alias), code);
+  }
+
+  return lookup;
+})();
+
+function normalizeGrailedCountryOfOrigin(value: string | null | undefined) {
+  const raw = pickString(value);
+  if (!raw) return null;
+
+  const maybeCode = raw.toUpperCase();
+  if (GRAILED_COUNTRY_CODE_SET.has(maybeCode as typeof GRAILED_COUNTRY_CODES[number])) {
+    return maybeCode;
+  }
+
+  return GRAILED_COUNTRY_LOOKUP.get(normalizeCountryLookupKey(raw)) ?? null;
+}
+
+function normalizeGrailedLetterSize(value: string) {
+  const normalized = value.trim().toLowerCase();
+  return GRAILED_LETTER_SIZE_SET.has(normalized) ? normalized : null;
+}
+
+function normalizeGrailedOneSize(value: string) {
+  const normalized = value.trim().toLowerCase().replace(/[_-]+/g, " ").replace(/\s+/g, " ");
+  return GRAILED_ONE_SIZE_ALIASES.has(normalized) ? "one size" : null;
+}
+
+function getGrailedCategoryLabel(category: string | null) {
+  return getCategoryGroupKey(category) ?? (category?.trim() || "this category");
+}
+
+function formatStructuredSize(size: StructuredSize) {
+  return `${size.system} ${size.value}`;
+}
+
+function validateStructuredSizeForCategory(category: string | null, size: StructuredSize) {
+  const allowedSystems = getSizeSystemsForCategory(category);
+  if (allowedSystems.length === 0) return { ok: true as const };
+
+  if (allowedSystems.includes(size.system)) {
+    return { ok: true as const };
+  }
+
+  return {
+    ok: false as const,
+    error: `Grailed size is invalid for ${getGrailedCategoryLabel(category)}. Current listing size uses ${formatStructuredSize(size)}, which cannot be published to this category.`,
+  };
+}
+
+function normalizeGrailedStructuredSize(category: string | null, size: StructuredSize) {
+  const compatibility = validateStructuredSizeForCategory(category, size);
+  if (!compatibility.ok) return compatibility;
+
+  if (size.system === "CLOTHING_LETTER") {
+    const normalized = normalizeGrailedLetterSize(size.value);
+    if (!normalized) {
+      return {
+        ok: false as const,
+        error: `Grailed size is invalid for ${getGrailedCategoryLabel(category)}. Expected one of: ${GRAILED_LETTER_SIZES.join(", ")}. Current listing size: ${formatStructuredSize(size)}.`,
+      };
+    }
+    return { ok: true as const, size: normalized };
+  }
+
+  if (size.system === "ONE_SIZE") {
+    const normalized = normalizeGrailedOneSize(size.value);
+    if (!normalized) {
+      return {
+        ok: false as const,
+        error: `Grailed size is invalid for ${getGrailedCategoryLabel(category)}. Use ONE SIZE for one-size items. Current listing size: ${formatStructuredSize(size)}.`,
+      };
+    }
+    return { ok: true as const, size: normalized };
+  }
+
+  const rawValue = pickString(size.value);
+  if (!rawValue) {
+    return {
+      ok: false as const,
+      error: `Grailed size is invalid for ${getGrailedCategoryLabel(category)}. Current listing size: ${formatStructuredSize(size)}.`,
+    };
+  }
+
+  return { ok: true as const, size: rawValue };
+}
+
+function normalizeGrailedLegacySize(category: string | null, size: string | null) {
+  const rawSize = pickString(size);
+  if (!rawSize) {
+    return {
+      ok: false as const,
+      error: `Grailed size is required before publish. Add a valid size for ${getGrailedCategoryLabel(category)}.`,
+    };
+  }
+
+  const oneSize = normalizeGrailedOneSize(rawSize);
+  if (oneSize) return { ok: true as const, size: oneSize };
+
+  const letterSize = normalizeGrailedLetterSize(rawSize);
+  if (letterSize) return { ok: true as const, size: letterSize };
+
+  const groupKey = getCategoryGroupKey(category);
+  if (groupKey === "tops" || groupKey === "outerwear" || groupKey === "tailoring") {
+    return {
+      ok: false as const,
+      error: `Grailed size is invalid for ${groupKey}. Expected one of: ${GRAILED_LETTER_SIZES.join(", ")}. Current listing size: ${rawSize}.`,
+    };
+  }
+
+  return { ok: true as const, size: rawSize };
+}
+
+function normalizeGrailedSize(listing: CanonicalListing) {
+  const structuredSize = (listing as CanonicalListingWithStructuredSize).structuredSize;
+  if (structuredSize?.system && structuredSize.value) {
+    return normalizeGrailedStructuredSize(listing.category, {
+      system: structuredSize.system.trim().toUpperCase() as SizeSystem,
+      value: structuredSize.value,
+    });
+  }
+
+  return normalizeGrailedLegacySize(listing.category, listing.size);
+}
+
 export function normalizeGrailedTraits(listing: CanonicalListing):
   | { ok: true; traits: GrailedTrait[] }
   | { ok: false; error: string } {
@@ -198,8 +387,15 @@ export function normalizeGrailedTraits(listing: CanonicalListing):
   }
 
   const traits: GrailedTrait[] = [{ name: "color", value: color }];
-  const countryOfOrigin = pickString(rawTraits.country_of_origin);
-  if (countryOfOrigin) {
+  const rawCountryOfOrigin = pickString(rawTraits.country_of_origin);
+  if (rawCountryOfOrigin) {
+    const countryOfOrigin = normalizeGrailedCountryOfOrigin(rawCountryOfOrigin);
+    if (!countryOfOrigin) {
+      return {
+        ok: false,
+        error: `Grailed country of origin is invalid. Use a supported country name or ISO country code. Current value: ${rawCountryOfOrigin}.`,
+      };
+    }
     traits.push({ name: "country_of_origin", value: countryOfOrigin });
   }
 
@@ -339,7 +535,17 @@ function buildDraftPhotos(urls: string[]) {
   }));
 }
 
-function buildGrailedDraftPayload(listing: CanonicalListing, photos: string[], designers: GrailedDesigner[], traits: GrailedTrait[]) {
+function shouldAcceptOffers(listing: CanonicalListing) {
+  return listing.traits?.accept_offers === "true";
+}
+
+function buildGrailedDraftPayload(
+  listing: CanonicalListing,
+  normalizedSize: string,
+  photos: string[],
+  designers: GrailedDesigner[],
+  traits: GrailedTrait[]
+) {
   const categoryPath = mapGrailedDraftCategory(listing.category);
   if (!categoryPath) {
     return { ok: false as const, error: "Grailed does not support this category yet." };
@@ -355,9 +561,9 @@ function buildGrailedDraftPayload(listing: CanonicalListing, photos: string[], d
       designers,
       condition: mapDraftCondition(listing.condition),
       traits,
-      size: listing.size ?? "one size",
+      size: normalizedSize,
       department: "menswear",
-      make_offer: true,
+      make_offer: shouldAcceptOffers(listing),
       buy_now: true,
       photos: buildDraftPhotos(photos),
       shipping: {
@@ -408,6 +614,16 @@ export async function publishToGrailed(
     return { ok: false, error: normalizedTraits.error, retryable: false };
   }
 
+  const normalizedSize = normalizeGrailedSize(listing);
+  if (!normalizedSize.ok) {
+    return { ok: false, error: normalizedSize.error, retryable: false };
+  }
+
+  const debug = createMarketplaceDebugData();
+  let draftId: string | null = options.existingPlatformData?.remote_state === "draft"
+    ? options.existingPlatformListingId ?? null
+    : null;
+
   try {
     // 1. Upload photos
     const uploadedPhotoUrls = await uploadPhotos(listing.photos, csrf_token, cookies);
@@ -417,6 +633,7 @@ export async function publishToGrailed(
 
     const draftPayloadResult = buildGrailedDraftPayload(
       listing,
+      normalizedSize.size,
       uploadedPhotoUrls,
       designers,
       normalizedTraits.traits
@@ -432,39 +649,72 @@ export async function publishToGrailed(
       : null;
 
     const draftResponse = existingDraftId
-      ? await runGrailedPublishStep("updating draft", () =>
-        apiFetch(`${GRAILED_API}/listing_drafts/${existingDraftId}`, {
+      ? await runGrailedPublishStep("updating draft", () => {
+        recordMarketplaceRequest({
+          debug,
+          platform: "grailed",
+          listingId: listing.id,
+          request: {
+            operation: "update_draft",
+            method: "PUT",
+            endpoint: `/api/listing_drafts/${existingDraftId}`,
+            payload,
+          },
+        });
+        return apiFetch(`${GRAILED_API}/listing_drafts/${existingDraftId}`, {
           method: "PUT",
           headers: makeHeaders(csrf_token, cookies),
           body: JSON.stringify(payload),
-        })
-      )
-      : await runGrailedPublishStep("creating draft", () =>
-        apiFetch(`${GRAILED_API}/listing_drafts`, {
+        });
+      })
+      : await runGrailedPublishStep("creating draft", () => {
+        recordMarketplaceRequest({
+          debug,
+          platform: "grailed",
+          listingId: listing.id,
+          request: {
+            operation: "create_draft",
+            method: "POST",
+            endpoint: "/api/listing_drafts",
+            payload,
+          },
+        });
+        return apiFetch(`${GRAILED_API}/listing_drafts`, {
           method: "POST",
           headers: makeHeaders(csrf_token, cookies),
           body: JSON.stringify(payload),
-        })
-      );
+        });
+      });
 
-    const draftId = String((draftResponse as { data: { id: number } }).data.id ?? existingDraftId);
+    draftId = String((draftResponse as { data: { id: number } }).data.id ?? existingDraftId);
     if (mode === "draft") {
       return {
         ok: true,
         platformListingId: draftId,
         remoteState: "draft",
         modeUsed: "draft",
-        platformData: { ...payload, remote_state: "draft" },
+        platformData: attachMarketplaceDebugData({ ...payload, remote_state: "draft" }, debug),
       };
     }
 
     // 4. Submit draft live
-    const result = await runGrailedPublishStep("submitting draft", () =>
-      apiFetch(`${GRAILED_API}/listing_drafts/${draftId}/submit`, {
+    const result = await runGrailedPublishStep("submitting draft", () => {
+      recordMarketplaceRequest({
+        debug,
+        platform: "grailed",
+        listingId: listing.id,
+        request: {
+          operation: "submit_draft",
+          method: "POST",
+          endpoint: `/api/listing_drafts/${draftId}/submit`,
+          payload: null,
+        },
+      });
+      return apiFetch(`${GRAILED_API}/listing_drafts/${draftId}/submit`, {
         method: "POST",
         headers: makeHeaders(csrf_token, cookies),
-      })
-    );
+      });
+    });
 
     const grailedId = String((result as { data: { id: number } }).data.id);
     return {
@@ -472,7 +722,7 @@ export async function publishToGrailed(
       platformListingId: grailedId,
       remoteState: "live",
       modeUsed: "live",
-      platformData: { ...payload, remote_state: "live", source_draft_id: draftId },
+      platformData: attachMarketplaceDebugData({ ...payload, remote_state: "live", source_draft_id: draftId }, debug),
     };
   } catch (err) {
     if (err instanceof GrailedPublishStepError) {
@@ -486,7 +736,18 @@ export async function publishToGrailed(
     }
     const error = err instanceof Error ? err.message : String(err);
     const retryable = isRetryableGrailedError(err);
-    return { ok: false, error, retryable };
+    return {
+      ok: false,
+      error,
+      retryable,
+      platformListingId: draftId ?? undefined,
+      platformData: draftId
+        ? {
+            ...debugPlatformData(debug),
+            remote_state: "draft",
+          }
+        : debugPlatformData(debug),
+    };
   }
 }
 

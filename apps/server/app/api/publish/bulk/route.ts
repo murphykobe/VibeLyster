@@ -5,7 +5,7 @@ import { decryptTokens } from "@/lib/crypto";
 import { publishToGrailed } from "@/lib/marketplace/grailed";
 import { publishToDepop } from "@/lib/marketplace/depop";
 import { BulkPublishBody, parseBody } from "@/lib/validation";
-import { getDisplaySizeValue } from "@/lib/sizes";
+import { getDisplaySizeValue, parseStructuredSize } from "@/lib/sizes";
 import type { GrailedTokens, DepopTokens, Platform, CanonicalListing } from "@/lib/marketplace/types";
 import { isMockMode, mockPlatformListingId } from "@/lib/mock";
 
@@ -86,6 +86,7 @@ async function processInBackground(userId: string, listingIds: string[], platfor
       description: dbListing.description!,
       price: Number(dbListing.price),
       size: getDisplaySizeValue(dbListing.size),
+      structuredSize: parseStructuredSize(dbListing.size),
       condition: dbListing.condition,
       brand: dbListing.brand,
       category: dbListing.category,
@@ -145,8 +146,15 @@ async function processInBackground(userId: string, listingIds: string[], platfor
           });
         } else {
           await updatePlatformListingStatus(listingId, platform, "failed", {
+            platformListingId: result.platformListingId,
             lastError: result.error,
             incrementAttempt: true,
+            platformData: result.platformData
+              ? {
+                  ...(existingPlatformListing?.platform_data ?? {}),
+                  ...result.platformData,
+                }
+              : undefined,
           });
         }
       })

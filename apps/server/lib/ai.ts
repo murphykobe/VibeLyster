@@ -123,6 +123,19 @@ const StructuredDraftSchema = z.object({
   lowConfidenceFields: z.array(VerificationFieldEnum).default([]),
 });
 
+export function inferExplicitAcceptOffersFromTranscript(transcript: string) {
+  const normalized = transcript.trim().toLowerCase();
+  if (!normalized) return false;
+
+  return [
+    /\bopen to offers\b/,
+    /\boffers welcome\b/,
+    /\btaking offers\b/,
+    /\baccept(?:ing)? offers\b/,
+    /\bsend offers\b/,
+  ].some((pattern) => pattern.test(normalized));
+}
+
 type GeneratedListing = z.infer<typeof ListingSchema>;
 type StructuredDraft = z.infer<typeof StructuredDraftSchema>;
 
@@ -281,6 +294,7 @@ ${SIZE_SYSTEM_PROMPT}
   - Jeans waist 32 -> { "system": "PANTS_WAIST", "value": "32" }
   - Bag one size -> { "system": "ONE_SIZE", "value": "ONE SIZE" }
 - Omit unknown traits (for example omit color if unknown)
+- Only include traits.accept_offers = "true" when the transcript explicitly indicates the seller accepts offers. Otherwise omit it.
 - If a field is unresolved, include it in unresolvedFields
 - If you provide a weak best-effort value that still needs human review, include it in lowConfidenceFields
 - Category must be one of the canonical supported category enum values when known
@@ -381,6 +395,12 @@ function normalizeGeneratedListing(listing: GeneratedListing, transcript: string
 
   if (inferredColor) {
     traits.color = inferredColor;
+  }
+
+  if (inferExplicitAcceptOffersFromTranscript(transcript)) {
+    traits.accept_offers = "true";
+  } else {
+    delete traits.accept_offers;
   }
 
   return {
