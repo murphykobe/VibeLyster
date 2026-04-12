@@ -208,6 +208,10 @@ export default function ConnectScreen() {
     return debugEvents.map((event) => event.message).join("\n");
   }, [debugEvents, showDebug]);
 
+  const returnToSettings = useCallback(() => {
+    router.dismissTo("/settings");
+  }, [router]);
+
   useEffect(() => {
     if (!sourceUri) {
       setLoading(false);
@@ -274,7 +278,7 @@ export default function ConnectScreen() {
 
       pushDebug(`Grailed saveConnection ok${platformUsername ? ` (${platformUsername})` : ""}`);
       Alert.alert("Connected!", "Grailed account connected successfully.", [
-        { text: "OK", onPress: () => router.back() },
+        { text: "OK", onPress: returnToSettings },
       ]);
     } catch (err) {
       saveAttemptedRef.current = false;
@@ -298,7 +302,7 @@ export default function ConnectScreen() {
       });
       pushDebug(`Depop saveConnection ok (token len ${accessToken.length})`);
       Alert.alert("Connected!", "Depop account connected successfully.", [
-        { text: "OK", onPress: () => router.back() },
+        { text: "OK", onPress: returnToSettings },
       ]);
     } catch (err) {
       saveAttemptedRef.current = false;
@@ -362,11 +366,11 @@ export default function ConnectScreen() {
       });
       pushDebug("eBay saveConnection ok");
       if (typeof __DEV__ !== "undefined" && __DEV__ && EBAY_E2E_MODE) {
-        router.back();
+        returnToSettings();
         return;
       }
       Alert.alert("Connected!", "eBay account connected successfully.", [
-        { text: "OK", onPress: () => router.back() },
+        { text: "OK", onPress: returnToSettings },
       ]);
     } catch (err) {
       saveAttemptedRef.current = false;

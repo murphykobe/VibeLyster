@@ -1,8 +1,14 @@
-import { NextRequest } from "next/server";
+import { NextRequest, after } from "next/server";
 import { requireAuth, AuthError, authErrorResponse } from "@/lib/auth";
-import { getListingById, updateListing, softDeleteListing } from "@/lib/db";
+import { getConnection, getListingById, updateListing, updatePlatformListingStatus, softDeleteListing } from "@/lib/db";
 import { UpdateListingBody, parseBody } from "@/lib/validation";
 import { coerceCategoryForStorage } from "@/lib/categories";
+import { decryptTokens } from "@/lib/crypto";
+import { publishToGrailed } from "@/lib/marketplace/grailed";
+import { syncLinkedGrailedDraftAfterSave } from "@/lib/marketplace/grailed-save-sync";
+import { getDisplaySizeValue, parseStructuredSize } from "@/lib/sizes";
+import { isMockMode } from "@/lib/mock";
+import type { CanonicalListing, GrailedTokens } from "@/lib/marketplace/types";
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -41,6 +47,45 @@ export async function PUT(req: NextRequest, { params }: Params) {
     });
 
     if (!updated) return Response.json({ error: "Not found" }, { status: 404 });
+
+    if (!isMockMode()) {
+      after((async () => {
+        const listing = await getListingById(user.id, id);
+        const grailedPlatformListing = (listing?.platform_listings ?? []).find((pl) => pl.platform === "grailed") ?? null;
+        const conn = await getConnection(user.id, "grailed");
+        if (!listing || !grailedPlatformListing || !conn) return;
+
+        const canonical: CanonicalListing = {
+          id: listing.id,
+          title: listing.title ?? "",
+          description: listing.description ?? "",
+          price: Number(listing.price ?? 0),
+          size: getDisplaySizeValue(listing.size),
+          structuredSize: parseStructuredSize(listing.size),
+          condition: listing.condition,
+          brand: listing.brand,
+          category: listing.category,
+          traits: (listing.traits as Record<string, string>) ?? {},
+          photos: (listing.photos as string[]) ?? [],
+        };
+
+        await syncLinkedGrailedDraftAfterSave({
+          listingId: id,
+          platformListing: {
+            platform_listing_id: grailedPlatformListing.platform_listing_id,
+            platform_data: (grailedPlatformListing.platform_data ?? {}) as Record<string, unknown>,
+            status: grailedPlatformListing.status,
+          },
+          publishDraft: () => publishToGrailed(canonical, decryptTokens(conn.encrypted_tokens) as GrailedTokens, {
+            mode: "draft",
+            existingPlatformListingId: grailedPlatformListing.platform_listing_id,
+            existingPlatformData: grailedPlatformListing.platform_data ?? null,
+          }),
+          updateStatus: updatePlatformListingStatus,
+        });
+      })());
+    }
+
     return Response.json(updated);
   } catch (err) {
     if (err instanceof AuthError) return authErrorResponse(err);

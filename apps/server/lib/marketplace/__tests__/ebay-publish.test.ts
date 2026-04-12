@@ -55,6 +55,17 @@ describe("publishToEbay", () => {
       expect(result.remoteState).toBe("draft");
       expect(result.modeUsed).toBe("draft");
       expect(result.platformListingId).toBe("listing-remote-1");
+      expect(result.platformData).toMatchObject({
+        debug: {
+          requests: [
+            {
+              operation: "upsert_offer",
+              method: "POST",
+              endpoint: "/sell/inventory/v1/offer",
+            },
+          ],
+        },
+      });
     }
   });
 });

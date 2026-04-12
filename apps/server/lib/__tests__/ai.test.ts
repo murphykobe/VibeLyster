@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
-import { getListingGenerationModelId, getVisionFallbackFields, normalizeGeneratedSizeForTest, shouldUseVisionFallback, transcribeAudio } from "../ai";
+import { getListingGenerationModelId, getVisionFallbackFields, inferExplicitAcceptOffersFromTranscript, normalizeGeneratedSizeForTest, shouldUseVisionFallback, transcribeAudio } from "../ai";
 
 describe("getListingGenerationModelId", () => {
   it("uses the current text model for transcript-only generation", () => {
@@ -66,6 +66,17 @@ describe("structured size normalization", () => {
       { system: "ONE_SIZE", value: "one size" },
       "accessories.belt",
     )).toEqual({ system: "ONE_SIZE", value: "ONE SIZE" });
+  });
+});
+
+describe("accept offers inference", () => {
+  it("returns true when the transcript explicitly invites offers", () => {
+    expect(inferExplicitAcceptOffersFromTranscript("price is 350 and I am open to offers")).toBe(true);
+    expect(inferExplicitAcceptOffersFromTranscript("offers welcome but no trades")).toBe(true);
+  });
+
+  it("returns false when offers are not explicitly mentioned", () => {
+    expect(inferExplicitAcceptOffersFromTranscript("navy supreme box logo hoodie size large")).toBe(false);
   });
 });
 

@@ -130,12 +130,12 @@ describe("normalizeGrailedTraits", () => {
     }
   });
 
-  it("infers color from listing text and filters unsupported traits", () => {
+  it("infers color from listing text and maps country names to Grailed country codes", () => {
     const result = normalizeGrailedTraits(makeListing({
       title: "Silver Bullet Sneakers",
       traits: {
         material: "mesh",
-        country_of_origin: "US",
+        country_of_origin: "Canada",
       } as Record<string, string>,
     }));
 
@@ -143,8 +143,23 @@ describe("normalizeGrailedTraits", () => {
     if (result.ok) {
       expect(result.traits).toEqual([
         { name: "color", value: "silver" },
-        { name: "country_of_origin", value: "US" },
+        { name: "country_of_origin", value: "CA" },
       ]);
+    }
+  });
+
+  it("rejects unsupported country-of-origin values", () => {
+    const result = normalizeGrailedTraits(makeListing({
+      traits: {
+        color: "black",
+        country_of_origin: "Atlantis",
+      },
+    }));
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error).toMatch(/country of origin is invalid/i);
+      expect(result.error).toMatch(/Atlantis/);
     }
   });
 });
@@ -171,6 +186,25 @@ describe("publishToGrailed", () => {
     const result = await publishToGrailed(makeListing(), TOKENS);
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.retryable).toBe(false);
+  });
+
+  it("preserves the created draft id and draft payload when submit fails", async () => {
+    mockFetchSequence([
+      new Response(JSON.stringify({ data: { fields: { key: "abc" }, url: "https://s3.example.com/", image_url: "https://grailed-media.s3.amazonaws.com/photo1.jpg" } }), { status: 200 }),
+      new Response(new Uint8Array([1, 2, 3]).buffer, { status: 200 }),
+      new Response(null, { status: 204 }),
+      new Response(JSON.stringify({ hits: [{ id: 12, name: "Carhartt", slug: "carhartt" }] }), { status: 200 }),
+      new Response(JSON.stringify({ data: { id: 333 } }), { status: 200 }),
+      new Response(JSON.stringify({ error: { message: "Please complete the listing draft before submitting" } }), { status: 422 }),
+    ]);
+
+    const result = await publishToGrailed(makeListing(), TOKENS);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.platformListingId).toBe("333");
+      expect(result.platformData).toMatchObject({ remote_state: "draft" });
+      expect(result.retryable).toBe(false);
+    }
   });
 
   it("includes the failing Grailed publish step in 401 errors", async () => {
@@ -244,7 +278,11 @@ describe("publishToGrailed", () => {
       new Response(JSON.stringify({ data: { id: 777 } }), { status: 200 }),
     ]);
 
-    const result = await publishToGrailed(makeListing(), TOKENS);
+    const listing = Object.assign(makeListing(), {
+      structuredSize: { system: "CLOTHING_LETTER", value: "L" },
+    }) as CanonicalListing;
+
+    const result = await publishToGrailed(listing, TOKENS);
     expect(result.ok).toBe(true);
     if (result.ok) {
       expect(result.platformListingId).toBe("777");
@@ -255,13 +293,118 @@ describe("publishToGrailed", () => {
         condition: "is_gently_used",
         title: "Vintage Jacket",
         price: 120,
-        size: "L",
+        make_offer: false,
+        size: "l",
         designers: [{ id: 18, name: "Carhartt", slug: "carhartt" }],
         traits: [{ name: "color", value: "black" }],
         remote_state: "live",
         source_draft_id: "333",
+        debug: {
+          requests: [
+            {
+              operation: "create_draft",
+              method: "POST",
+              endpoint: "/api/listing_drafts",
+            },
+            {
+              operation: "submit_draft",
+              method: "POST",
+              endpoint: "/api/listing_drafts/333/submit",
+            },
+          ],
+        },
       });
     }
+  });
+
+  it("maps country names to Grailed country codes in the outbound payload", async () => {
+    mockFetchSequence([
+      new Response(JSON.stringify({ data: { fields: { key: "abc" }, url: "https://s3.example.com/", image_url: "https://grailed-media.s3.amazonaws.com/photo1.jpg" } }), { status: 200 }),
+      new Response(new Uint8Array([1, 2, 3]).buffer, { status: 200 }),
+      new Response(null, { status: 204 }),
+      new Response(JSON.stringify({ hits: [{ id: 18, name: "Carhartt", slug: "carhartt" }] }), { status: 200 }),
+      new Response(JSON.stringify({ data: { id: 333 } }), { status: 200 }),
+    ]);
+
+    const listing = makeListing({
+      traits: { color: "black", country_of_origin: "China" },
+    });
+
+    const result = await publishToGrailed(listing, TOKENS, { mode: "draft" });
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.platformData).toMatchObject({
+        traits: [
+          { name: "color", value: "black" },
+          { name: "country_of_origin", value: "CN" },
+        ],
+      });
+    }
+  });
+
+  it("sets make_offer=true only when accept_offers is explicitly true", async () => {
+    mockFetchSequence([
+      new Response(JSON.stringify({ data: { fields: { key: "abc" }, url: "https://s3.example.com/", image_url: "https://grailed-media.s3.amazonaws.com/photo1.jpg" } }), { status: 200 }),
+      new Response(new Uint8Array([1, 2, 3]).buffer, { status: 200 }),
+      new Response(null, { status: 204 }),
+      new Response(JSON.stringify({ hits: [{ id: 18, name: "Carhartt", slug: "carhartt" }] }), { status: 200 }),
+      new Response(JSON.stringify({ data: { id: 333 } }), { status: 200 }),
+    ]);
+
+    const result = await publishToGrailed(makeListing({ traits: { color: "black", accept_offers: "true" } as Record<string, string> }), TOKENS, { mode: "draft" });
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.platformData).toMatchObject({ make_offer: true });
+    }
+  });
+
+  it("normalizes one-size structured listings before creating a draft", async () => {
+    mockFetchSequence([
+      new Response(JSON.stringify({ data: { fields: { key: "abc" }, url: "https://s3.example.com/", image_url: "https://grailed-media.s3.amazonaws.com/photo1.jpg" } }), { status: 200 }),
+      new Response(new Uint8Array([1, 2, 3]).buffer, { status: 200 }),
+      new Response(null, { status: 204 }),
+      new Response(JSON.stringify({ hits: [{ id: 99, name: "Porter", slug: "porter" }] }), { status: 200 }),
+      new Response(JSON.stringify({ data: { id: 333 } }), { status: 200 }),
+    ]);
+
+    const listing = Object.assign(makeListing({
+      category: "bags.bag",
+      size: "ONE SIZE",
+      brand: "Porter",
+    }), {
+      structuredSize: { system: "ONE_SIZE", value: "ONE SIZE" },
+    }) as CanonicalListing;
+
+    const result = await publishToGrailed(listing, TOKENS, { mode: "draft" });
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.platformData).toMatchObject({
+        category_path: "accessories.bags_luggage",
+        size: "one size",
+        remote_state: "draft",
+      });
+    }
+  });
+
+  it("fails before any network call when structured size is incompatible with the Grailed category", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+
+    const listing = Object.assign(makeListing({
+      category: "outerwear.jacket",
+      size: "10",
+    }), {
+      structuredSize: { system: "US_MENS_SHOE", value: "10" },
+    }) as CanonicalListing;
+
+    const result = await publishToGrailed(listing, TOKENS);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.retryable).toBe(false);
+      expect(result.error).toMatch(/grailed size is invalid for outerwear/i);
+      expect(result.error).toMatch(/us_mens_shoe 10/i);
+    }
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it("slices photos to 8 max", async () => {
@@ -288,6 +431,23 @@ describe("publishToGrailed", () => {
       const photos = (result.platformData as { photos: unknown[] }).photos;
       expect(photos).toHaveLength(8);
     }
+  });
+
+  it("fails before any network call when a legacy free-form top size is unsupported", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await publishToGrailed(makeListing({
+      category: "tops.t_shirt",
+      size: "3XL",
+    }), TOKENS);
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.retryable).toBe(false);
+      expect(result.error).toMatch(/expected one of: xxs, xs, s, m, l, xl, xxl/i);
+    }
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it("returns a remote draft without submitting when mode=draft", async () => {

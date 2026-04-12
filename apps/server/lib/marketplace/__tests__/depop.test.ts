@@ -193,6 +193,25 @@ describe("publishToDepop", () => {
         priceAmount: "85.00",
         priceCurrency: "USD",
         quantity: 1,
+        debug: {
+          requests: [
+            {
+              operation: "create_draft",
+              method: "POST",
+              endpoint: "/api/v2/drafts/",
+            },
+            {
+              operation: "update_draft",
+              method: "PUT",
+              endpoint: "/api/v2/drafts/500/",
+            },
+            {
+              operation: "publish_listing",
+              method: "PUT",
+              endpoint: "/api/v2/products/500/",
+            },
+          ],
+        },
       });
     }
   });

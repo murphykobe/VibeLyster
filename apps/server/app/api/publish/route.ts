@@ -9,7 +9,7 @@ import { fetchEbaySellerReadiness } from "@/lib/marketplace/ebay-seller";
 import { buildEbayListingMetadata } from "@/lib/marketplace/ebay-metadata";
 import { generateEbayAspects } from "@/lib/ai";
 import { PublishBody, parseBody } from "@/lib/validation";
-import { getDisplaySizeValue } from "@/lib/sizes";
+import { getDisplaySizeValue, parseStructuredSize } from "@/lib/sizes";
 import type {
   GrailedTokens,
   DepopTokens,
@@ -98,6 +98,7 @@ export async function POST(req: NextRequest) {
       description: dbListing.description!,
       price: Number(dbListing.price),
       size: getDisplaySizeValue(dbListing.size),
+      structuredSize: parseStructuredSize(dbListing.size),
       condition: dbListing.condition,
       brand: dbListing.brand,
       category: dbListing.category,
@@ -240,10 +241,17 @@ export async function POST(req: NextRequest) {
         };
       } else {
         await updatePlatformListingStatus(listingId, platform, "failed", {
+          platformListingId: result.platformListingId,
           lastError: result.error,
           incrementAttempt: true,
+          platformData: result.platformData
+            ? {
+                ...(existingPlatformListing?.platform_data ?? {}),
+                ...result.platformData,
+              }
+            : undefined,
         });
-        results[platform] = { ok: false, error: result.error };
+        results[platform] = { ok: false, error: result.error, platformData: result.platformData };
       }
     }
 

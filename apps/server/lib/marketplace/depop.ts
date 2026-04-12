@@ -20,6 +20,12 @@ import type {
   PublishOptions,
 } from "./types";
 import { mapCanonicalCategoryToDepop } from "../categories";
+import {
+  attachMarketplaceDebugData,
+  createMarketplaceDebugData,
+  debugPlatformData,
+  recordMarketplaceRequest,
+} from "./debug";
 
 const DEPOP_API = "https://webapi.depop.com";
 
@@ -205,6 +211,8 @@ export async function publishToDepop(
   const { access_token } = tokens;
   const mode = options.mode ?? "live";
 
+  const debug = createMarketplaceDebugData();
+
   try {
     // 1. Resolve userId + ship-from address
     const userId = await resolveUserId(access_token);
@@ -231,11 +239,24 @@ export async function publishToDepop(
 
     const draftId = Number.isFinite(existingDraftId)
       ? existingDraftId
-      : (await apiFetch(`${DEPOP_API}/api/v2/drafts/`, {
-        method: "POST",
-        headers: makeHeaders(access_token),
-        body: JSON.stringify({}),
-      }) as { id: number }).id;
+      : (await (() => {
+        recordMarketplaceRequest({
+          debug,
+          platform: "depop",
+          listingId: listing.id,
+          request: {
+            operation: "create_draft",
+            method: "POST",
+            endpoint: "/api/v2/drafts/",
+            payload: {},
+          },
+        });
+        return apiFetch(`${DEPOP_API}/api/v2/drafts/`, {
+          method: "POST",
+          headers: makeHeaders(access_token),
+          body: JSON.stringify({}),
+        }) as Promise<{ id: number }>;
+      })()).id;
 
     // 5. Update draft with full payload
     const draftPayload = {
@@ -262,6 +283,17 @@ export async function publishToDepop(
       isKids: false,
     };
 
+    recordMarketplaceRequest({
+      debug,
+      platform: "depop",
+      listingId: listing.id,
+      request: {
+        operation: "update_draft",
+        method: "PUT",
+        endpoint: `/api/v2/drafts/${draftId}/`,
+        payload: draftPayload,
+      },
+    });
     await apiFetch(`${DEPOP_API}/api/v2/drafts/${draftId}/`, {
       method: "PUT",
       headers: makeHeaders(access_token),
@@ -274,15 +306,26 @@ export async function publishToDepop(
         platformListingId: String(draftId),
         remoteState: "draft",
         modeUsed: "draft",
-        platformData: {
+        platformData: attachMarketplaceDebugData({
           userId,
           ...draftPayload,
           remote_state: "draft",
-        },
+        }, debug),
       };
     }
 
     // 6. Publish (PUT to products endpoint from draft edit page — the only route that works)
+    recordMarketplaceRequest({
+      debug,
+      platform: "depop",
+      listingId: listing.id,
+      request: {
+        operation: "publish_listing",
+        method: "PUT",
+        endpoint: `/api/v2/products/${draftId}/`,
+        payload: draftPayload,
+      },
+    });
     const published = await apiFetch(`${DEPOP_API}/api/v2/products/${draftId}/`, {
       method: "PUT",
       headers: {
@@ -298,14 +341,14 @@ export async function publishToDepop(
       platformListingId: depopId,
       remoteState: "live",
       modeUsed: "live",
-      platformData: { userId, ...draftPayload, remote_state: "live" },
+      platformData: attachMarketplaceDebugData({ userId, ...draftPayload, remote_state: "live" }, debug),
     };
   } catch (err) {
     const error = err instanceof Error ? err.message : String(err);
     const retryable = err instanceof DepopError
       ? err.statusCode >= 500 || err.statusCode === 429
       : true;
-    return { ok: false, error, retryable };
+    return { ok: false, error, retryable, platformData: debugPlatformData(debug) };
   }
 }
 

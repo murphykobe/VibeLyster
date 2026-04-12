@@ -3,6 +3,8 @@
  * The canonical listing object lives in the DB; platform transforms happen here at publish time.
  */
 
+import type { StructuredSize } from "../sizes";
+
 export type Platform = "grailed" | "depop" | "ebay";
 export type PublishMode = "live" | "draft";
 export type RemoteListingState = "live" | "draft";
@@ -14,6 +16,7 @@ export type CanonicalListing = {
   description: string;
   price: number;
   size: string | null;
+  structuredSize?: StructuredSize | null;
   condition: string | null;
   brand: string | null;
   category: string | null;
@@ -86,7 +89,13 @@ export type PublishResult =
     remoteState: RemoteListingState;
     modeUsed: PublishMode;
   }
-  | { ok: false; error: string; retryable: boolean };
+  | {
+    ok: false;
+    error: string;
+    retryable: boolean;
+    platformListingId?: string;
+    platformData?: Record<string, unknown>;
+  };
 
 /** Result returned by a delist call */
 export type DelistResult =
