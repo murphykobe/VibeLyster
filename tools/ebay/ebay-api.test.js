@@ -103,11 +103,91 @@ test("generateLoginUrl uses the configured RuName and scopes", async () => {
   }
 });
 
-test("resolveCondition maps supported listing condition aliases", async () => {
+test("resolveCondition maps all supported eBay condition enums", async () => {
   const { resolveCondition } = await import("./ebay-api.js");
 
   assert.equal(resolveCondition("NEW"), "NEW");
   assert.equal(resolveCondition("new-other"), "NEW_OTHER");
+  assert.equal(resolveCondition("NEW_WITH_DEFECTS"), "NEW_WITH_DEFECTS");
   assert.equal(resolveCondition("USED_EXCELLENT"), "USED_EXCELLENT");
+  assert.equal(resolveCondition("used-very-good"), "USED_VERY_GOOD");
+  assert.equal(resolveCondition("used_good"), "USED_GOOD");
   assert.equal(resolveCondition("used_acceptable"), "USED_ACCEPTABLE");
+
+  assert.throws(() => resolveCondition("FAKE_CONDITION"), /Unknown condition/);
+});
+
+test("buildInventoryItemPayload produces correct structure", async () => {
+  const { buildInventoryItemPayload } = await import("./ebay-api.js");
+
+  const payload = buildInventoryItemPayload({
+    title: "Test Sneakers",
+    description: "Great shoes",
+    condition: "USED_EXCELLENT",
+    quantity: 2,
+    images: ["https://example.com/img.jpg"],
+    aspects: { Brand: ["Nike"], Color: ["Black"] },
+  });
+
+  assert.equal(payload.product.title, "Test Sneakers");
+  assert.equal(payload.product.description, "Great shoes");
+  assert.deepEqual(payload.product.imageUrls, ["https://example.com/img.jpg"]);
+  assert.deepEqual(payload.product.aspects, { Brand: ["Nike"], Color: ["Black"] });
+  assert.equal(payload.condition, "USED_EXCELLENT");
+  assert.equal(payload.availability.shipToLocationAvailability.quantity, 2);
+});
+
+test("buildInventoryItemPayload defaults quantity to 1", async () => {
+  const { buildInventoryItemPayload } = await import("./ebay-api.js");
+
+  const payload = buildInventoryItemPayload({
+    title: "Test",
+    description: "Test",
+    condition: "NEW",
+  });
+
+  assert.equal(payload.availability.shipToLocationAvailability.quantity, 1);
+});
+
+test("buildOfferPayload produces correct structure", async () => {
+  const { buildOfferPayload } = await import("./ebay-api.js");
+
+  const payload = buildOfferPayload("vl-123", {
+    description: "Great shoes",
+    categoryId: "15709",
+    price: "450.00",
+    quantity: 1,
+    merchantLocationKey: "warehouse-1",
+  }, {
+    fulfillmentPolicyId: "fp-1",
+    paymentPolicyId: "pp-1",
+    returnPolicyId: "rp-1",
+  });
+
+  assert.equal(payload.sku, "vl-123");
+  assert.equal(payload.format, "FIXED_PRICE");
+  assert.equal(payload.categoryId, "15709");
+  assert.equal(payload.pricingSummary.price.value, "450.00");
+  assert.equal(payload.pricingSummary.price.currency, "USD");
+  assert.equal(payload.merchantLocationKey, "warehouse-1");
+  assert.equal(payload.listingPolicies.fulfillmentPolicyId, "fp-1");
+  assert.equal(payload.listingPolicies.paymentPolicyId, "pp-1");
+  assert.equal(payload.listingPolicies.returnPolicyId, "rp-1");
+  assert.equal(payload.availableQuantity, 1);
+});
+
+test("buildOfferPayload defaults merchantLocationKey to 'default'", async () => {
+  const { buildOfferPayload } = await import("./ebay-api.js");
+
+  const payload = buildOfferPayload("vl-456", {
+    description: "Test",
+    categoryId: "123",
+    price: "10.00",
+  }, {
+    fulfillmentPolicyId: "fp",
+    paymentPolicyId: "pp",
+    returnPolicyId: "rp",
+  });
+
+  assert.equal(payload.merchantLocationKey, "default");
 });
