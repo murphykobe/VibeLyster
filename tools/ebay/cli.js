@@ -3,7 +3,7 @@
 /**
  * eBay CLI — VibeLyster
  *
- * Auth: EBAY_APP_ID, EBAY_CERT_ID, EBAY_REFRESH_TOKEN env vars.
+ * Auth: Run `ebay login`, or set EBAY_REFRESH_TOKEN for headless use.
  */
 
 import * as api from "./ebay-api.js";
@@ -46,6 +46,8 @@ function printHelp() {
   console.log(`eBay CLI — VibeLyster
 
 Commands:
+  login [code-or-url]           Start OAuth login or exchange callback code
+  logout                        Remove saved eBay credentials
   auth                         Verify credentials
   categories <query>           Search eBay categories
   aspects <categoryId>         List category item specifics
@@ -60,8 +62,9 @@ Commands:
   delete <sku>                 Withdraw offer and delete inventory item
 
 Auth:
-  Set EBAY_APP_ID, EBAY_CERT_ID, and EBAY_REFRESH_TOKEN env vars.
-  Optional: EBAY_DEV_ID for Trading API image upload, EBAY_SANDBOX=true.
+  Set EBAY_APP_ID, EBAY_CERT_ID, and EBAY_RU_NAME, then run "ebay login".
+  Optional: EBAY_REFRESH_TOKEN for headless use, EBAY_DEV_ID for image upload,
+  EBAY_SANDBOX=true for sandbox endpoints.
 `);
 }
 
@@ -133,6 +136,28 @@ async function main() {
 
   try {
     switch (command) {
+      case "login": {
+        const codeOrUrl = args.slice(1).join(" ");
+        if (codeOrUrl) {
+          await api.exchangeAuthorizationCode(codeOrUrl);
+          console.log("Logged in. Credentials saved to:", api.getConfigFile());
+          break;
+        }
+
+        const url = api.generateLoginUrl();
+        console.log("Open this URL and approve eBay access:\n");
+        console.log(url);
+        console.log("\nAfter eBay redirects back, run:");
+        console.log('  ebay login "<full callback URL or code>"');
+        break;
+      }
+
+      case "logout": {
+        api.clearAuthToken();
+        console.log("Logged out. Credentials removed from:", api.getConfigFile());
+        break;
+      }
+
       case "auth": {
         const auth = await api.checkAuth();
         console.log(`Logged in as: ${auth.username}`);
