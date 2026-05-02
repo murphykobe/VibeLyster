@@ -1,0 +1,29 @@
+{
+  "title": "Rick Owens DRKSHDW Ramones High Top Sneakers",
+  "description": "Size 43, worn twice. Excellent condition, no visible wear. Comes with original box.",
+  "condition": "USED_EXCELLENT",
+  "categoryId": "15709",
+  "price": "450.00",
+  "quantity": 1,
+  "images": [
+    "https://i.ebayimg.com/images/g/example/s-l1600.jpg"
+  ],
+  "aspects": {
+    "Brand": [
+      "Rick Owens"
+    ],
+    "Department": [
+      "Men"
+    ],
+    "US Shoe Size": [
+      "10"
+    ],
+    "Color": [
+      "Black"
+    ],
+    "Material": [
+      "Leather"
+    ]
+  },
+  "merchantLocationKey": "default"
+}

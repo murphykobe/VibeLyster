@@ -1,0 +1,36 @@
+{
+  "name": "@vibelyster/ebay-cli",
+  "version": "0.1.0",
+  "description": "CLI for eBay Sell API - list, create, edit, and manage eBay listings",
+  "type": "module",
+  "bin": {
+    "ebay": "./dist/cli.js"
+  },
+  "files": [
+    "dist/"
+  ],
+  "scripts": {
+    "build": "esbuild cli.js --bundle --platform=node --format=esm --minify --external:ebay-api --external:form-data --outfile=dist/cli.js",
+    "test": "node --test",
+    "prepublishOnly": "npm run build"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "ebay-api": "^9.5.1",
+    "form-data": "^4.0.0"
+  },
+  "devDependencies": {
+    "esbuild": "^0.25.0"
+  },
+  "keywords": [
+    "ebay",
+    "reselling",
+    "cli",
+    "listing",
+    "inventory"
+  ],
+  "license": "MIT",
+  "private": false
+}
