@@ -39,6 +39,10 @@ const CONDITION_MAP = {
   USED_ACCEPTABLE: "USED_ACCEPTABLE",
 };
 
+export function getRuName() {
+  return process.env.EBAY_RU_NAME;
+}
+
 export function resetClientForTest() {
   client = null;
 }
@@ -95,7 +99,7 @@ function getBaseConfig() {
     appId,
     certId,
     devId: process.env.EBAY_DEV_ID,
-    ruName: process.env.EBAY_RU_NAME,
+    ruName: getRuName(),
     sandbox: process.env.EBAY_SANDBOX === "true",
     autoRefreshToken: true,
     marketplaceId: MARKETPLACE_ID,
@@ -147,10 +151,18 @@ export function getClient() {
 
 export function generateLoginUrl() {
   const eBay = buildClient();
-  if (!process.env.EBAY_RU_NAME) {
-    throw new Error("EBAY_RU_NAME is required for ebay login");
+  const ruName = requireCliRuName();
+  return eBay.OAuth2.generateAuthUrl(ruName, undefined, `cli-${Date.now()}`);
+}
+
+function requireCliRuName() {
+  const ruName = getRuName();
+  if (!ruName) {
+    throw new Error(
+      "EBAY_RU_NAME is required for ebay login. The callback route must preserve the code when OAuth state starts with cli."
+    );
   }
-  return eBay.OAuth2.generateAuthUrl(process.env.EBAY_RU_NAME);
+  return ruName;
 }
 
 export function parseAuthorizationCode(input) {
@@ -167,7 +179,7 @@ export function parseAuthorizationCode(input) {
 
 export async function exchangeAuthorizationCode(input) {
   const eBay = buildClient();
-  const token = await eBay.OAuth2.getToken(parseAuthorizationCode(input));
+  const token = await eBay.OAuth2.getToken(parseAuthorizationCode(input), requireCliRuName());
   saveAuthToken(token);
   resetClientForTest();
   return token;
@@ -243,6 +255,47 @@ export async function getLocations() {
     limit: 100,
   });
   return result.locations || result.merchantLocation || [];
+}
+
+export function mapActiveListings(response) {
+  const items = response?.ActiveList?.ItemArray?.Item;
+  const list = Array.isArray(items) ? items : items ? [items] : [];
+  return list.map((item) => ({
+    itemId: String(item.ItemID),
+    title: item.Title || "(untitled)",
+    price: String(item.SellingStatus?.CurrentPrice?.value ?? item.BuyItNowPrice?.value ?? ""),
+    currency:
+      item.SellingStatus?.CurrentPrice?.currencyID ||
+      item.BuyItNowPrice?.currencyID ||
+      DEFAULT_CURRENCY,
+    quantityAvailable: Number(item.QuantityAvailable ?? item.Quantity ?? 0),
+    watchCount: Number(item.WatchCount ?? 0),
+    url: item.ListingDetails?.ViewItemURL || null,
+  }));
+}
+
+export async function listActiveListings({ limit = 25, page = 1 } = {}) {
+  const response = await getClient().trading.GetMyeBaySelling(
+    {
+      ActiveList: {
+        Include: true,
+        Pagination: {
+          EntriesPerPage: Number(limit),
+          PageNumber: Number(page),
+        },
+      },
+      DetailLevel: "ReturnAll",
+      Version: 967,
+    },
+    { useIaf: true }
+  );
+
+  return {
+    listings: mapActiveListings(response),
+    totalEntries: Number(response?.ActiveList?.PaginationResult?.TotalNumberOfEntries ?? 0),
+    totalPages: Number(response?.ActiveList?.PaginationResult?.TotalNumberOfPages ?? 0),
+    raw: response,
+  };
 }
 
 export async function uploadImage(imagePath) {

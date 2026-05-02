@@ -94,6 +94,7 @@ test("generateLoginUrl uses the configured RuName and scopes", async () => {
 
     assert.equal(url.searchParams.get("client_id"), "client-id");
     assert.equal(url.searchParams.get("redirect_uri"), "example-ru-name");
+    assert.match(url.searchParams.get("state"), /^cli-/);
     assert.match(url.searchParams.get("scope"), /sell\.inventory/);
   } finally {
     for (const [key, value] of Object.entries(original)) {
@@ -101,6 +102,43 @@ test("generateLoginUrl uses the configured RuName and scopes", async () => {
       else process.env[key] = value;
     }
   }
+});
+
+test("mapActiveListings normalizes Trading API active listings", async () => {
+  const { mapActiveListings } = await import("./ebay-api.js");
+
+  const listings = mapActiveListings({
+    ActiveList: {
+      ItemArray: {
+        Item: [
+          {
+            ItemID: 123,
+            Title: "Vintage Denim Jacket",
+            SellingStatus: {
+              CurrentPrice: { value: 250, currencyID: "USD" },
+            },
+            QuantityAvailable: 1,
+            WatchCount: 7,
+            ListingDetails: {
+              ViewItemURL: "https://www.ebay.com/itm/123",
+            },
+          },
+        ],
+      },
+    },
+  });
+
+  assert.deepEqual(listings, [
+    {
+      itemId: "123",
+      title: "Vintage Denim Jacket",
+      price: "250",
+      currency: "USD",
+      quantityAvailable: 1,
+      watchCount: 7,
+      url: "https://www.ebay.com/itm/123",
+    },
+  ]);
 });
 
 test("resolveCondition maps all supported eBay condition enums", async () => {

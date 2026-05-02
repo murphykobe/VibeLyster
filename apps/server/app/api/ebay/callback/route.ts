@@ -11,6 +11,11 @@ import { NextRequest } from "next/server";
  *   https://vibelyster.vercel.app/api/ebay/callback
  */
 export async function GET(req: NextRequest) {
+  const state = req.nextUrl.searchParams.get("state") || "";
+  if (state === "cli" || state.startsWith("cli-")) {
+    return new Response("", { status: 200 });
+  }
+
   const deepLink = `vibelyster://connect/ebay?${req.nextUrl.searchParams.toString()}`;
   return Response.redirect(deepLink, 302);
 }
