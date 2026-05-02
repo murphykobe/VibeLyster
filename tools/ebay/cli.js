@@ -55,6 +55,8 @@ Commands:
   locations                    List merchant locations
   upload <image-path>          Upload image, returns eBay-hosted URL
   create <json-file>           Create inventory item + offer draft
+                               [--sku <sku>] [--fulfillment-policy <id>]
+                               [--payment-policy <id>] [--return-policy <id>]
   publish <offerId>            Publish offer to a live listing
   listings                     List inventory items
   listing <sku>                View inventory item + offer details
