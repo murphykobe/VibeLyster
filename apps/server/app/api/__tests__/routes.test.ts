@@ -11,6 +11,7 @@ import { GET as listListings, POST as createListing } from "../listings/route";
 import { GET as getListing, PUT as updateListing, DELETE as deleteListing } from "../listings/[id]/route";
 import { POST as connectPlatform, DELETE as disconnectPlatform } from "../connect/route";
 import { GET as listConnections } from "../connections/route";
+import { GET as ebayCallback } from "../ebay/callback/route";
 import { POST as publishListing } from "../publish/route";
 import { POST as delistListing } from "../delist/route";
 import { GET as getStatus } from "../status/[id]/route";
@@ -547,6 +548,32 @@ describe("POST /api/connect real eBay behavior", () => {
     expect(res.status).toBe(400);
     const data = await res.json();
     expect(data.error).toMatch(/verification failed/i);
+  });
+});
+
+describe("GET /api/ebay/callback", () => {
+  it("returns a blank page for CLI OAuth state so the code stays in the browser URL", async () => {
+    const res = await ebayCallback(req("GET", "/api/ebay/callback", {
+      searchParams: {
+        code: "code-123",
+        state: "cli-123",
+      },
+    }));
+
+    expect(res.status).toBe(200);
+    expect(await res.text()).toBe("");
+  });
+
+  it("redirects non-CLI callbacks to the mobile deep link", async () => {
+    const res = await ebayCallback(req("GET", "/api/ebay/callback", {
+      searchParams: {
+        code: "code-123",
+        state: "mobile-state",
+      },
+    }));
+
+    expect(res.status).toBe(302);
+    expect(res.headers.get("location")).toBe("vibelyster://connect/ebay?code=code-123&state=mobile-state");
   });
 });
 
