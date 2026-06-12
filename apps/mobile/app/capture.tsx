@@ -15,6 +15,7 @@ import * as ImagePicker from "expo-image-picker";
 import { Ionicons } from "@expo/vector-icons";
 import VoiceRecorder from "@/components/VoiceRecorder";
 import { uploadPhoto, generateListing } from "@/lib/api";
+import { kaChunk, misfeed } from "@/lib/haptics";
 import { theme } from "@/lib/theme";
 import { useToast } from "@/lib/toast";
 
@@ -116,10 +117,12 @@ export default function CaptureScreen() {
         audioUri: audioUri ?? undefined,
       });
 
+      kaChunk();
       setNewListingId(listing.id);
       setState("idle");
     } catch (err) {
       console.error(err);
+      misfeed();
       showToast(err instanceof Error ? err.message : "Generation failed. Try again.");
       setState("idle");
     }
@@ -130,13 +133,13 @@ export default function CaptureScreen() {
   if (newListingId) {
     return (
       <SafeAreaView style={styles.donePage} edges={["top"]}>
-        <Text style={styles.doneKicker}>Saved</Text>
-        <Text style={styles.doneTitle}>Draft Ready</Text>
-        <Text style={styles.doneSubtitle}>Now review details or jump right into your next listing.</Text>
+        <Text style={styles.doneKicker}>OK · SAVED TO MANIFEST</Text>
+        <Text style={styles.doneTitle}>The proof is ready.</Text>
+        <Text style={styles.doneSubtitle}>Mark it up now, or keep feeding the pile.</Text>
 
         <View style={styles.doneActions}>
           <Pressable style={styles.donePrimary} onPress={() => router.push(`/listing/${newListingId}`)}>
-            <Text style={styles.donePrimaryText}>Review & Edit</Text>
+            <Text style={styles.donePrimaryText}>Review the Proof</Text>
           </Pressable>
           <Pressable style={styles.doneSecondary} onPress={resetForNewListing}>
             <Text style={styles.doneSecondaryText}>+ New Listing</Text>
@@ -212,8 +215,8 @@ export default function CaptureScreen() {
             <ActivityIndicator color={theme.colors.accent} />
             <Text style={styles.statusText}>
               {state === "uploading"
-                ? `Uploading photos (${uploadProgress}/${photos.length})`
-                : "Generating listing draft"}
+                ? `FEEDING PHOTOS (${uploadProgress}/${photos.length})`
+                : "TYPING DRAFT…"}
             </Text>
           </View>
         )}
@@ -361,9 +364,10 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
   },
   statusText: {
-    color: theme.colors.accent,
-    fontFamily: theme.fonts.sansBold,
-    fontSize: 13,
+    color: theme.colors.text,
+    fontFamily: theme.fonts.mono,
+    fontSize: 11,
+    letterSpacing: 1,
   },
   footer: {
     paddingHorizontal: 16,
@@ -371,19 +375,22 @@ const styles = StyleSheet.create({
     paddingBottom: 22,
   },
   generateBtn: {
-    borderRadius: theme.radius.lg,
     backgroundColor: theme.colors.accent,
+    borderWidth: 1.5,
+    borderColor: theme.colors.ink,
     alignItems: "center",
     justifyContent: "center",
     paddingVertical: 15,
-    ...theme.shadow.raisedStrong,  },
+  },
   generateBtnDisabled: {
     opacity: 0.45,
   },
   generateBtnText: {
     color: theme.colors.white,
-    fontFamily: theme.fonts.sansBold,
-    fontSize: 15,
+    fontFamily: theme.fonts.display,
+    fontSize: 13,
+    textTransform: "uppercase",
+    letterSpacing: 1.5,
   },
   donePage: {
     flex: 1,
@@ -394,25 +401,25 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   doneKicker: {
-    color: theme.colors.accent,
-    fontFamily: theme.fonts.sansBold,
-    textTransform: "uppercase",
-    letterSpacing: 1.5,
-    fontSize: 12,
+    color: theme.colors.success,
+    fontFamily: theme.fonts.monoBold,
+    letterSpacing: 1,
+    fontSize: 11,
   },
+  // The one editorial moment on this screen.
   doneTitle: {
     color: theme.colors.text,
-    fontFamily: theme.fonts.display,
-    fontSize: 44,
-    lineHeight: 52,
-    letterSpacing: -1,
+    fontFamily: theme.fonts.serif,
+    fontSize: 40,
+    lineHeight: 48,
+    textAlign: "center",
   },
   doneSubtitle: {
     color: theme.colors.textMuted,
     fontFamily: theme.fonts.sans,
-    fontSize: 15,
+    fontSize: 14,
     textAlign: "center",
-    lineHeight: 22,
+    lineHeight: 21,
   },
   doneActions: {
     width: "100%",
@@ -420,26 +427,31 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   donePrimary: {
-    borderRadius: theme.radius.lg,
     backgroundColor: theme.colors.accent,
+    borderWidth: 1.5,
+    borderColor: theme.colors.ink,
     alignItems: "center",
     paddingVertical: 14,
-    ...theme.shadow.raisedStrong,  },
+  },
   donePrimaryText: {
     color: theme.colors.white,
-    fontFamily: theme.fonts.sansBold,
-    fontSize: 14,
+    fontFamily: theme.fonts.display,
+    fontSize: 12,
+    textTransform: "uppercase",
+    letterSpacing: 1,
   },
   doneSecondary: {
-    borderRadius: theme.radius.lg,
+    borderWidth: 1.5,
+    borderColor: theme.colors.ink,
     backgroundColor: theme.colors.surface,
     alignItems: "center",
     paddingVertical: 14,
-    ...theme.shadow.raised,
   },
   doneSecondaryText: {
     color: theme.colors.text,
-    fontFamily: theme.fonts.sansBold,
-    fontSize: 14,
+    fontFamily: theme.fonts.display,
+    fontSize: 12,
+    textTransform: "uppercase",
+    letterSpacing: 1,
   },
 });

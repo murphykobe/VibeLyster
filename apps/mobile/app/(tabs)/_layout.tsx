@@ -31,7 +31,7 @@ export default function TabLayout() {
         name="index"
         options={{
           title: "Manifest",
-          tabBarLabel: "MANIFEST",
+          tabBarLabel: "Manifest",
           tabBarIcon: ({ color, size }) => <Ionicons name="list-outline" size={size} color={color} />,
         }}
       />
@@ -39,7 +39,7 @@ export default function TabLayout() {
         name="settings"
         options={{
           title: "Settings",
-          tabBarLabel: "SETTINGS",
+          tabBarLabel: "Settings",
           tabBarIcon: ({ color, size }) => <Ionicons name="options-outline" size={size} color={color} />,
         }}
       />
