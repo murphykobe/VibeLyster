@@ -3,14 +3,15 @@ import { Stack, useRouter, useSegments } from "expo-router";
 import * as SecureStore from "expo-secure-store";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { useFonts } from "expo-font";
-import {
-  Archivo_400Regular,
-  Archivo_500Medium,
-  Archivo_600SemiBold,
-} from "@expo-google-fonts/archivo";
-import { ArchivoBlack_400Regular } from "@expo-google-fonts/archivo-black";
-import { SpaceMono_400Regular, SpaceMono_700Bold } from "@expo-google-fonts/space-mono";
-import { Fraunces_500Medium_Italic } from "@expo-google-fonts/fraunces";
+// Weight-level subpath imports: the package roots re-export every weight,
+// which would bundle multiple MB of unused fonts into the web export.
+import { Archivo_400Regular } from "@expo-google-fonts/archivo/400Regular";
+import { Archivo_500Medium } from "@expo-google-fonts/archivo/500Medium";
+import { Archivo_600SemiBold } from "@expo-google-fonts/archivo/600SemiBold";
+import { ArchivoBlack_400Regular } from "@expo-google-fonts/archivo-black/400Regular";
+import { SpaceMono_400Regular } from "@expo-google-fonts/space-mono/400Regular";
+import { SpaceMono_700Bold } from "@expo-google-fonts/space-mono/700Bold";
+import { Fraunces_500Medium_Italic } from "@expo-google-fonts/fraunces/500Medium_Italic";
 import { setTokenProvider } from "@/lib/api";
 import { ToastProvider } from "@/lib/toast";
 import { BackgroundTokenRefresh } from "@/lib/token-refresh";
