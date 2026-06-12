@@ -16,7 +16,9 @@ import type { Listing, Platform } from "@/lib/types";
 import { getPublishMode, type PublishMode } from "@/lib/publish-mode";
 import { getDisplayStatus } from "@/lib/types";
 import ListingCard from "@/components/ListingCard";
+import PublishReceipt from "@/components/PublishReceipt";
 import { theme, PLATFORM_CODES } from "@/lib/theme";
+import { kaChunk } from "@/lib/haptics";
 import { useToast } from "@/lib/toast";
 import { useFadeSlideIn, usePressScale } from "@/lib/motion";
 
@@ -38,6 +40,8 @@ export default function DashboardScreen() {
   const [bulkPlatforms, setBulkPlatforms] = useState<Set<Platform>>(new Set(["grailed", "depop"]));
   const [publishing, setPublishing] = useState(false);
   const [publishMode, setPublishMode] = useState<PublishMode>("live");
+  const [receipt, setReceipt] = useState<{ ids: string[]; platforms: Platform[] } | null>(null);
+  const pendingReceiptRef = useRef<{ ids: string[]; platforms: Platform[] } | null>(null);
   const listingsRef = useRef<Listing[]>([]);
   const publishPollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const publishPollTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -77,6 +81,12 @@ export default function DashboardScreen() {
   const stopPublishPolling = useCallback(() => {
     clearPublishPolling();
     setPublishing(false);
+    // The paper is done feeding: print the receipt.
+    if (pendingReceiptRef.current) {
+      setReceipt(pendingReceiptRef.current);
+      pendingReceiptRef.current = null;
+      kaChunk();
+    }
   }, [clearPublishPolling]);
 
   const hasPublishingListings = useCallback((items: Listing[]) => {
@@ -108,6 +118,9 @@ export default function DashboardScreen() {
     publishPollIntervalRef.current = setInterval(() => {
       void pollOnce();
     }, PUBLISH_POLL_INTERVAL_MS);
+
+    // Mock/fast publishes complete before the first tick — check right away.
+    void pollOnce();
 
     publishPollTimeoutRef.current = setTimeout(() => {
       stopPublishPolling();
@@ -194,6 +207,10 @@ export default function DashboardScreen() {
         return;
       }
 
+      pendingReceiptRef.current = {
+        ids: Array.from(selected),
+        platforms: Array.from(bulkPlatforms),
+      };
       setSelectMode(false);
       setSelected(new Set());
 
@@ -338,6 +355,18 @@ export default function DashboardScreen() {
           </View>
         }
       />
+
+      {receipt && (
+        <PublishReceipt
+          listings={listings.filter((l) => receipt.ids.includes(l.id))}
+          platforms={receipt.platforms}
+          onDone={() => setReceipt(null)}
+          onCaptureNext={() => {
+            setReceipt(null);
+            router.push("/capture");
+          }}
+        />
+      )}
 
       {!selectMode && (
         <View style={styles.footer}>
