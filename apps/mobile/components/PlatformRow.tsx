@@ -209,15 +209,17 @@ const styles = StyleSheet.create({
   },
   printingText: {
     fontFamily: theme.fonts.mono,
-    fontSize: 8,
+    fontSize: 9,
     letterSpacing: 0.5,
     color: theme.colors.textMuted,
   },
   actionBtn: {
     paddingHorizontal: theme.spacing.md,
-    paddingVertical: theme.spacing.sm,
+    paddingVertical: theme.spacing.md,
     minWidth: 86,
+    minHeight: 44,
     alignItems: "center",
+    justifyContent: "center",
   },
   actionText: {
     fontSize: 11,

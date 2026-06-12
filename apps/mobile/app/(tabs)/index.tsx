@@ -18,7 +18,7 @@ import { getDisplayStatus } from "@/lib/types";
 import ListingCard from "@/components/ListingCard";
 import PublishReceipt from "@/components/PublishReceipt";
 import { theme, PLATFORM_CODES } from "@/lib/theme";
-import { kaChunk } from "@/lib/haptics";
+import { kaChunk, click, misfeed } from "@/lib/haptics";
 import { useToast } from "@/lib/toast";
 import { useFadeSlideIn, usePressScale } from "@/lib/motion";
 
@@ -40,8 +40,10 @@ export default function DashboardScreen() {
   const [bulkPlatforms, setBulkPlatforms] = useState<Set<Platform>>(new Set(["grailed", "depop"]));
   const [publishing, setPublishing] = useState(false);
   const [publishMode, setPublishMode] = useState<PublishMode>("live");
-  const [receipt, setReceipt] = useState<{ ids: string[]; platforms: Platform[] } | null>(null);
-  const pendingReceiptRef = useRef<{ ids: string[]; platforms: Platform[] } | null>(null);
+  const [receipt, setReceipt] = useState<{ listings: Listing[]; platforms: Platform[]; mode: PublishMode } | null>(
+    null
+  );
+  const pendingReceiptRef = useRef<{ ids: string[]; platforms: Platform[]; mode: PublishMode } | null>(null);
   const listingsRef = useRef<Listing[]>([]);
   const publishPollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const publishPollTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -81,17 +83,35 @@ export default function DashboardScreen() {
   const stopPublishPolling = useCallback(() => {
     clearPublishPolling();
     setPublishing(false);
-    // The paper is done feeding: print the receipt.
-    if (pendingReceiptRef.current) {
-      setReceipt(pendingReceiptRef.current);
+    // The paper is done feeding: snapshot the batch and print the receipt.
+    const pending = pendingReceiptRef.current;
+    if (pending) {
       pendingReceiptRef.current = null;
-      kaChunk();
+      const batch = listingsRef.current.filter((l) => pending.ids.includes(l.id));
+      setReceipt({ listings: batch, platforms: pending.platforms, mode: pending.mode });
+
+      // Haptic matches the outcome, not just completion: all placements
+      // landed → ka-chunk; none landed → misfeed; mixed → click.
+      const placements = batch.flatMap((l) =>
+        pending.platforms.map((p) => (l.platform_listings ?? []).find((pl) => pl.platform === p)?.status)
+      );
+      const ok = placements.filter(
+        (s) => s === "live" || (pending.mode === "draft" && s === "pending")
+      ).length;
+      if (ok === placements.length && placements.length > 0) kaChunk();
+      else if (ok === 0) misfeed();
+      else click();
     }
   }, [clearPublishPolling]);
 
   const hasPublishingListings = useCallback((items: Listing[]) => {
-    return items.some((listing) =>
-      (listing.platform_listings ?? []).some((platformListing) => platformListing.status === "publishing")
+    // Scope to the in-flight batch: an unrelated listing stuck in
+    // "publishing" must not hold this receipt hostage for 120s.
+    const ids = pendingReceiptRef.current?.ids;
+    return items.some(
+      (listing) =>
+        (!ids || ids.includes(listing.id)) &&
+        (listing.platform_listings ?? []).some((platformListing) => platformListing.status === "publishing")
     );
   }, []);
 
@@ -168,16 +188,20 @@ export default function DashboardScreen() {
     }, 0);
   }, [listings]);
 
-  const filtered = listings.filter((l) => {
-    if (filter === "all") return true;
-    const status = getDisplayStatus(l);
-    if (filter === "draft") return status === "draft";
-    if (filter === "live") return status === "live" || status === "partially_live";
-    if (filter === "sold") return status === "sold";
-    return true;
-  });
+  const filtered = useMemo(
+    () =>
+      listings.filter((l) => {
+        if (filter === "all") return true;
+        const status = getDisplayStatus(l);
+        if (filter === "draft") return status === "draft";
+        if (filter === "live") return status === "live" || status === "partially_live";
+        if (filter === "sold") return status === "sold";
+        return true;
+      }),
+    [listings, filter]
+  );
 
-  const drafts = listings.filter((l) => getDisplayStatus(l) === "draft");
+  const drafts = useMemo(() => listings.filter((l) => getDisplayStatus(l) === "draft"), [listings]);
 
   function toggleSelect(id: string) {
     setSelected((prev) => {
@@ -203,6 +227,8 @@ export default function DashboardScreen() {
     try {
       const response = await bulkPublish(Array.from(selected), Array.from(bulkPlatforms), publishMode);
       if (!response.acknowledged) {
+        misfeed();
+        showToast("Bulk publish was not accepted. Try again.");
         setPublishing(false);
         return;
       }
@@ -210,6 +236,7 @@ export default function DashboardScreen() {
       pendingReceiptRef.current = {
         ids: Array.from(selected),
         platforms: Array.from(bulkPlatforms),
+        mode: publishMode,
       };
       setSelectMode(false);
       setSelected(new Set());
@@ -253,7 +280,11 @@ export default function DashboardScreen() {
           ))}
 
           {!selectMode && drafts.length > 0 && (
-            <Pressable style={styles.selectBtn} onPress={() => setSelectMode(true)}>
+            <Pressable
+              style={styles.selectBtn}
+              hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+              onPress={() => setSelectMode(true)}
+            >
               <Text style={styles.selectBtnText}>SELECT</Text>
             </Pressable>
           )}
@@ -264,6 +295,7 @@ export default function DashboardScreen() {
         <View style={styles.bulkWrap}>
           <View style={styles.selectionBar}>
             <Pressable
+              hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
               onPress={() => {
                 setSelectMode(false);
                 setSelected(new Set());
@@ -358,8 +390,9 @@ export default function DashboardScreen() {
 
       {receipt && (
         <PublishReceipt
-          listings={listings.filter((l) => receipt.ids.includes(l.id))}
+          listings={receipt.listings}
           platforms={receipt.platforms}
+          mode={receipt.mode}
           onDone={() => setReceipt(null)}
           onCaptureNext={() => {
             setReceipt(null);
@@ -444,7 +477,9 @@ const styles = StyleSheet.create({
   },
   tab: {
     paddingHorizontal: theme.spacing.sm,
-    paddingVertical: 5,
+    paddingVertical: theme.spacing.sm,
+    minHeight: 36,
+    justifyContent: "center",
     borderWidth: 1,
     borderColor: theme.colors.border,
     backgroundColor: theme.colors.bg,

@@ -125,16 +125,18 @@ test.describe("Publish & Delist", () => {
     // Bulk publish (live mode button copy)
     await page.getByText("PRINT LISTINGS", { exact: true }).click();
 
-    // The cross-post receipt prints when publishing completes
+    // The cross-post receipt prints when publishing completes.
+    // Totals count placements (listing × platform): 2 listings × 2 platforms.
     await expect(page.getByText("CROSS-POST RECEIPT")).toBeVisible({ timeout: 10000 });
-    await expect(page.getByText("2/2 ITEMS LIVE")).toBeVisible({ timeout: 4000 });
-    expect(await page.getByText("LIVE ✓").count()).toBeGreaterThanOrEqual(2);
+    await expect(page.getByText("4/4 LIVE")).toBeVisible({ timeout: 4000 });
+    await expect(page.getByText("LIVE ✓")).toHaveCount(4);
 
     // Done dismisses the receipt; manifest reflects the published state
     await page.getByText("Done", { exact: true }).click();
     await expect(page.getByText("CROSS-POST RECEIPT")).not.toBeVisible({ timeout: 4000 });
     await expect(page.getByText(/2 LIVE/).first()).toBeVisible({ timeout: 8000 });
-    await expect(page.getByText(/LISTED/).first()).toBeVisible({ timeout: 4000 });
+    // Two seeded listings at $120, both live — pins the live-only sum + formatting
+    await expect(page.getByText("$240 LISTED")).toBeVisible({ timeout: 4000 });
   });
 
   test("receipt Capture Next routes to the capture screen", async ({ page, request }) => {
@@ -149,8 +151,11 @@ test.describe("Publish & Delist", () => {
     await page.getByText("PRINT LISTINGS", { exact: true }).click();
 
     await expect(page.getByText("CROSS-POST RECEIPT")).toBeVisible({ timeout: 10000 });
-    await page.getByText(/capture next/i).click();
+    // Only grailed is connected while the default bulk set includes depop:
+    // 1 of 2 placements lands, and the receipt must say so.
+    await expect(page.getByText("1/2 LIVE")).toBeVisible({ timeout: 4000 });
 
+    await page.getByText(/capture next/i).click();
     await expect(page).toHaveURL(/\/capture/, { timeout: 6000 });
   });
 });

@@ -175,7 +175,11 @@ export default function CaptureScreen() {
             {photos.map((photo, index) => (
               <View key={`${photo.uri}-${index}`} style={styles.photoWrap}>
                 <Image source={{ uri: photo.uri }} style={styles.photoThumb} />
-                <Pressable style={styles.removePhoto} onPress={() => removePhoto(index)}>
+                <Pressable
+                  style={styles.removePhoto}
+                  hitSlop={{ top: 11, bottom: 11, left: 11, right: 11 }}
+                  onPress={() => removePhoto(index)}
+                >
                   <Text style={styles.removePhotoText}>×</Text>
                 </Pressable>
               </View>
@@ -212,7 +216,7 @@ export default function CaptureScreen() {
 
         {busy && (
           <View style={styles.statusBox}>
-            <ActivityIndicator color={theme.colors.accent} />
+            <ActivityIndicator color={theme.colors.ink} />
             <Text style={styles.statusText}>
               {state === "uploading"
                 ? `FEEDING PHOTOS (${uploadProgress}/${photos.length})`
@@ -253,6 +257,8 @@ const styles = StyleSheet.create({
   },
   backBtn: {
     minWidth: 48,
+    minHeight: 44,
+    justifyContent: "center",
   },
   backText: {
     color: theme.colors.textMuted,
@@ -326,10 +332,9 @@ const styles = StyleSheet.create({
     right: 6,
     width: 22,
     height: 22,
-    borderRadius: 11,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: "rgba(31, 36, 48, 0.78)",
+    backgroundColor: "rgba(28, 26, 23, 0.78)",
   },
   removePhotoText: {
     color: theme.colors.white,

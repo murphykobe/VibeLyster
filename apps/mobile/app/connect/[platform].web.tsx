@@ -130,7 +130,8 @@ const styles = StyleSheet.create({
     borderRadius: theme.radius.md,
     paddingVertical: 12,
     alignItems: "center",
-    ...theme.shadow.raised,  },
+    ...theme.shadow.raised,
+  },
   buttonText: {
     color: theme.colors.white,
     fontFamily: theme.fonts.sansBold,

@@ -717,7 +717,8 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     paddingHorizontal: 16,
     paddingVertical: 11,
-    ...theme.shadow.raised,  },
+    ...theme.shadow.raised,
+  },
   magicLinkButtonDisabled: {
     opacity: 0.55,
   },

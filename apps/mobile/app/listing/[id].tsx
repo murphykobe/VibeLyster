@@ -500,7 +500,7 @@ export default function ListingDetailScreen() {
   if (loading) {
     return (
       <View style={styles.center}>
-        <ActivityIndicator size="large" color={theme.colors.accent} />
+        <ActivityIndicator size="large" color={theme.colors.ink} />
       </View>
     );
   }
@@ -523,7 +523,7 @@ export default function ListingDetailScreen() {
 
       <ScrollView
         contentContainerStyle={styles.scroll}
-        refreshControl={<RefreshControl refreshing={loading} onRefresh={load} tintColor={theme.colors.accent} />}
+        refreshControl={<RefreshControl refreshing={loading} onRefresh={load} tintColor={theme.colors.ink} />}
       >
         <View style={styles.hero}>
           <Text style={styles.heroKicker}>PROOF №{String(listing.id).replace(/-/g, "").slice(-4).toUpperCase()}</Text>
@@ -843,7 +843,11 @@ export default function ListingDetailScreen() {
         <View style={styles.card}>
           <View style={styles.publishHeader}>
             <Text style={styles.sectionTitle}>Marketplace Publish</Text>
-            <Pressable onPress={handleSync} disabled={syncing}>
+            <Pressable
+              onPress={handleSync}
+              disabled={syncing}
+              hitSlop={{ top: 14, bottom: 14, left: 14, right: 14 }}
+            >
               <Text style={styles.syncBtn}>{syncing ? "Syncing..." : "Refresh"}</Text>
             </Pressable>
           </View>
@@ -942,6 +946,8 @@ const styles = StyleSheet.create({
   },
   backBtn: {
     minWidth: 52,
+    minHeight: 44,
+    justifyContent: "center",
   },
   backText: {
     color: theme.colors.textMuted,
@@ -981,20 +987,24 @@ const styles = StyleSheet.create({
     fontFamily: theme.fonts.sans,
     fontSize: 13,
   },
+  // Printed system line, not a filled banner — accent is for actions only.
   statusBanner: {
     marginTop: 10,
     flexDirection: "row",
     alignItems: "center",
     gap: 8,
-    borderRadius: theme.radius.sm,
-    backgroundColor: theme.colors.accent,
+    backgroundColor: theme.colors.surface,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    borderLeftWidth: 3,
+    borderLeftColor: theme.colors.ballpoint,
     paddingHorizontal: 12,
     paddingVertical: 10,
   },
   statusBannerText: {
     flex: 1,
-    color: theme.colors.white,
-    fontFamily: theme.fonts.sansBold,
+    color: theme.colors.text,
+    fontFamily: theme.fonts.sansMedium,
     fontSize: 12,
   },
   errorBanner: {
@@ -1018,7 +1028,7 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
   },
   verificationBadgeText: {
-    color: theme.colors.accent,
+    color: theme.colors.warning,
     fontFamily: theme.fonts.sansBold,
     fontSize: 12,
     textTransform: "uppercase",
@@ -1086,13 +1096,16 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   chip: {
-    borderRadius: theme.radius.sm,
-    backgroundColor: theme.colors.surfaceStrong,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    backgroundColor: theme.colors.surface,
     paddingHorizontal: 12,
     paddingVertical: 8,
   },
+  // Selection is solid ink, matching the dashboard tabs — accent means "act".
   chipActive: {
-    backgroundColor: theme.colors.accent,
+    backgroundColor: theme.colors.ink,
+    borderColor: theme.colors.ink,
   },
   chipText: {
     color: theme.colors.textMuted,
@@ -1100,7 +1113,7 @@ const styles = StyleSheet.create({
     fontSize: 12,
   },
   chipTextActive: {
-    color: theme.colors.white,
+    color: theme.colors.bg,
   },
   advancedToggle: {
     borderRadius: theme.radius.sm,
@@ -1137,22 +1150,25 @@ const styles = StyleSheet.create({
   toggleLabelActive: {
     color: theme.colors.accent,
   },
+  // Square stamp-style toggle — paper has corners, and this is not a native control.
   toggleTrack: {
     width: 42,
     height: 24,
-    borderRadius: 999,
-    backgroundColor: theme.colors.border,
+    borderWidth: 1,
+    borderColor: theme.colors.ink,
+    backgroundColor: theme.colors.surface,
     padding: 3,
     justifyContent: "center",
   },
   toggleTrackActive: {
-    backgroundColor: theme.colors.accent,
+    backgroundColor: theme.colors.ink,
   },
   toggleThumb: {
-    width: 18,
-    height: 18,
-    borderRadius: 999,
-    backgroundColor: theme.colors.white,
+    width: 16,
+    height: 16,
+    backgroundColor: theme.colors.bg,
+    borderWidth: 1,
+    borderColor: theme.colors.ink,
   },
   toggleThumbActive: {
     alignSelf: "flex-end",

@@ -99,7 +99,7 @@ function MockLayout() {
 }
 
 export default function RootLayout() {
-  const [fontsLoaded] = useFonts({
+  const [fontsLoaded, fontError] = useFonts({
     Archivo: Archivo_400Regular,
     "Archivo-Medium": Archivo_500Medium,
     "Archivo-SemiBold": Archivo_600SemiBold,
@@ -109,7 +109,8 @@ export default function RootLayout() {
     "Fraunces-Italic": Fraunces_500Medium_Italic,
   });
 
-  if (!fontsLoaded) return null;
+  // A failed font load must degrade to system fonts, not a permanent blank screen.
+  if (!fontsLoaded && !fontError) return null;
 
   if (mockMode) {
     return (

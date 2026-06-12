@@ -5,6 +5,9 @@
  * Paper has corners: radius is 0 everywhere.
  */
 
+/** "Ribbon Black" — single source for every ink-derived literal. */
+const INK = "#1C1A17";
+
 const fonts = {
   /** UI workhorse — Archivo, the blank-label grotesk */
   sans: "Archivo",
@@ -26,12 +29,16 @@ export const theme = {
     surface: "#FAF7EE",
     surfaceStrong: "#E9E3D2",
     /** "Ribbon Black" — warm thermal-printer ink */
-    text: "#1C1A17",
+    text: INK,
     textMuted: "#6E675C",
     /** Hairline rules, like printed lines on a wash tag */
     border: "rgba(28, 26, 23, 0.30)",
     borderSoft: "rgba(28, 26, 23, 0.14)",
-    ink: "#1C1A17",
+    ink: INK,
+    /** Translucent label stock — stamp backdrops over photos */
+    bgTranslucent: "rgba(242, 238, 227, 0.72)",
+    /** Ink scrim behind overlays (receipt) */
+    scrim: "rgba(28, 26, 23, 0.45)",
     /** "Price Gun Orange" — primary actions ONLY, never decorative */
     accent: "#FF4D00",
     accentSoft: "#FFE7DB",
@@ -71,7 +78,7 @@ export const theme = {
     },
     raisedStrong: {
       borderWidth: 1.5,
-      borderColor: "#1C1A17",
+      borderColor: INK,
     },
     inset: {
       borderWidth: 1,
@@ -86,3 +93,6 @@ export const PLATFORM_CODES: Record<string, string> = {
   ebay: "EBY",
   depop: "DPP",
 };
+
+/** Canonical platform list, derived from the print codes. */
+export const PLATFORMS = Object.keys(PLATFORM_CODES);

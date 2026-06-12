@@ -1,103 +1,114 @@
-import { View, Text, StyleSheet, Pressable, Animated } from "react-native";
+import { useRef } from "react";
+import { View, Text, StyleSheet, Pressable, Animated, Modal, ScrollView } from "react-native";
 import type { Listing, Platform } from "@/lib/types";
+import type { PublishMode } from "@/lib/publish-mode";
 import { theme, PLATFORM_CODES } from "@/lib/theme";
 import { useFadeSlideIn } from "@/lib/motion";
 
 type Props = {
+  /** Snapshot of the published listings taken when polling finished — not live state. */
   listings: Listing[];
   platforms: Platform[];
+  mode: PublishMode;
   onDone: () => void;
   onCaptureNext: () => void;
 };
 
-function platformStatus(listing: Listing, platform: Platform): string {
+type PlacementKind = "ok" | "failed" | "printing" | "other";
+
+function placementStatus(listing: Listing, platform: Platform, mode: PublishMode): { label: string; kind: PlacementKind } {
   const pl = (listing.platform_listings ?? []).find((x) => x.platform === platform);
-  if (!pl) return "—";
-  if (pl.status === "live") return "LIVE ✓";
-  if (pl.status === "publishing") return "PRINTING…";
-  if (pl.status === "failed") return "FAILED ✗";
-  return pl.status.toUpperCase();
+  if (!pl) return { label: "—", kind: "other" };
+  if (pl.status === "live") return { label: "LIVE ✓", kind: "ok" };
+  // In draft mode a successful publish lands on "pending" with a remote draft.
+  if (pl.status === "pending" && mode === "draft") return { label: "FILED ✓", kind: "ok" };
+  if (pl.status === "publishing") return { label: "PRINTING…", kind: "printing" };
+  if (pl.status === "failed") return { label: "FAILED ✗", kind: "failed" };
+  return { label: pl.status.toUpperCase(), kind: "other" };
 }
 
 /**
  * The torn-edge receipt: publishing is printing, and this is what comes
- * out of the machine when a bulk publish finishes.
+ * out of the machine when a bulk publish finishes. Totals count placements
+ * (listing × platform) so partial failures are never reported as full success.
  */
-export default function PublishReceipt({ listings, platforms, onDone, onCaptureNext }: Props) {
+export default function PublishReceipt({ listings, platforms, mode, onDone, onCaptureNext }: Props) {
   const feed = useFadeSlideIn({ y: -24, duration: 350 });
-  const liveCount = listings.filter((l) =>
-    (l.platform_listings ?? []).some((pl) => platforms.includes(pl.platform as Platform) && pl.status === "live")
-  ).length;
-  const now = new Date();
-  const stamp = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}:${String(
-    now.getSeconds()
-  ).padStart(2, "0")}`;
+  // A receipt is printed once: the timestamp must not drift on re-render.
+  const stampRef = useRef(
+    new Date().toLocaleTimeString("en-US", { hour12: false, hour: "2-digit", minute: "2-digit", second: "2-digit" })
+  );
+
+  const placements = listings.flatMap((listing) =>
+    platforms.map((platform) => placementStatus(listing, platform, mode))
+  );
+  const okCount = placements.filter((p) => p.kind === "ok").length;
+  const stillPrinting = placements.some((p) => p.kind === "printing");
+  const totalLabel = mode === "draft" ? "FILED" : "LIVE";
 
   return (
-    <View style={styles.overlay}>
-      <Animated.View style={[styles.receipt, feed]}>
-        <Text style={styles.head}>VIBELYSTER</Text>
-        <Text style={styles.sub}>CROSS-POST RECEIPT</Text>
-        <View style={styles.rule} />
-        {listings.map((listing) => (
-          <View key={listing.id} style={styles.item}>
-            <Text style={styles.itemTitle} numberOfLines={1}>
-              {(listing.title || "UNTITLED").toUpperCase()}
-            </Text>
-            {platforms.map((platform) => (
-              <View key={platform} style={styles.line}>
-                <Text style={styles.lineText}>{PLATFORM_CODES[platform] ?? platform.toUpperCase()}</Text>
-                <Text
-                  style={[
-                    styles.lineText,
-                    platformStatus(listing, platform).startsWith("FAILED") && styles.lineFailed,
-                  ]}
-                >
-                  {platformStatus(listing, platform)}
+    <Modal transparent visible animationType="none" onRequestClose={onDone} statusBarTranslucent>
+      <View style={styles.overlay} accessibilityViewIsModal>
+        <Animated.View style={[styles.receipt, feed]}>
+          <Text style={styles.head}>VIBELYSTER</Text>
+          <Text style={styles.sub}>CROSS-POST RECEIPT</Text>
+          <View style={styles.rule} />
+          {/* Long batches scroll inside the receipt so Done/Capture Next stay reachable. */}
+          <ScrollView style={styles.itemScroll}>
+            {listings.map((listing) => (
+              <View key={listing.id} style={styles.item}>
+                <Text style={styles.itemTitle} numberOfLines={1}>
+                  {(listing.title || "UNTITLED").toUpperCase()}
                 </Text>
+                {platforms.map((platform) => {
+                  const placement = placementStatus(listing, platform, mode);
+                  return (
+                    <View key={platform} style={styles.line}>
+                      <Text style={styles.lineText}>{PLATFORM_CODES[platform] ?? platform.toUpperCase()}</Text>
+                      <Text style={[styles.lineText, placement.kind === "failed" && styles.lineFailed]}>
+                        {placement.label}
+                      </Text>
+                    </View>
+                  );
+                })}
               </View>
             ))}
+          </ScrollView>
+          <View style={styles.rule} />
+          <View style={styles.line}>
+            <Text style={styles.totalText}>
+              {okCount}/{placements.length} {totalLabel}
+            </Text>
+            <Text style={styles.totalText}>{stampRef.current}</Text>
           </View>
-        ))}
-        <View style={styles.rule} />
-        <View style={styles.line}>
-          <Text style={styles.totalText}>
-            {liveCount}/{listings.length} {listings.length === 1 ? "ITEM" : "ITEMS"} LIVE
-          </Text>
-          <Text style={styles.totalText}>{stamp}</Text>
-        </View>
-        <Text style={styles.keep}>– KEEP THIS RECEIPT –</Text>
-        <View style={styles.tornEdge}>
-          {Array.from({ length: 14 }).map((_, i) => (
-            <View key={i} style={styles.tooth} />
-          ))}
-        </View>
-      </Animated.View>
+          <Text style={styles.keep}>{stillPrinting ? "– STILL PRINTING · PULL TO REFRESH –" : "– KEEP THIS RECEIPT –"}</Text>
+          <View style={styles.tornEdge}>
+            {Array.from({ length: 14 }).map((_, i) => (
+              <View key={i} style={styles.tooth} />
+            ))}
+          </View>
+        </Animated.View>
 
-      <View style={styles.actions}>
-        <Pressable style={styles.secondaryBtn} onPress={onDone}>
-          <Text style={styles.secondaryText}>Done</Text>
-        </Pressable>
-        <Pressable style={styles.primaryBtn} onPress={onCaptureNext}>
-          <Text style={styles.primaryText}>◉ Capture Next</Text>
-        </Pressable>
+        <View style={styles.actions}>
+          <Pressable style={styles.secondaryBtn} onPress={onDone}>
+            <Text style={styles.secondaryText}>Done</Text>
+          </Pressable>
+          <Pressable style={styles.primaryBtn} onPress={onCaptureNext}>
+            <Text style={styles.primaryText}>◉ Capture Next</Text>
+          </Pressable>
+        </View>
       </View>
-    </View>
+    </Modal>
   );
 }
 
 const styles = StyleSheet.create({
   overlay: {
-    position: "absolute",
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: "rgba(28, 26, 23, 0.45)",
+    flex: 1,
+    backgroundColor: theme.colors.scrim,
     alignItems: "center",
     justifyContent: "center",
     paddingHorizontal: theme.spacing.xl,
-    zIndex: 100,
   },
   receipt: {
     width: "100%",
@@ -124,11 +135,19 @@ const styles = StyleSheet.create({
     color: theme.colors.textMuted,
     marginTop: 2,
   },
+  // iOS only renders dashed borders when uniform on all sides — a thin
+  // clipped box keeps the dashed top edge visible cross-platform.
   rule: {
-    borderBottomWidth: 1,
+    height: 2,
+    overflow: "hidden",
+    borderWidth: 1,
     borderStyle: "dashed",
-    borderBottomColor: theme.colors.border,
+    borderColor: theme.colors.border,
     marginVertical: theme.spacing.md,
+  },
+  itemScroll: {
+    maxHeight: 320,
+    flexGrow: 0,
   },
   item: {
     marginBottom: theme.spacing.md,
@@ -190,13 +209,16 @@ const styles = StyleSheet.create({
   },
   secondaryBtn: {
     flex: 1,
+    backgroundColor: theme.colors.surface,
     borderWidth: 1.5,
-    borderColor: theme.colors.bg,
+    borderColor: theme.colors.ink,
     alignItems: "center",
+    justifyContent: "center",
+    minHeight: 48,
     paddingVertical: theme.spacing.md,
   },
   secondaryText: {
-    color: theme.colors.bg,
+    color: theme.colors.ink,
     fontFamily: theme.fonts.display,
     fontSize: 12,
     textTransform: "uppercase",
@@ -208,6 +230,8 @@ const styles = StyleSheet.create({
     borderWidth: 1.5,
     borderColor: theme.colors.ink,
     alignItems: "center",
+    justifyContent: "center",
+    minHeight: 48,
     paddingVertical: theme.spacing.md,
   },
   primaryText: {

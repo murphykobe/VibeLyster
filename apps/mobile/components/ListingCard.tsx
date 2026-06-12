@@ -1,10 +1,10 @@
 import { View, Text, StyleSheet, Pressable, Image, Animated, ActivityIndicator } from "react-native";
 import type { Listing, Platform } from "@/lib/types";
 import { getDisplayStatus } from "@/lib/types";
-import { theme, PLATFORM_CODES } from "@/lib/theme";
+import { theme, PLATFORM_CODES, PLATFORMS as PLATFORM_KEYS } from "@/lib/theme";
 import { useFadeSlideIn, usePressScale } from "@/lib/motion";
 
-const PLATFORMS: Platform[] = ["grailed", "ebay", "depop"] as Platform[];
+const PLATFORMS = PLATFORM_KEYS as Platform[];
 
 type Props = {
   listing: Listing;
@@ -141,7 +141,7 @@ export default function ListingCard({
 
         {selectable && (
           <View style={[styles.checkbox, selected && styles.checkboxSelected]}>
-            {selected && <Text style={styles.checkmark}>✕</Text>}
+            {selected && <Text style={styles.checkmark}>✓</Text>}
           </View>
         )}
       </Pressable>
@@ -180,8 +180,8 @@ const styles = StyleSheet.create({
   },
   thumbPlaceholderText: {
     fontFamily: theme.fonts.mono,
-    fontSize: 7,
-    lineHeight: 9,
+    fontSize: 9,
+    lineHeight: 11,
     textAlign: "center",
     color: theme.colors.textMuted,
   },
@@ -193,7 +193,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 3,
     paddingVertical: 0,
     transform: [{ rotate: "-12deg" }],
-    backgroundColor: "rgba(242, 238, 227, 0.72)",
+    backgroundColor: theme.colors.bgTranslucent,
   },
   stampDraft: { borderColor: theme.colors.textMuted },
   stampSold: { borderColor: theme.colors.stamp },
@@ -291,7 +291,7 @@ const styles = StyleSheet.create({
   },
   statusLine: {
     fontFamily: theme.fonts.mono,
-    fontSize: 8,
+    fontSize: 9,
     letterSpacing: 0.5,
     color: theme.colors.textMuted,
   },

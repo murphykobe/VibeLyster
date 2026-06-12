@@ -7,12 +7,12 @@ export default function TabLayout() {
     <Tabs
       screenOptions={{
         headerShown: false,
+        // No fixed height/paddingBottom: let react-navigation size the bar
+        // from safe-area insets (home-indicator iPhones vs SE-class devices).
         tabBarStyle: {
-          height: 78,
           backgroundColor: theme.colors.bg,
           borderTopWidth: 1.5,
           borderTopColor: theme.colors.ink,
-          paddingBottom: 16,
           paddingTop: 8,
           elevation: 0,
           shadowOpacity: 0,
