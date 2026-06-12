@@ -376,9 +376,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     paddingVertical: 15,
-    ...theme.shadow.raisedStrong,
-    shadowColor: "#6C63FF",
-  },
+    ...theme.shadow.raisedStrong,  },
   generateBtnDisabled: {
     opacity: 0.45,
   },
@@ -426,9 +424,7 @@ const styles = StyleSheet.create({
     backgroundColor: theme.colors.accent,
     alignItems: "center",
     paddingVertical: 14,
-    ...theme.shadow.raisedStrong,
-    shadowColor: "#6C63FF",
-  },
+    ...theme.shadow.raisedStrong,  },
   donePrimaryText: {
     color: theme.colors.white,
     fontFamily: theme.fonts.sansBold,

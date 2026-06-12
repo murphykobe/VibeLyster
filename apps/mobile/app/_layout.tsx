@@ -2,13 +2,15 @@ import { useEffect } from "react";
 import { Stack, useRouter, useSegments } from "expo-router";
 import * as SecureStore from "expo-secure-store";
 import { SafeAreaProvider } from "react-native-safe-area-context";
+import { useFonts } from "expo-font";
 import {
-  useFonts,
-  PlusJakartaSans_400Regular,
-  PlusJakartaSans_500Medium,
-  PlusJakartaSans_600SemiBold,
-  PlusJakartaSans_800ExtraBold,
-} from "@expo-google-fonts/plus-jakarta-sans";
+  Archivo_400Regular,
+  Archivo_500Medium,
+  Archivo_600SemiBold,
+} from "@expo-google-fonts/archivo";
+import { ArchivoBlack_400Regular } from "@expo-google-fonts/archivo-black";
+import { SpaceMono_400Regular, SpaceMono_700Bold } from "@expo-google-fonts/space-mono";
+import { Fraunces_500Medium_Italic } from "@expo-google-fonts/fraunces";
 import { setTokenProvider } from "@/lib/api";
 import { ToastProvider } from "@/lib/toast";
 import { BackgroundTokenRefresh } from "@/lib/token-refresh";
@@ -98,10 +100,13 @@ function MockLayout() {
 
 export default function RootLayout() {
   const [fontsLoaded] = useFonts({
-    PlusJakartaSans: PlusJakartaSans_400Regular,
-    "PlusJakartaSans-Medium": PlusJakartaSans_500Medium,
-    "PlusJakartaSans-SemiBold": PlusJakartaSans_600SemiBold,
-    "PlusJakartaSans-ExtraBold": PlusJakartaSans_800ExtraBold,
+    Archivo: Archivo_400Regular,
+    "Archivo-Medium": Archivo_500Medium,
+    "Archivo-SemiBold": Archivo_600SemiBold,
+    "Archivo-Black": ArchivoBlack_400Regular,
+    SpaceMono: SpaceMono_400Regular,
+    "SpaceMono-Bold": SpaceMono_700Bold,
+    "Fraunces-Italic": Fraunces_500Medium_Italic,
   });
 
   if (!fontsLoaded) return null;

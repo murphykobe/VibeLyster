@@ -60,10 +60,11 @@ export function useFadeSlideIn({
   } as const;
 }
 
+// PAPER TRAIL: motion is mechanical, not fluid — no bounce, no overshoot.
 export function usePressScale({
   pressedScale = 0.97,
-  speed = 24,
-  bounciness = 4,
+  speed = 28,
+  bounciness = 0,
 }: PressScaleOptions = {}) {
   const scale = useRef(new Animated.Value(1)).current;
 

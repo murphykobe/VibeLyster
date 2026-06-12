@@ -6,46 +6,40 @@ export default function TabLayout() {
   return (
     <Tabs
       screenOptions={{
-        headerStyle: { backgroundColor: theme.colors.bg },
-        headerTintColor: theme.colors.text,
-        headerShadowVisible: false,
-        headerTitleStyle: {
-          fontFamily: theme.fonts.display,
-          fontSize: 22,
-        },
+        headerShown: false,
         tabBarStyle: {
-          height: 84,
+          height: 78,
           backgroundColor: theme.colors.bg,
-          borderTopWidth: 0,
-          paddingBottom: 18,
+          borderTopWidth: 1.5,
+          borderTopColor: theme.colors.ink,
+          paddingBottom: 16,
           paddingTop: 8,
-          shadowColor: "#A3B1C6",
-          shadowOpacity: 0.4,
-          shadowRadius: 12,
-          shadowOffset: { width: 0, height: -4 },
-          elevation: 8,
+          elevation: 0,
+          shadowOpacity: 0,
         },
-        tabBarActiveTintColor: theme.colors.accent,
+        tabBarActiveTintColor: theme.colors.ink,
         tabBarInactiveTintColor: theme.colors.textMuted,
         tabBarLabelStyle: {
-          fontFamily: theme.fonts.sansBold,
-          fontSize: 12,
+          fontFamily: theme.fonts.mono,
+          fontSize: 10,
+          letterSpacing: 1,
+          textTransform: "uppercase",
         },
       }}
     >
       <Tabs.Screen
         name="index"
         options={{
-          title: "Closet",
-          tabBarLabel: "Listings",
-          tabBarIcon: ({ color, size }) => <Ionicons name="albums-outline" size={size} color={color} />,
+          title: "Manifest",
+          tabBarLabel: "MANIFEST",
+          tabBarIcon: ({ color, size }) => <Ionicons name="list-outline" size={size} color={color} />,
         }}
       />
       <Tabs.Screen
         name="settings"
         options={{
-          title: "Profile",
-          tabBarLabel: "Settings",
+          title: "Settings",
+          tabBarLabel: "SETTINGS",
           tabBarIcon: ({ color, size }) => <Ionicons name="options-outline" size={size} color={color} />,
         }}
       />

@@ -1167,9 +1167,7 @@ const styles = StyleSheet.create({
     backgroundColor: theme.colors.accent,
     alignItems: "center",
     paddingVertical: 12,
-    ...theme.shadow.raised,
-    shadowColor: "#6C63FF",
-  },
+    ...theme.shadow.raised,  },
   publishAllText: {
     color: theme.colors.white,
     fontFamily: theme.fonts.sansBold,
@@ -1218,9 +1216,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     paddingVertical: 14,
     minHeight: 52,
-    ...theme.shadow.raised,
-    shadowColor: "#6C63FF",
-  },
+    ...theme.shadow.raised,  },
   bottomSaveText: {
     color: theme.colors.white,
     fontFamily: theme.fonts.sansBold,

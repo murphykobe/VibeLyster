@@ -154,9 +154,7 @@ const styles = StyleSheet.create({
   },
   actionPrimary: {
     backgroundColor: theme.colors.accent,
-    ...theme.shadow.raised,
-    shadowColor: "#6C63FF",
-    shadowOpacity: 0.3,
+    ...theme.shadow.raised,    shadowOpacity: 0.3,
   },
   actionPrimaryText: {
     color: theme.colors.white,

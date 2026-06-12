@@ -19,10 +19,11 @@ export function useToast() {
 const DURATION = 3000;
 const ANIM_MS = 250;
 
-const TYPE_STYLES: Record<ToastType, { bg: string; color: string }> = {
-  error: { bg: "#DC2626", color: "#FFFFFF" },
-  success: { bg: "#16A34A", color: "#FFFFFF" },
-  info: { bg: "#3D4852", color: "#FFFFFF" },
+// Printed system messages — left rule + mono prefix, not colored bubbles.
+const TYPE_STYLES: Record<ToastType, { rule: string; prefix: string }> = {
+  error: { rule: theme.colors.stamp, prefix: "FAIL" },
+  success: { rule: theme.colors.success, prefix: "OK" },
+  info: { rule: theme.colors.ballpoint, prefix: "INFO" },
 };
 
 function Toast({ entry, onDone }: { entry: ToastEntry; onDone: (id: number) => void }) {
@@ -45,11 +46,12 @@ function Toast({ entry, onDone }: { entry: ToastEntry; onDone: (id: number) => v
     })()
   );
 
-  const colors = TYPE_STYLES[entry.type];
+  const print = TYPE_STYLES[entry.type];
 
   return (
-    <Animated.View style={[styles.toast, { backgroundColor: colors.bg, opacity, transform: [{ translateY }] }]}>
-      <Text style={[styles.toastText, { color: colors.color }]}>{entry.message}</Text>
+    <Animated.View style={[styles.toast, { borderLeftColor: print.rule, opacity, transform: [{ translateY }] }]}>
+      <Text style={[styles.toastPrefix, { color: print.rule }]}>{print.prefix}</Text>
+      <Text style={styles.toastText}>{entry.message}</Text>
     </Animated.View>
   );
 }
@@ -90,15 +92,27 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   toast: {
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderRadius: theme.radius.md,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: theme.spacing.sm,
+    paddingHorizontal: theme.spacing.md,
+    paddingVertical: theme.spacing.md,
     width: "100%",
-    ...theme.shadow.raisedStrong,
+    backgroundColor: theme.colors.surface,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    borderLeftWidth: 3,
+  },
+  toastPrefix: {
+    fontFamily: theme.fonts.monoBold,
+    fontSize: 11,
+    letterSpacing: 0.5,
   },
   toastText: {
-    fontFamily: theme.fonts.sansBold,
+    flex: 1,
+    fontFamily: theme.fonts.sansMedium,
     fontSize: 13,
     lineHeight: 18,
+    color: theme.colors.text,
   },
 });
