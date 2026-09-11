@@ -21,6 +21,8 @@ function cleanArgs(args) {
     "--payment-policy",
     "--return-policy",
     "--sku",
+    "--limit",
+    "--page",
   ];
   let i = 0;
   while (i < args.length) {
@@ -54,18 +56,20 @@ Commands:
   policies                     List fulfillment/payment/return policies
   locations                    List merchant locations
   upload <image-path>          Upload image, returns eBay-hosted URL
+  active                       List active Seller Hub listings
   create <json-file>           Create inventory item + offer draft
                                [--sku <sku>] [--fulfillment-policy <id>]
                                [--payment-policy <id>] [--return-policy <id>]
   publish <offerId>            Publish offer to a live listing
-  listings                     List inventory items
+  listings                     List Inventory API items
   listing <sku>                View inventory item + offer details
   edit <sku> <json-file>       Update inventory item + offer
   delete <sku>                 Withdraw offer and delete inventory item
 
 Auth:
   Set EBAY_APP_ID, EBAY_CERT_ID, and EBAY_RU_NAME, then run "ebay login".
-  Optional: EBAY_REFRESH_TOKEN for headless use, EBAY_DEV_ID for image upload,
+  The CLI marks OAuth state so the shared callback preserves the code in the URL.
+  Optional: EBAY_REFRESH_TOKEN for headless use, EBAY_DEV_ID for Trading API calls,
   EBAY_SANDBOX=true for sandbox endpoints.
 `);
 }
@@ -124,6 +128,25 @@ function printPolicies(policies) {
     console.log(`  ${policy.name} (${policy.returnPolicyId})`);
   }
   if (!policies.return.length) console.log("  No return policies found.");
+}
+
+function printActiveListings(result) {
+  if (!result.listings.length) {
+    console.log("No active listings found.");
+    return;
+  }
+
+  for (const item of result.listings) {
+    const price = item.price ? `${item.currency} ${item.price}` : "no price";
+    const watchers = `${item.watchCount} watcher${item.watchCount === 1 ? "" : "s"}`;
+    console.log(`[${item.itemId}] ${item.title}`);
+    console.log(`  ${price} · Qty ${item.quantityAvailable} · ${watchers}`);
+    if (item.url) console.log(`  ${item.url}`);
+  }
+
+  if (result.totalEntries) {
+    console.log(`\nShowing ${result.listings.length} of ${result.totalEntries} active listings.`);
+  }
 }
 
 async function main() {
@@ -197,6 +220,14 @@ async function main() {
           const status = location.merchantLocationStatus || location.status || "";
           console.log(`${key}${status ? ` — ${status}` : ""}`);
         }
+        break;
+      }
+
+      case "active": {
+        printActiveListings(await api.listActiveListings({
+          limit: getFlagValue(rawArgs, "--limit") || 25,
+          page: getFlagValue(rawArgs, "--page") || 1,
+        }));
         break;
       }
 

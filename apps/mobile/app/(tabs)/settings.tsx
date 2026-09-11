@@ -1,12 +1,13 @@
-import { useState, useCallback } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { View, Text, StyleSheet, Pressable, ScrollView, Alert, ActivityIndicator } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { useFocusEffect, useRouter } from "expo-router";
+import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import { getConnections, disconnectPlatform } from "@/lib/api";
 import type { MarketplaceConnection, Platform } from "@/lib/types";
 import { getPublishMode, setPublishMode, type PublishMode } from "@/lib/publish-mode";
 import { theme } from "@/lib/theme";
 import { useToast } from "@/lib/toast";
+import { SETTINGS_REFRESH_PARAM } from "@/lib/settings-navigation";
 
 const PLATFORMS: { key: Platform; label: string }[] = [
   { key: "grailed", label: "Grailed" },
@@ -52,6 +53,8 @@ function useSessionState() {
 export default function SettingsScreen() {
   const { signOut, email, canSignOut } = useSessionState();
   const router = useRouter();
+  const params = useLocalSearchParams();
+  const connectionsRefresh = params[SETTINGS_REFRESH_PARAM];
   const { showToast } = useToast();
   const [connections, setConnections] = useState<MarketplaceConnection[]>([]);
   const [loading, setLoading] = useState(true);
@@ -85,6 +88,12 @@ export default function SettingsScreen() {
       loadPublishMode();
     }, [loadConnections, loadPublishMode])
   );
+
+  useEffect(() => {
+    if (!connectionsRefresh) return;
+    void loadConnections();
+    void loadPublishMode();
+  }, [connectionsRefresh, loadConnections, loadPublishMode]);
 
   function getConnection(platform: Platform) {
     return connections.find((connection) => connection.platform === platform);

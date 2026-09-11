@@ -14,6 +14,7 @@ import type { WebViewMessageEvent } from "react-native-webview";
 import { saveConnection, saveEbayConnection } from "@/lib/api";
 import type { Platform } from "@/lib/types";
 import { theme } from "@/lib/theme";
+import { settingsRefreshHref } from "@/lib/settings-navigation";
 
 const MOBILE_SAFARI_USER_AGENT = "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1";
 const EBAY_AUTH_SCOPES = [
@@ -209,7 +210,7 @@ export default function ConnectScreen() {
   }, [debugEvents, showDebug]);
 
   const returnToSettings = useCallback(() => {
-    router.dismissTo("/settings");
+    router.dismissTo(settingsRefreshHref());
   }, [router]);
 
   useEffect(() => {
