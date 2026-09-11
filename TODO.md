@@ -9,6 +9,8 @@
 ## Marketplace Integrations
 
 - [ ] **eBay publishing** — connection verify works, but `publish`, `delist`, and `status` all return "not yet supported". Needs full implementation via eBay REST Sell API.
+- [ ] **eBay image upload** — V1 publish sends no photos to eBay. Add image upload via Trading API `UploadSiteHostedPictures` (multipart XML + binary). Reference: `hendt/ebay-api` npm package has a working implementation. Include uploaded URLs in inventory item payload.
+- [ ] **eBay auto token refresh** — stored tokens expire but aren't auto-refreshed on publish. Add refresh-on-401 retry or proactive refresh before expiry (hendt/ebay-api has built-in `autoRefreshToken` with event emitter pattern).
 - [ ] **Depop session auth** — uses `impit` to bypass Cloudflare. Fragile; Depop may break it with bot detection updates. Revisit when Depop opens their OAuth API.
 
 ## Infrastructure
