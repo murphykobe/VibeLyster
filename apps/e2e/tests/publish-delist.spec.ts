@@ -107,27 +107,55 @@ test.describe("Publish & Delist", () => {
     }
   });
 
-  test("bulk publish from dashboard", async ({ page, request }) => {
+  test("bulk publish from dashboard prints a receipt", async ({ page, request }) => {
     await seedListing(request, { title: "Listing A" });
     await seedListing(request, { title: "Listing B" });
+    await seedConnection(request, "grailed");
+    await seedConnection(request, "depop");
+
+    await page.goto("/");
+    await page.waitForLoadState("networkidle");
+
+    // Enter select mode and pick both drafts
+    await page.getByText("SELECT", { exact: true }).click();
+    await page.getByText("Listing A").click();
+    await page.getByText("Listing B").click();
+    await expect(page.getByText("2 SELECTED")).toBeVisible({ timeout: 4000 });
+
+    // Bulk publish (live mode button copy)
+    await page.getByText("PRINT LISTINGS", { exact: true }).click();
+
+    // The cross-post receipt prints when publishing completes.
+    // Totals count placements (listing × platform): 2 listings × 2 platforms.
+    await expect(page.getByText("CROSS-POST RECEIPT")).toBeVisible({ timeout: 10000 });
+    await expect(page.getByText("4/4 LIVE")).toBeVisible({ timeout: 4000 });
+    await expect(page.getByText("LIVE ✓")).toHaveCount(4);
+
+    // Done dismisses the receipt; manifest reflects the published state
+    await page.getByText("Done", { exact: true }).click();
+    await expect(page.getByText("CROSS-POST RECEIPT")).not.toBeVisible({ timeout: 4000 });
+    await expect(page.getByText(/2 LIVE/).first()).toBeVisible({ timeout: 8000 });
+    // Two seeded listings at $120, both live — pins the live-only sum + formatting
+    await expect(page.getByText("$240 LISTED")).toBeVisible({ timeout: 4000 });
+  });
+
+  test("receipt Capture Next routes to the capture screen", async ({ page, request }) => {
+    await seedListing(request, { title: "Listing C" });
     await seedConnection(request, "grailed");
 
     await page.goto("/");
     await page.waitForLoadState("networkidle");
 
-    // Select all listings
-    const selectAll = page.getByText(/select all/i).or(page.getByRole("checkbox").first());
-    if (await selectAll.isVisible({ timeout: 3000 })) {
-      await selectAll.click();
-      const bulkPublish = page.getByText(/publish selected/i).or(page.getByText(/bulk publish/i));
-      if (await bulkPublish.isVisible({ timeout: 3000 })) {
-        await bulkPublish.click();
-        await page.waitForTimeout(1500);
-        await page.reload();
-        await page.waitForLoadState("networkidle");
-        // At least one live badge after bulk publish
-        await expect(page.getByText(/live/i).first()).toBeVisible({ timeout: 8000 });
-      }
-    }
+    await page.getByText("SELECT", { exact: true }).click();
+    await page.getByText("Listing C").click();
+    await page.getByText("PRINT LISTINGS", { exact: true }).click();
+
+    await expect(page.getByText("CROSS-POST RECEIPT")).toBeVisible({ timeout: 10000 });
+    // Only grailed is connected while the default bulk set includes depop:
+    // 1 of 2 placements lands, and the receipt must say so.
+    await expect(page.getByText("1/2 LIVE")).toBeVisible({ timeout: 4000 });
+
+    await page.getByText(/capture next/i).click();
+    await expect(page).toHaveURL(/\/capture/, { timeout: 6000 });
   });
 });

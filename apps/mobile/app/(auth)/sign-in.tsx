@@ -230,8 +230,6 @@ const styles = StyleSheet.create({
   },
   emailButton: {
     backgroundColor: theme.colors.accent,
-    shadowColor: "#6C63FF",
-    shadowOpacity: 0.4,
   },
   googleButton: {
     backgroundColor: theme.colors.surface,

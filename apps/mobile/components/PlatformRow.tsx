@@ -1,6 +1,6 @@
 import { View, Text, StyleSheet, Pressable, ActivityIndicator } from "react-native";
 import { getRemoteListingState, type PlatformListing } from "@/lib/types";
-import { theme } from "@/lib/theme";
+import { theme, PLATFORM_CODES } from "@/lib/theme";
 
 type Props = {
   platformListing: PlatformListing;
@@ -13,22 +13,15 @@ type Props = {
   publishLabel?: string;
 };
 
+// Label text content is part of the e2e contract ("Publish", "Delist", "Live");
+// the print voice comes from type treatment, not copy changes.
 const STATUS_LABELS: Record<string, string> = {
   pending: "Ready to publish",
-  publishing: "Publishing",
+  publishing: "Printing",
   live: "Live",
   failed: "Needs retry",
   sold: "Sold",
   delisted: "Delisted",
-};
-
-const STATUS_COLORS: Record<string, string> = {
-  live: theme.colors.success,
-  sold: theme.colors.info,
-  failed: theme.colors.danger,
-  delisted: theme.colors.textMuted,
-  publishing: theme.colors.warning,
-  pending: theme.colors.textMuted,
 };
 
 export default function PlatformRow({
@@ -44,10 +37,34 @@ export default function PlatformRow({
   const { platform, status } = platformListing;
   const remoteState = getRemoteListingState(platformListing);
   const label = platform.charAt(0).toUpperCase() + platform.slice(1);
-  const statusLabel = remoteState === "draft" && status === "pending"
-    ? "Draft saved"
-    : STATUS_LABELS[status] ?? status;
-  const statusColor = STATUS_COLORS[status] ?? theme.colors.textMuted;
+  const code = PLATFORM_CODES[platform] ?? platform.slice(0, 3).toUpperCase();
+  const statusLabel =
+    remoteState === "draft" && status === "pending" ? "Draft saved" : (STATUS_LABELS[status] ?? status);
+
+  const codeStyle =
+    status === "live"
+      ? [styles.code, styles.codeLive]
+      : status === "sold"
+        ? [styles.code, styles.codeSold]
+        : status === "failed"
+          ? [styles.code, styles.codeFailed]
+          : [styles.code];
+  const codeTextStyle =
+    status === "live"
+      ? [styles.codeText, styles.codeTextLive]
+      : status === "sold"
+        ? [styles.codeText, styles.codeTextSold]
+        : status === "failed"
+          ? [styles.codeText, styles.codeTextFailed]
+          : [styles.codeText];
+  const statusStyle =
+    status === "live"
+      ? [styles.statusLabel, styles.statusLive]
+      : status === "sold"
+        ? [styles.statusLabel, styles.statusSold]
+        : status === "failed"
+          ? [styles.statusLabel, styles.statusFailed]
+          : [styles.statusLabel];
 
   function renderAction() {
     if (!connected) {
@@ -59,7 +76,12 @@ export default function PlatformRow({
     }
 
     if (publishing || delisting) {
-      return <ActivityIndicator size="small" color={theme.colors.accent} />;
+      return (
+        <View style={styles.printingWrap}>
+          <ActivityIndicator size="small" color={theme.colors.ink} />
+          <Text style={styles.printingText}>{publishing ? "PRINTING…" : "PULLING…"}</Text>
+        </View>
+      );
     }
 
     if (status === "live" || status === "sold") {
@@ -85,12 +107,12 @@ export default function PlatformRow({
 
   return (
     <View style={styles.row}>
+      <View style={codeStyle}>
+        <Text style={codeTextStyle}>{code}</Text>
+      </View>
       <View style={styles.left}>
         <Text style={styles.platformName}>{label}</Text>
-        <View style={styles.statusRow}>
-          <View style={[styles.statusDot, { backgroundColor: statusColor }]} />
-          <Text style={[styles.statusLabel, { color: statusColor }]}>{statusLabel}</Text>
-        </View>
+        <Text style={statusStyle}>{statusLabel}</Text>
         {status === "failed" && platformListing.last_error && (
           <Text style={styles.errorText} numberOfLines={1}>
             {platformListing.last_error}
@@ -106,72 +128,124 @@ const styles = StyleSheet.create({
   row: {
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "space-between",
-    backgroundColor: theme.colors.surfaceStrong,
-    borderRadius: theme.radius.md,
-    paddingHorizontal: 14,
-    paddingVertical: 13,
+    gap: theme.spacing.md,
+    paddingVertical: theme.spacing.md,
+    paddingHorizontal: theme.spacing.xs,
+    borderBottomWidth: 1,
+    borderBottomColor: theme.colors.borderSoft,
+  },
+  code: {
+    minWidth: 42,
+    alignItems: "center",
+    borderWidth: 1,
+    borderColor: theme.colors.ink,
+    paddingHorizontal: 5,
+    paddingVertical: 3,
+  },
+  codeText: {
+    fontFamily: theme.fonts.monoBold,
+    fontSize: 11,
+    letterSpacing: 0.5,
+    color: theme.colors.ink,
+  },
+  codeLive: {
+    backgroundColor: theme.colors.ink,
+  },
+  codeTextLive: {
+    color: theme.colors.bg,
+  },
+  codeSold: {
+    borderWidth: 1.5,
+    borderColor: theme.colors.stamp,
+    transform: [{ rotate: "-2deg" }],
+  },
+  codeTextSold: {
+    color: theme.colors.stamp,
+  },
+  codeFailed: {
+    borderColor: theme.colors.borderSoft,
+  },
+  codeTextFailed: {
+    color: theme.colors.textMuted,
+    textDecorationLine: "line-through",
   },
   left: {
     flex: 1,
-    gap: 4,
-    paddingRight: 10,
+    gap: 2,
+    paddingRight: theme.spacing.sm,
   },
   platformName: {
     color: theme.colors.text,
-    fontSize: 15,
+    fontSize: 14,
     fontFamily: theme.fonts.sansBold,
   },
-  statusRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-  },
-  statusDot: {
-    width: 7,
-    height: 7,
-    borderRadius: 99,
-  },
   statusLabel: {
-    fontSize: 13,
-    fontFamily: theme.fonts.sans,
+    fontSize: 9,
+    fontFamily: theme.fonts.mono,
+    letterSpacing: 0.5,
+    textTransform: "uppercase",
+    color: theme.colors.textMuted,
+  },
+  statusLive: {
+    color: theme.colors.success,
+  },
+  statusSold: {
+    color: theme.colors.stamp,
+  },
+  statusFailed: {
+    color: theme.colors.danger,
   },
   errorText: {
     color: theme.colors.danger,
-    fontSize: 12,
-    fontFamily: theme.fonts.sans,
+    fontSize: 11,
+    fontFamily: theme.fonts.mono,
+  },
+  printingWrap: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    minWidth: 86,
+    justifyContent: "center",
+  },
+  printingText: {
+    fontFamily: theme.fonts.mono,
+    fontSize: 9,
+    letterSpacing: 0.5,
+    color: theme.colors.textMuted,
   },
   actionBtn: {
-    borderRadius: theme.radius.sm,
-    paddingHorizontal: 14,
-    paddingVertical: 8,
+    paddingHorizontal: theme.spacing.md,
+    paddingVertical: theme.spacing.md,
     minWidth: 86,
+    minHeight: 44,
     alignItems: "center",
+    justifyContent: "center",
   },
   actionText: {
-    fontSize: 12,
+    fontSize: 11,
     fontFamily: theme.fonts.sansBold,
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
   },
   actionPrimary: {
     backgroundColor: theme.colors.accent,
-    ...theme.shadow.raised,
-    shadowColor: "#6C63FF",
-    shadowOpacity: 0.3,
   },
   actionPrimaryText: {
     color: theme.colors.white,
   },
   actionGhost: {
-    backgroundColor: theme.colors.surface,
+    borderWidth: 1,
+    borderColor: theme.colors.stamp,
   },
   actionGhostText: {
-    color: theme.colors.danger,
+    color: theme.colors.stamp,
   },
   actionLink: {
-    backgroundColor: theme.colors.surface,
+    borderBottomWidth: 1,
+    borderBottomColor: theme.colors.ballpoint,
   },
   actionLinkText: {
-    color: theme.colors.accent,
+    color: theme.colors.ballpoint,
   },
   actionSpacer: {
     minWidth: 86,

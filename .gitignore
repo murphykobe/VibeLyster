@@ -14,3 +14,4 @@ android/
 next-env.d.ts
 .superpowers/
 .worktrees/
+.gstack/

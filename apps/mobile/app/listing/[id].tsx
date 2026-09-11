@@ -34,6 +34,7 @@ import PhotoCarousel from "@/components/PhotoCarousel";
 import PlatformRow from "@/components/PlatformRow";
 import EbayMetadataEditor from "@/components/EbayMetadataEditor";
 import { theme } from "@/lib/theme";
+import { kaChunk, click, misfeed } from "@/lib/haptics";
 import { useToast } from "@/lib/toast";
 import {
   formatPublishFeedbackMessage,
@@ -303,6 +304,7 @@ export default function ListingDetailScreen() {
         category,
         traits: nextTraits,
       });
+      click();
       setPublishFeedback(null);
       await load();
     } catch {
@@ -338,6 +340,7 @@ export default function ListingDetailScreen() {
         platformData?: Record<string, unknown>;
       };
       if (!platformResult.ok) {
+        misfeed();
         if (platform === "ebay") {
           setShowEbayMetadata(true);
           if (platformResult.platformData) {
@@ -348,6 +351,7 @@ export default function ListingDetailScreen() {
         setPublishFeedback(message);
         showToast(message);
       } else {
+        kaChunk();
         setPublishFeedback(null);
         if (platformResult.remoteState === "draft") {
           showToast(`${platform} draft created.`, "success");
@@ -377,11 +381,13 @@ export default function ListingDetailScreen() {
         return platformResult?.ok === false;
       });
       if (firstFailure) {
+        misfeed();
         const platformResult = result.results[firstFailure] as { error?: string } | undefined;
         const message = formatPublishFeedbackMessage(firstFailure, platformResult?.error);
         setPublishFeedback(message);
         showToast(message);
       } else {
+        kaChunk();
         setPublishFeedback(null);
       }
       await load();
@@ -421,6 +427,7 @@ export default function ListingDetailScreen() {
     setDelisting(platform);
     try {
       await delistListing(id, platform);
+      click();
       await load();
     } catch {
       showToast("Delist failed.");
@@ -493,7 +500,7 @@ export default function ListingDetailScreen() {
   if (loading) {
     return (
       <View style={styles.center}>
-        <ActivityIndicator size="large" color={theme.colors.accent} />
+        <ActivityIndicator size="large" color={theme.colors.ink} />
       </View>
     );
   }
@@ -516,9 +523,10 @@ export default function ListingDetailScreen() {
 
       <ScrollView
         contentContainerStyle={styles.scroll}
-        refreshControl={<RefreshControl refreshing={loading} onRefresh={load} tintColor={theme.colors.accent} />}
+        refreshControl={<RefreshControl refreshing={loading} onRefresh={load} tintColor={theme.colors.ink} />}
       >
         <View style={styles.hero}>
+          <Text style={styles.heroKicker}>PROOF №{String(listing.id).replace(/-/g, "").slice(-4).toUpperCase()}</Text>
           <Text style={styles.heroTitle}>{title || "Untitled Listing"}</Text>
           <Text style={styles.heroSub}>
             Edit details and {publishMode === "draft" ? "save marketplace drafts." : "publish to marketplaces."}
@@ -835,7 +843,11 @@ export default function ListingDetailScreen() {
         <View style={styles.card}>
           <View style={styles.publishHeader}>
             <Text style={styles.sectionTitle}>Marketplace Publish</Text>
-            <Pressable onPress={handleSync} disabled={syncing}>
+            <Pressable
+              onPress={handleSync}
+              disabled={syncing}
+              hitSlop={{ top: 14, bottom: 14, left: 14, right: 14 }}
+            >
               <Text style={styles.syncBtn}>{syncing ? "Syncing..." : "Refresh"}</Text>
             </Pressable>
           </View>
@@ -934,11 +946,15 @@ const styles = StyleSheet.create({
   },
   backBtn: {
     minWidth: 52,
+    minHeight: 44,
+    justifyContent: "center",
   },
   backText: {
     color: theme.colors.textMuted,
-    fontSize: 13,
-    fontFamily: theme.fonts.sansBold,
+    fontSize: 11,
+    fontFamily: theme.fonts.mono,
+    textTransform: "uppercase",
+    letterSpacing: 1,
   },
   buttonDisabled: {
     opacity: 0.5,
@@ -951,33 +967,44 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 4,
   },
+  heroKicker: {
+    fontFamily: theme.fonts.mono,
+    fontSize: 10,
+    letterSpacing: 1,
+    color: theme.colors.textMuted,
+    marginBottom: 4,
+  },
+  // The one editorial moment per screen: the AI-typed title.
   heroTitle: {
     color: theme.colors.text,
-    fontFamily: theme.fonts.display,
-    fontSize: 34,
-    lineHeight: 40,
-    letterSpacing: -0.5,
+    fontFamily: theme.fonts.serif,
+    fontSize: 30,
+    lineHeight: 36,
   },
   heroSub: {
     marginTop: 4,
     color: theme.colors.textMuted,
     fontFamily: theme.fonts.sans,
-    fontSize: 14,
+    fontSize: 13,
   },
+  // Printed system line, not a filled banner — accent is for actions only.
   statusBanner: {
     marginTop: 10,
     flexDirection: "row",
     alignItems: "center",
     gap: 8,
-    borderRadius: theme.radius.sm,
-    backgroundColor: theme.colors.accent,
+    backgroundColor: theme.colors.surface,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    borderLeftWidth: 3,
+    borderLeftColor: theme.colors.ballpoint,
     paddingHorizontal: 12,
     paddingVertical: 10,
   },
   statusBannerText: {
     flex: 1,
-    color: theme.colors.white,
-    fontFamily: theme.fonts.sansBold,
+    color: theme.colors.text,
+    fontFamily: theme.fonts.sansMedium,
     fontSize: 12,
   },
   errorBanner: {
@@ -1001,7 +1028,7 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
   },
   verificationBadgeText: {
-    color: theme.colors.accent,
+    color: theme.colors.warning,
     fontFamily: theme.fonts.sansBold,
     fontSize: 12,
     textTransform: "uppercase",
@@ -1020,18 +1047,20 @@ const styles = StyleSheet.create({
   },
   fieldLabel: {
     color: theme.colors.textMuted,
-    fontSize: 11,
-    fontFamily: theme.fonts.sansBold,
+    fontSize: 9,
+    fontFamily: theme.fonts.mono,
     textTransform: "uppercase",
-    letterSpacing: 1.5,
+    letterSpacing: 1,
   },
+  // Printed lines on a tag: paper field with a bottom ink rule.
   input: {
-    borderRadius: theme.radius.sm,
-    backgroundColor: theme.colors.surfaceStrong,
-    paddingHorizontal: 12,
-    paddingVertical: 11,
+    backgroundColor: theme.colors.surface,
+    borderBottomWidth: 1,
+    borderBottomColor: theme.colors.ink,
+    paddingHorizontal: 10,
+    paddingVertical: 10,
     color: theme.colors.text,
-    fontFamily: theme.fonts.sans,
+    fontFamily: theme.fonts.sansMedium,
     fontSize: 14,
   },
   inputDisabled: {
@@ -1067,13 +1096,16 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   chip: {
-    borderRadius: theme.radius.sm,
-    backgroundColor: theme.colors.surfaceStrong,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    backgroundColor: theme.colors.surface,
     paddingHorizontal: 12,
     paddingVertical: 8,
   },
+  // Selection is solid ink, matching the dashboard tabs — accent means "act".
   chipActive: {
-    backgroundColor: theme.colors.accent,
+    backgroundColor: theme.colors.ink,
+    borderColor: theme.colors.ink,
   },
   chipText: {
     color: theme.colors.textMuted,
@@ -1081,7 +1113,7 @@ const styles = StyleSheet.create({
     fontSize: 12,
   },
   chipTextActive: {
-    color: theme.colors.white,
+    color: theme.colors.bg,
   },
   advancedToggle: {
     borderRadius: theme.radius.sm,
@@ -1118,22 +1150,25 @@ const styles = StyleSheet.create({
   toggleLabelActive: {
     color: theme.colors.accent,
   },
+  // Square stamp-style toggle — paper has corners, and this is not a native control.
   toggleTrack: {
     width: 42,
     height: 24,
-    borderRadius: 999,
-    backgroundColor: theme.colors.border,
+    borderWidth: 1,
+    borderColor: theme.colors.ink,
+    backgroundColor: theme.colors.surface,
     padding: 3,
     justifyContent: "center",
   },
   toggleTrackActive: {
-    backgroundColor: theme.colors.accent,
+    backgroundColor: theme.colors.ink,
   },
   toggleThumb: {
-    width: 18,
-    height: 18,
-    borderRadius: 999,
-    backgroundColor: theme.colors.white,
+    width: 16,
+    height: 16,
+    backgroundColor: theme.colors.bg,
+    borderWidth: 1,
+    borderColor: theme.colors.ink,
   },
   toggleThumbActive: {
     alignSelf: "flex-end",
@@ -1145,59 +1180,68 @@ const styles = StyleSheet.create({
   },
   sectionTitle: {
     color: theme.colors.text,
-    fontFamily: theme.fonts.sansBold,
-    fontSize: 17,
+    fontFamily: theme.fonts.display,
+    fontSize: 13,
+    textTransform: "uppercase",
+    letterSpacing: 1,
   },
   syncBtn: {
-    color: theme.colors.accent,
-    fontFamily: theme.fonts.sansBold,
-    fontSize: 12,
+    color: theme.colors.ballpoint,
+    fontFamily: theme.fonts.monoBold,
+    fontSize: 10,
+    letterSpacing: 0.5,
+    textTransform: "uppercase",
   },
   syncTime: {
     color: theme.colors.textMuted,
-    fontFamily: theme.fonts.sans,
-    fontSize: 12,
+    fontFamily: theme.fonts.mono,
+    fontSize: 10,
+    letterSpacing: 0.5,
   },
   platformList: {
     gap: 8,
   },
   publishAllBtn: {
     marginTop: 4,
-    borderRadius: theme.radius.md,
     backgroundColor: theme.colors.accent,
+    borderWidth: 1.5,
+    borderColor: theme.colors.ink,
     alignItems: "center",
     paddingVertical: 12,
-    ...theme.shadow.raised,
-    shadowColor: "#6C63FF",
   },
   publishAllText: {
     color: theme.colors.white,
-    fontFamily: theme.fonts.sansBold,
-    fontSize: 13,
+    fontFamily: theme.fonts.display,
+    fontSize: 12,
+    textTransform: "uppercase",
+    letterSpacing: 1,
   },
   delistAllBtn: {
     marginTop: 2,
-    borderRadius: theme.radius.md,
-    backgroundColor: theme.colors.surfaceStrong,
+    borderWidth: 1,
+    borderColor: theme.colors.stamp,
     alignItems: "center",
     paddingVertical: 12,
   },
   delistAllText: {
-    color: theme.colors.danger,
+    color: theme.colors.stamp,
     fontFamily: theme.fonts.sansBold,
-    fontSize: 13,
+    fontSize: 12,
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
   },
   deleteBtn: {
     marginHorizontal: 16,
-    borderRadius: theme.radius.md,
-    backgroundColor: theme.colors.surfaceStrong,
     alignItems: "center",
     paddingVertical: 13,
   },
   deleteText: {
-    color: theme.colors.danger,
-    fontFamily: theme.fonts.sansBold,
-    fontSize: 13,
+    color: theme.colors.stamp,
+    fontFamily: theme.fonts.mono,
+    fontSize: 11,
+    letterSpacing: 0.5,
+    textTransform: "uppercase",
+    textDecorationLine: "underline",
   },
   bottomSaveBar: {
     position: "absolute",
@@ -1212,18 +1256,19 @@ const styles = StyleSheet.create({
     borderTopColor: theme.colors.border,
   },
   bottomSaveBtn: {
-    borderRadius: theme.radius.md,
     backgroundColor: theme.colors.accent,
+    borderWidth: 1.5,
+    borderColor: theme.colors.ink,
     alignItems: "center",
     justifyContent: "center",
     paddingVertical: 14,
     minHeight: 52,
-    ...theme.shadow.raised,
-    shadowColor: "#6C63FF",
   },
   bottomSaveText: {
     color: theme.colors.white,
-    fontFamily: theme.fonts.sansBold,
-    fontSize: 14,
+    fontFamily: theme.fonts.display,
+    fontSize: 13,
+    textTransform: "uppercase",
+    letterSpacing: 1.5,
   },
 });

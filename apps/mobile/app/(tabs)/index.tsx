@@ -16,7 +16,9 @@ import type { Listing, Platform } from "@/lib/types";
 import { getPublishMode, type PublishMode } from "@/lib/publish-mode";
 import { getDisplayStatus } from "@/lib/types";
 import ListingCard from "@/components/ListingCard";
-import { theme } from "@/lib/theme";
+import PublishReceipt from "@/components/PublishReceipt";
+import { theme, PLATFORM_CODES } from "@/lib/theme";
+import { kaChunk, click, misfeed } from "@/lib/haptics";
 import { useToast } from "@/lib/toast";
 import { useFadeSlideIn, usePressScale } from "@/lib/motion";
 
@@ -38,14 +40,17 @@ export default function DashboardScreen() {
   const [bulkPlatforms, setBulkPlatforms] = useState<Set<Platform>>(new Set(["grailed", "depop"]));
   const [publishing, setPublishing] = useState(false);
   const [publishMode, setPublishMode] = useState<PublishMode>("live");
+  const [receipt, setReceipt] = useState<{ listings: Listing[]; platforms: Platform[]; mode: PublishMode } | null>(
+    null
+  );
+  const pendingReceiptRef = useRef<{ ids: string[]; platforms: Platform[]; mode: PublishMode } | null>(null);
   const listingsRef = useRef<Listing[]>([]);
   const publishPollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const publishPollTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const publishPollInFlightRef = useRef(false);
-  const heroMotion = useFadeSlideIn({ delay: 35, y: 8, duration: 240 });
-  const metricsMotion = useFadeSlideIn({ delay: 110, y: 10, duration: 240 });
-  const tabsMotion = useFadeSlideIn({ delay: 160, y: 10, duration: 240 });
-  const fabPress = usePressScale({ pressedScale: 0.93, speed: 18 });
+  const headerMotion = useFadeSlideIn({ delay: 0, y: -6, duration: 180 });
+  const tabsMotion = useFadeSlideIn({ delay: 60, y: -6, duration: 180 });
+  const capturePress = usePressScale({ pressedScale: 0.97 });
 
   const loadListings = useCallback(async () => {
     try {
@@ -78,11 +83,35 @@ export default function DashboardScreen() {
   const stopPublishPolling = useCallback(() => {
     clearPublishPolling();
     setPublishing(false);
+    // The paper is done feeding: snapshot the batch and print the receipt.
+    const pending = pendingReceiptRef.current;
+    if (pending) {
+      pendingReceiptRef.current = null;
+      const batch = listingsRef.current.filter((l) => pending.ids.includes(l.id));
+      setReceipt({ listings: batch, platforms: pending.platforms, mode: pending.mode });
+
+      // Haptic matches the outcome, not just completion: all placements
+      // landed → ka-chunk; none landed → misfeed; mixed → click.
+      const placements = batch.flatMap((l) =>
+        pending.platforms.map((p) => (l.platform_listings ?? []).find((pl) => pl.platform === p)?.status)
+      );
+      const ok = placements.filter(
+        (s) => s === "live" || (pending.mode === "draft" && s === "pending")
+      ).length;
+      if (ok === placements.length && placements.length > 0) kaChunk();
+      else if (ok === 0) misfeed();
+      else click();
+    }
   }, [clearPublishPolling]);
 
   const hasPublishingListings = useCallback((items: Listing[]) => {
-    return items.some((listing) =>
-      (listing.platform_listings ?? []).some((platformListing) => platformListing.status === "publishing")
+    // Scope to the in-flight batch: an unrelated listing stuck in
+    // "publishing" must not hold this receipt hostage for 120s.
+    const ids = pendingReceiptRef.current?.ids;
+    return items.some(
+      (listing) =>
+        (!ids || ids.includes(listing.id)) &&
+        (listing.platform_listings ?? []).some((platformListing) => platformListing.status === "publishing")
     );
   }, []);
 
@@ -109,6 +138,9 @@ export default function DashboardScreen() {
     publishPollIntervalRef.current = setInterval(() => {
       void pollOnce();
     }, PUBLISH_POLL_INTERVAL_MS);
+
+    // Mock/fast publishes complete before the first tick — check right away.
+    void pollOnce();
 
     publishPollTimeoutRef.current = setTimeout(() => {
       stopPublishPolling();
@@ -147,16 +179,29 @@ export default function DashboardScreen() {
     };
   }, [listings]);
 
-  const filtered = listings.filter((l) => {
-    if (filter === "all") return true;
-    const status = getDisplayStatus(l);
-    if (filter === "draft") return status === "draft";
-    if (filter === "live") return status === "live" || status === "partially_live";
-    if (filter === "sold") return status === "sold";
-    return true;
-  });
+  const listedValue = useMemo(() => {
+    return listings.reduce((sum, l) => {
+      const status = getDisplayStatus(l);
+      if (status !== "live" && status !== "partially_live") return sum;
+      const price = Number(l.price);
+      return Number.isNaN(price) ? sum : sum + price;
+    }, 0);
+  }, [listings]);
 
-  const drafts = listings.filter((l) => getDisplayStatus(l) === "draft");
+  const filtered = useMemo(
+    () =>
+      listings.filter((l) => {
+        if (filter === "all") return true;
+        const status = getDisplayStatus(l);
+        if (filter === "draft") return status === "draft";
+        if (filter === "live") return status === "live" || status === "partially_live";
+        if (filter === "sold") return status === "sold";
+        return true;
+      }),
+    [listings, filter]
+  );
+
+  const drafts = useMemo(() => listings.filter((l) => getDisplayStatus(l) === "draft"), [listings]);
 
   function toggleSelect(id: string) {
     setSelected((prev) => {
@@ -182,10 +227,17 @@ export default function DashboardScreen() {
     try {
       const response = await bulkPublish(Array.from(selected), Array.from(bulkPlatforms), publishMode);
       if (!response.acknowledged) {
+        misfeed();
+        showToast("Bulk publish was not accepted. Try again.");
         setPublishing(false);
         return;
       }
 
+      pendingReceiptRef.current = {
+        ids: Array.from(selected),
+        platforms: Array.from(bulkPlatforms),
+        mode: publishMode,
+      };
       setSelectMode(false);
       setSelected(new Set());
 
@@ -200,26 +252,20 @@ export default function DashboardScreen() {
   if (loading) {
     return (
       <View style={styles.center}>
-        <ActivityIndicator size="large" color={theme.colors.accent} />
+        <ActivityIndicator size="large" color={theme.colors.ink} />
+        <Text style={styles.loadingText}>PRINTING MANIFEST…</Text>
       </View>
     );
   }
 
   return (
     <SafeAreaView style={styles.container} edges={["top"]}>
-      <Animated.View style={heroMotion}>
-        <View style={styles.hero}>
-          <Text style={styles.heroKicker}>VibeLyster</Text>
-          <Text style={styles.heroTitle}>Closet Command</Text>
-          <Text style={styles.heroSub}>Draft, publish, and track listings in one flow.</Text>
-        </View>
-      </Animated.View>
-
-      <Animated.View style={metricsMotion}>
-        <View style={styles.metricsRow}>
-          <Metric label="Drafts" value={counts.draft} />
-          <Metric label="Live" value={counts.live} />
-          <Metric label="Sold" value={counts.sold} />
+      <Animated.View style={headerMotion}>
+        <View style={styles.header}>
+          <Text style={styles.wordmark}>
+            VIBE<Text style={styles.wordmarkAccent}>LYSTER</Text>
+          </Text>
+          <Text style={styles.headerMeta}>THE MANIFEST</Text>
         </View>
       </Animated.View>
 
@@ -228,14 +274,18 @@ export default function DashboardScreen() {
           {FILTER_TABS.map((tab) => (
             <Pressable key={tab} onPress={() => setFilter(tab)} style={[styles.tab, filter === tab && styles.activeTab]}>
               <Text style={[styles.tabText, filter === tab && styles.activeTabText]}>
-                {tab.charAt(0).toUpperCase() + tab.slice(1)} {counts[tab]}
+                {tab.toUpperCase()} {counts[tab]}
               </Text>
             </Pressable>
           ))}
 
           {!selectMode && drafts.length > 0 && (
-            <Pressable style={styles.selectBtn} onPress={() => setSelectMode(true)}>
-              <Text style={styles.selectBtnText}>Select</Text>
+            <Pressable
+              style={styles.selectBtn}
+              hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+              onPress={() => setSelectMode(true)}
+            >
+              <Text style={styles.selectBtnText}>SELECT</Text>
             </Pressable>
           )}
         </View>
@@ -245,14 +295,15 @@ export default function DashboardScreen() {
         <View style={styles.bulkWrap}>
           <View style={styles.selectionBar}>
             <Pressable
+              hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
               onPress={() => {
                 setSelectMode(false);
                 setSelected(new Set());
               }}
             >
-              <Text style={styles.cancelText}>Cancel</Text>
+              <Text style={styles.cancelText}>CANCEL</Text>
             </Pressable>
-            <Text style={styles.selectedCount}>{selected.size} selected</Text>
+            <Text style={styles.selectedCount}>{selected.size} SELECTED</Text>
             <Pressable
               style={[
                 styles.selectionPublishBtn,
@@ -264,7 +315,9 @@ export default function DashboardScreen() {
               {publishing ? (
                 <ActivityIndicator size="small" color={theme.colors.white} />
               ) : (
-                <Text style={styles.selectionPublishText}>{publishMode === "draft" ? "Save Drafts" : "Publish"}</Text>
+                <Text style={styles.selectionPublishText}>
+                  {publishMode === "draft" ? "SAVE DRAFTS" : "PRINT LISTINGS"}
+                </Text>
               )}
             </Pressable>
           </View>
@@ -282,7 +335,7 @@ export default function DashboardScreen() {
                     bulkPlatforms.has(platform) && styles.platformToggleTextActive,
                   ]}
                 >
-                  {platform.charAt(0).toUpperCase() + platform.slice(1)}
+                  {PLATFORM_CODES[platform] ?? platform.toUpperCase()}
                 </Text>
               </Pressable>
             ))}
@@ -324,42 +377,51 @@ export default function DashboardScreen() {
               setRefreshing(true);
               loadListings();
             }}
-            tintColor={theme.colors.accent}
+            tintColor={theme.colors.ink}
           />
         }
         ListEmptyComponent={
           <View style={styles.empty}>
-            <Text style={styles.emptyTitle}>No listings yet</Text>
-            <Text style={styles.emptySub}>Create your first draft to get started.</Text>
-            <Pressable style={styles.emptyCta} onPress={() => router.push("/capture")}>
-              <Text style={styles.emptyCtaText}>Start a Listing</Text>
-            </Pressable>
+            <Text style={styles.emptyTitle}>Nothing in the pile.</Text>
+            <Text style={styles.emptySub}>POINT THE CAMERA AT SOMETHING GOOD</Text>
           </View>
         }
       />
 
+      {receipt && (
+        <PublishReceipt
+          listings={receipt.listings}
+          platforms={receipt.platforms}
+          mode={receipt.mode}
+          onDone={() => setReceipt(null)}
+          onCaptureNext={() => {
+            setReceipt(null);
+            router.push("/capture");
+          }}
+        />
+      )}
+
       {!selectMode && (
-        <Animated.View style={fabPress.animatedStyle}>
-          <Pressable
-            style={styles.fab}
-            onPress={() => router.push("/capture")}
-            onPressIn={fabPress.onPressIn}
-            onPressOut={fabPress.onPressOut}
-          >
-            <Text style={styles.fabText}>+</Text>
-          </Pressable>
-        </Animated.View>
+        <View style={styles.footer}>
+          <View style={styles.subtotal}>
+            <Text style={styles.subtotalText}>
+              {counts.all} {counts.all === 1 ? "ITEM" : "ITEMS"} / {counts.live} LIVE
+            </Text>
+            <Text style={styles.subtotalText}>${listedValue.toFixed(0)} LISTED</Text>
+          </View>
+          <Animated.View style={capturePress.animatedStyle}>
+            <Pressable
+              style={styles.captureBtn}
+              onPress={() => router.push("/capture")}
+              onPressIn={capturePress.onPressIn}
+              onPressOut={capturePress.onPressOut}
+            >
+              <Text style={styles.captureBtnText}>◉ CAPTURE</Text>
+            </Pressable>
+          </Animated.View>
+        </View>
       )}
     </SafeAreaView>
-  );
-}
-
-function Metric({ label, value }: { label: string; value: number }) {
-  return (
-    <View style={styles.metricCell}>
-      <Text style={styles.metricValue}>{value}</Text>
-      <Text style={styles.metricLabel}>{label}</Text>
-    </View>
   );
 }
 
@@ -372,211 +434,199 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: "center",
     justifyContent: "center",
+    gap: theme.spacing.md,
     backgroundColor: theme.colors.bg,
   },
-  hero: {
-    paddingHorizontal: 16,
-    paddingTop: 8,
-    paddingBottom: 12,
-  },
-  heroKicker: {
-    color: theme.colors.accent,
-    fontFamily: theme.fonts.sansBold,
-    fontSize: 12,
-    textTransform: "uppercase",
-    letterSpacing: 1.5,
-  },
-  heroTitle: {
-    color: theme.colors.text,
-    fontFamily: theme.fonts.display,
-    fontSize: 32,
-    lineHeight: 38,
-    marginTop: 2,
-    letterSpacing: -0.5,
-  },
-  heroSub: {
-    marginTop: 6,
+  loadingText: {
+    fontFamily: theme.fonts.mono,
+    fontSize: 10,
+    letterSpacing: 1,
     color: theme.colors.textMuted,
-    fontFamily: theme.fonts.sans,
-    fontSize: 14,
   },
-  metricsRow: {
+  header: {
     flexDirection: "row",
-    paddingHorizontal: 16,
-    gap: 10,
+    alignItems: "baseline",
+    justifyContent: "space-between",
+    paddingHorizontal: theme.spacing.lg,
+    paddingTop: theme.spacing.sm,
+    paddingBottom: theme.spacing.md,
+    borderBottomWidth: 1.5,
+    borderBottomColor: theme.colors.ink,
   },
-  metricCell: {
-    flex: 1,
-    borderRadius: theme.radius.md,
-    backgroundColor: theme.colors.surface,
-    paddingVertical: 14,
-    alignItems: "center",
-    ...theme.shadow.raised,
-  },
-  metricValue: {
+  wordmark: {
     color: theme.colors.text,
     fontFamily: theme.fonts.display,
-    fontSize: 24,
+    fontSize: 16,
+    letterSpacing: 1,
   },
-  metricLabel: {
+  wordmarkAccent: {
+    color: theme.colors.accent,
+  },
+  headerMeta: {
+    fontFamily: theme.fonts.mono,
+    fontSize: 10,
+    letterSpacing: 1,
     color: theme.colors.textMuted,
-    fontFamily: theme.fonts.sans,
-    fontSize: 12,
-    marginTop: -2,
   },
   tabs: {
     flexDirection: "row",
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    gap: 8,
+    paddingHorizontal: theme.spacing.lg,
+    paddingVertical: theme.spacing.md,
+    gap: theme.spacing.sm,
     alignItems: "center",
   },
   tab: {
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: theme.radius.sm,
-    backgroundColor: theme.colors.surface,
-    ...theme.shadow.raised,
+    paddingHorizontal: theme.spacing.sm,
+    paddingVertical: theme.spacing.sm,
+    minHeight: 36,
+    justifyContent: "center",
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    backgroundColor: theme.colors.bg,
   },
   activeTab: {
-    backgroundColor: theme.colors.accent,
-    shadowColor: "#6C63FF",
-    shadowOpacity: 0.4,
+    backgroundColor: theme.colors.ink,
+    borderColor: theme.colors.ink,
   },
   tabText: {
     color: theme.colors.textMuted,
-    fontSize: 12,
-    fontFamily: theme.fonts.sansBold,
+    fontSize: 10,
+    letterSpacing: 0.5,
+    fontFamily: theme.fonts.monoBold,
   },
   activeTabText: {
-    color: theme.colors.white,
+    color: theme.colors.bg,
   },
   selectBtn: {
     marginLeft: "auto",
-    borderRadius: theme.radius.sm,
-    backgroundColor: theme.colors.surface,
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    ...theme.shadow.raised,
+    borderBottomWidth: 1,
+    borderBottomColor: theme.colors.ballpoint,
+    paddingVertical: 5,
   },
   selectBtnText: {
-    color: theme.colors.text,
-    fontFamily: theme.fonts.sansBold,
-    fontSize: 12,
+    color: theme.colors.ballpoint,
+    fontFamily: theme.fonts.monoBold,
+    fontSize: 10,
+    letterSpacing: 0.5,
   },
   bulkWrap: {
-    marginHorizontal: 16,
-    marginBottom: 10,
+    marginHorizontal: theme.spacing.lg,
+    marginBottom: theme.spacing.sm,
+    borderWidth: 1,
+    borderColor: theme.colors.ink,
     backgroundColor: theme.colors.surface,
-    borderRadius: theme.radius.md,
-    overflow: "hidden",
-    ...theme.shadow.raised,
   },
   selectionBar: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    paddingHorizontal: 12,
-    paddingVertical: 10,
+    paddingHorizontal: theme.spacing.md,
+    paddingVertical: theme.spacing.sm,
+    borderBottomWidth: 1,
+    borderBottomColor: theme.colors.borderSoft,
   },
   cancelText: {
     color: theme.colors.textMuted,
-    fontFamily: theme.fonts.sansBold,
-    fontSize: 12,
+    fontFamily: theme.fonts.mono,
+    fontSize: 10,
+    letterSpacing: 0.5,
   },
   selectedCount: {
     color: theme.colors.text,
-    fontFamily: theme.fonts.sansBold,
-    fontSize: 13,
+    fontFamily: theme.fonts.monoBold,
+    fontSize: 11,
   },
   selectionPublishBtn: {
     backgroundColor: theme.colors.accent,
-    borderRadius: theme.radius.sm,
-    paddingHorizontal: 14,
-    paddingVertical: 8,
+    paddingHorizontal: theme.spacing.md,
+    paddingVertical: theme.spacing.sm,
   },
   selectionPublishText: {
     color: theme.colors.white,
-    fontFamily: theme.fonts.sansBold,
-    fontSize: 12,
+    fontFamily: theme.fonts.display,
+    fontSize: 10,
+    letterSpacing: 0.5,
   },
   publishBtnDisabled: {
     opacity: 0.45,
   },
   platformToggleBar: {
     flexDirection: "row",
-    gap: 8,
-    paddingHorizontal: 12,
-    paddingBottom: 12,
+    gap: theme.spacing.sm,
+    paddingHorizontal: theme.spacing.md,
+    paddingVertical: theme.spacing.sm,
   },
   platformToggle: {
-    borderRadius: theme.radius.sm,
-    backgroundColor: theme.colors.surfaceStrong,
-    paddingHorizontal: 14,
-    paddingVertical: 8,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    paddingHorizontal: theme.spacing.md,
+    paddingVertical: 5,
   },
   platformToggleActive: {
-    backgroundColor: theme.colors.accent,
+    backgroundColor: theme.colors.ink,
+    borderColor: theme.colors.ink,
   },
   platformToggleText: {
     color: theme.colors.textMuted,
-    fontSize: 12,
-    fontFamily: theme.fonts.sansBold,
+    fontSize: 10,
+    letterSpacing: 0.5,
+    fontFamily: theme.fonts.monoBold,
   },
   platformToggleTextActive: {
-    color: theme.colors.white,
+    color: theme.colors.bg,
   },
   list: {
-    paddingHorizontal: 16,
-    paddingBottom: 120,
+    paddingHorizontal: theme.spacing.lg,
+    paddingBottom: theme.spacing.xl,
   },
   empty: {
-    marginTop: 52,
+    marginTop: 64,
     alignItems: "center",
-    gap: 10,
+    gap: theme.spacing.md,
+    paddingHorizontal: theme.spacing.xl,
   },
   emptyTitle: {
     color: theme.colors.text,
-    fontFamily: theme.fonts.display,
-    fontSize: 30,
+    fontFamily: theme.fonts.serif,
+    fontSize: 28,
+    textAlign: "center",
   },
   emptySub: {
     color: theme.colors.textMuted,
-    fontFamily: theme.fonts.sans,
-    fontSize: 14,
+    fontFamily: theme.fonts.mono,
+    fontSize: 10,
+    letterSpacing: 1,
   },
-  emptyCta: {
-    marginTop: 8,
-    borderRadius: theme.radius.lg,
+  footer: {
+    borderTopWidth: 1.5,
+    borderTopColor: theme.colors.ink,
+    paddingHorizontal: theme.spacing.lg,
+    paddingTop: theme.spacing.sm,
+    paddingBottom: theme.spacing.md,
+    backgroundColor: theme.colors.bg,
+  },
+  subtotal: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    paddingBottom: theme.spacing.sm,
+  },
+  subtotalText: {
+    fontFamily: theme.fonts.mono,
+    fontSize: 11,
+    letterSpacing: 0.5,
+    color: theme.colors.text,
+  },
+  captureBtn: {
     backgroundColor: theme.colors.accent,
-    paddingHorizontal: 24,
-    paddingVertical: 13,
-    ...theme.shadow.raisedStrong,
-    shadowColor: "#6C63FF",
-  },
-  emptyCtaText: {
-    color: theme.colors.white,
-    fontFamily: theme.fonts.sansBold,
-    fontSize: 13,
-  },
-  fab: {
-    position: "absolute",
-    right: 22,
-    bottom: 30,
-    width: 64,
-    height: 64,
-    borderRadius: 32,
+    paddingVertical: theme.spacing.md,
     alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: theme.colors.accent,
-    ...theme.shadow.raisedStrong,
-    shadowColor: "#6C63FF",
+    borderWidth: 1.5,
+    borderColor: theme.colors.ink,
   },
-  fabText: {
+  captureBtnText: {
     color: theme.colors.white,
-    fontSize: 34,
-    lineHeight: 36,
-    marginTop: -2,
-    fontFamily: theme.fonts.sans,
+    fontFamily: theme.fonts.display,
+    fontSize: 14,
+    letterSpacing: 2,
   },
 });

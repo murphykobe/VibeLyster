@@ -131,7 +131,6 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     alignItems: "center",
     ...theme.shadow.raised,
-    shadowColor: "#6C63FF",
   },
   buttonText: {
     color: theme.colors.white,

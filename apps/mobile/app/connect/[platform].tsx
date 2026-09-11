@@ -719,7 +719,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 11,
     ...theme.shadow.raised,
-    shadowColor: "#6C63FF",
   },
   magicLinkButtonDisabled: {
     opacity: 0.55,

@@ -24,7 +24,7 @@ appId: com.vibelyster.app
     commands:
       - tapOn: "Go to app"
 - extendedWaitUntil:
-    visible: "Closet"
+    visible: "THE MANIFEST"
     timeout: 180000
 - runFlow:
     when:
