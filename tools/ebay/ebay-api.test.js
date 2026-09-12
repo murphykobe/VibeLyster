@@ -187,6 +187,40 @@ test("buildInventoryItemPayload defaults quantity to 1", async () => {
   assert.equal(payload.availability.shipToLocationAvailability.quantity, 1);
 });
 
+test("isLocalImagePath distinguishes hosted URLs from local paths", async () => {
+  const { isLocalImagePath } = await import("./ebay-api.js");
+
+  assert.equal(isLocalImagePath("https://i.ebayimg.com/images/g/abc/s-l1600.jpg"), false);
+  assert.equal(isLocalImagePath("http://i.ebayimg.com/x.jpg"), false);
+  assert.equal(isLocalImagePath("/tmp/photo.jpg"), true);
+  assert.equal(isLocalImagePath("./photo.jpg"), true);
+  assert.equal(isLocalImagePath("photo.jpg"), true);
+});
+
+test("resolveListingImages leaves already-hosted URLs untouched (no upload call)", async () => {
+  const { resolveListingImages } = await import("./ebay-api.js");
+
+  const listing = {
+    title: "Test Sneakers",
+    images: ["https://i.ebayimg.com/images/g/abc/s-l1600.jpg", "https://i.ebayimg.com/images/g/def/s-l1600.jpg"],
+  };
+
+  const resolved = await resolveListingImages(listing);
+
+  assert.deepEqual(resolved.images, listing.images);
+  assert.equal(resolved.title, "Test Sneakers");
+  // resolveListingImages must not mutate the caller's listing object.
+  assert.notEqual(resolved, listing);
+});
+
+test("resolveListingImages defaults to an empty array when listing has no images", async () => {
+  const { resolveListingImages } = await import("./ebay-api.js");
+
+  const resolved = await resolveListingImages({ title: "No photos yet" });
+
+  assert.deepEqual(resolved.images, []);
+});
+
 test("buildOfferPayload produces correct structure", async () => {
   const { buildOfferPayload } = await import("./ebay-api.js");
 

@@ -298,38 +298,63 @@ export async function listActiveListings({ limit = 25, page = 1 } = {}) {
   };
 }
 
+/**
+ * Uploads a local image file to eBay Picture Services via the Commerce Media
+ * API and returns the resulting hosted image URL.
+ *
+ * Replaces the Trading API's UploadSiteHostedPictures, which eBay
+ * decommissions 2026-09-30. createImageFromFile has no wrapper method in
+ * the ebay-api library (its Media class only covers video), so this calls
+ * the library's underlying REST client directly. It responds 201 with no
+ * body; the new image's id comes back in the Location header, and a
+ * follow-up getImage call resolves that id to the actual EPS URL.
+ */
 export async function uploadImage(imagePath) {
   const extension = extname(imagePath).slice(1).toLowerCase();
-  const pictureName = basename(imagePath);
-  const mimeType = extension === "png" ? "image/png" : "image/jpeg";
+  const mimeType =
+    extension === "png" ? "image/png" : extension === "gif" ? "image/gif" : "image/jpeg";
 
-  const result = await getClient().trading.UploadSiteHostedPictures(
-    {
-      PictureName: pictureName,
-      PictureSet: "Supersize",
-    },
-    {
-      useIaf: true,
-      hook: (xml) => {
-        const form = new FormData();
-        form.append("XML Payload", xml, { contentType: "text/xml" });
-        form.append(pictureName, createReadStream(imagePath), {
-          filename: pictureName,
-          contentType: mimeType,
-        });
-        return {
-          body: form,
-          headers: form.getHeaders(),
-        };
-      },
-    }
-  );
+  const form = new FormData();
+  form.append("image", createReadStream(imagePath), {
+    filename: basename(imagePath),
+    contentType: mimeType,
+  });
 
-  const url = result.SiteHostedPictureDetails?.FullURL;
-  if (!url) {
-    throw new Error(`Image upload failed: ${JSON.stringify(result)}`);
+  const media = getClient().commerce.media;
+  const created = await media.api({ returnResponse: true }).post("/image/create_from_file", form, {
+    headers: form.getHeaders(),
+  });
+
+  const location = created?.headers?.location;
+  const imageId = location?.split("/").filter(Boolean).pop();
+  if (!imageId) {
+    throw new Error(`Image upload failed: no image id in Location header (got "${location}")`);
   }
-  return url;
+
+  const { imageUrl } = await media.get(`/image/${encodeURIComponent(imageId)}`);
+  if (!imageUrl) {
+    throw new Error(`Image upload failed: getImage returned no imageUrl for id ${imageId}`);
+  }
+  return imageUrl;
+}
+
+/** True for a local file path; false for an already-hosted http(s) URL. */
+export function isLocalImagePath(value) {
+  return !/^https?:\/\//i.test(value);
+}
+
+/**
+ * Uploads any local image paths in listing.images and returns a copy of
+ * listing with images replaced by their eBay-hosted URLs. Already-hosted
+ * URLs pass through untouched, so a listing built entirely from `upload`
+ * output (or a prior create/edit) costs no extra network calls.
+ */
+export async function resolveListingImages(listing) {
+  const images = listing.images || [];
+  const resolved = await Promise.all(
+    images.map((image) => (isLocalImagePath(image) ? uploadImage(image) : image))
+  );
+  return { ...listing, images: resolved };
 }
 
 export function buildInventoryItemPayload(listing) {
@@ -398,6 +423,7 @@ function requirePolicyIds(policyIds) {
 export async function createListing(listing, options = {}) {
   const sku = options.sku || `${DEFAULT_SKU_PREFIX}-${Date.now()}`;
   const eBay = getClient();
+  listing = await resolveListingImages(listing);
   await eBay.sell.inventory.createOrReplaceInventoryItem(
     sku,
     buildInventoryItemPayload(listing)
@@ -448,6 +474,7 @@ export async function getListing(sku) {
 
 export async function editListing(sku, listing, options = {}) {
   const eBay = getClient();
+  listing = await resolveListingImages(listing);
   await eBay.sell.inventory.createOrReplaceInventoryItem(
     sku,
     buildInventoryItemPayload(listing)
