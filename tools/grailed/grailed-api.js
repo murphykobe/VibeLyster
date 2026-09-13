@@ -3,11 +3,17 @@
  *
  * Reverse-engineered from Crosslist Chrome extension.
  * Uses Grailed's internal REST API with session cookie + CSRF token auth.
+ * Requires `impit` for Chrome TLS fingerprint to bypass Cloudflare (see
+ * apiFetch below) — bare Node fetch() now gets a hard Cloudflare block on
+ * grailed.com, not just a stale-session error. Same fix depop-cli already
+ * uses for the same reason.
  *
  * API Base: https://www.grailed.com/api/
  * Auth: csrf_token cookie + x-csrf-token header + session cookies
  * Brand Search: Algolia (public, no auth)
  */
+
+import { Impit } from "impit";
 
 const GRAILED_BASE = "https://www.grailed.com";
 const GRAILED_API = `${GRAILED_BASE}/api`;
@@ -16,6 +22,8 @@ const ALGOLIA_URL =
   "https://mnrwefss2q-dsn.algolia.net/1/indexes/Designer_production/query";
 const ALGOLIA_PARAMS =
   "x-algolia-agent=Algolia&x-algolia-application-id=MNRWEFSS2Q&x-algolia-api-key=bc9ee1c014521ccf312525a4ef324a16";
+
+const impit = new Impit({ browser: "chrome" });
 
 function makeHeaders(csrfToken, version = "application/grailed.api.v1") {
   return {
@@ -27,7 +35,7 @@ function makeHeaders(csrfToken, version = "application/grailed.api.v1") {
 }
 
 async function apiFetch(url, options = {}) {
-  const res = await fetch(url, options);
+  const res = await impit.fetch(url, options);
   if (!res.ok) {
     const text = await res.text();
     let detail;

@@ -12,6 +12,8 @@
 - [x] **eBay image upload** — `uploadImage()` now uses the Commerce Media API (`createImageFromFile` + `getImage`) instead of the Trading API's `UploadSiteHostedPictures`, which eBay decommissions 2026-09-30. `create` and `edit` auto-upload any local image paths in the draft JSON before building the inventory item, so the CLI no longer needs a separate manual upload step per photo.
 - [x] **eBay auto token refresh** — already implemented: `getClient()` wires `OAuth2.on("refreshAuthToken", ...)` to persist the refreshed token to `~/.vibelyster/ebay.json` (skipped in headless/CI mode where `EBAY_REFRESH_TOKEN` is set directly).
 - [ ] **Depop session auth** — uses `impit` to bypass Cloudflare. Fragile; Depop may break it with bot detection updates. Revisit when Depop opens their OAuth API.
+- [x] **Grailed Cloudflare block fixed** — `grailed-cli` was using bare Node `fetch()` with no browser TLS fingerprint. Grailed's Cloudflare started hard-blocking it outright (a static WAF block, not a stale-cookie error) even on the plain public homepage with zero auth. Fixed by routing through `impit` (`browser: "chrome"`), the same fix `depop-cli` already uses and for the same reason. Verified: `checkLogin()` now gets Grailed's own JSON 401 instead of a Cloudflare page. No public Grailed API means this has the same fragility risk as the Depop line above.
+- [ ] **No test suite for grailed-cli or depop-cli** — unlike `tools/ebay`, neither has a `.test.js` file or CI coverage (root `package.json` workspaces only cover `apps/*`, not `tools/*`). The impit fix above was verified by direct manual testing, not an automated regression test.
 
 ## Infrastructure
 
