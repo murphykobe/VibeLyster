@@ -9,6 +9,15 @@
  *
  * Listing flow: draft → update draft → publish (POST from draft edit page)
  * Direct POST to /api/v2/products/ returns empty 400 — draft-first is required.
+ *
+ * Picture upload (/presentation/api/v1/pictures/, see uploadImage below) gets
+ * hard-blocked at Cloudflare's edge — never reaches Depop's backend at all —
+ * unless the request also carries real Fetch Metadata and Client Hints
+ * headers (sec-fetch-*, sec-ch-ua*). TLS fingerprint alone (impit's
+ * browser: "chrome") is not sufficient for this endpoint; every other
+ * endpoint here works without them, so they're added broadly in
+ * makeHeaders() rather than only on the upload call, since a real browser
+ * sends them on every fetch, not just this one.
  */
 
 import { Impit } from "impit";
@@ -19,12 +28,57 @@ const impit = new Impit({ browser: "chrome" });
 
 function makeHeaders(accessToken) {
   return {
-    Accept: "*/*",
-    "Content-Type": "application/json",
-    Authorization: `Bearer ${accessToken}`,
-    Origin: "https://www.depop.com",
-    Referer: "https://www.depop.com/",
+    accept: "*/*",
+    "accept-language": "en-US,en;q=0.9",
+    authorization: `Bearer ${accessToken}`,
+    "content-type": "application/json",
+    origin: "https://www.depop.com",
+    priority: "u=1, i",
+    referer: "https://www.depop.com/",
+    "sec-ch-ua": '"Not=A?Brand";v="99", "Google Chrome";v="151", "Chromium";v="151"',
+    "sec-ch-ua-mobile": "?0",
+    "sec-ch-ua-platform": '"macOS"',
+    "sec-fetch-dest": "empty",
+    "sec-fetch-mode": "cors",
+    "sec-fetch-site": "same-site",
   };
+}
+
+/**
+ * Reads pixel width/height from a PNG or JPEG buffer without a dependency.
+ * Depop's picture-upload endpoint requires the real dimensions in its
+ * request body (guessing or omitting them is not accepted).
+ */
+function readImageDimensions(buffer, ext) {
+  if (ext === "png") {
+    // Signature (8 bytes) + chunk length (4) + "IHDR" (4), then width/height
+    // as big-endian uint32s — a fixed, guaranteed layout for every PNG.
+    return { width: buffer.readUInt32BE(16), height: buffer.readUInt32BE(20) };
+  }
+
+  // JPEG: scan markers for a Start-of-Frame (SOFn) segment, which holds
+  // height then width as big-endian uint16s.
+  let offset = 2; // skip the SOI marker (0xFFD8)
+  while (offset < buffer.length - 1) {
+    if (buffer[offset] !== 0xff) {
+      offset++;
+      continue;
+    }
+    const marker = buffer[offset + 1];
+    // Markers with no payload: TEM and the RSTn restart markers.
+    if (marker === 0x01 || (marker >= 0xd0 && marker <= 0xd9)) {
+      offset += 2;
+      continue;
+    }
+    const segmentLength = buffer.readUInt16BE(offset + 2);
+    // SOF0–SOF15 except the DHT/JPG/DAC markers, which share the 0xC4/0xC8/0xCC numbers.
+    const isSOF = marker >= 0xc0 && marker <= 0xcf && marker !== 0xc4 && marker !== 0xc8 && marker !== 0xcc;
+    if (isSOF) {
+      return { height: buffer.readUInt16BE(offset + 5), width: buffer.readUInt16BE(offset + 7) };
+    }
+    offset += 2 + segmentLength;
+  }
+  throw new Error(`Could not read JPEG dimensions from ${buffer.length}-byte file`);
 }
 
 async function apiFetch(url, options = {}) {
@@ -76,20 +130,22 @@ export async function uploadImage(imagePath, accessToken) {
   const { extname } = await import("node:path");
 
   const ext = extname(imagePath).slice(1).toLowerCase() || "jpg";
-  const mimeType = ext === "png" ? "image/png" : "image/jpeg";
+  const imageBuffer = await readFile(imagePath);
+  const dimensions = readImageDimensions(imageBuffer, ext);
 
-  // Step 1: Get presigned S3 URL
-  const presigned = await apiFetch(`${DEPOP_API}/api/v2/pictures/`, {
+  // Step 1: Get presigned S3 URL. type is lowercase and dimensions are
+  // required — both undocumented, reverse-engineered from a real browser
+  // request (Chrome DevTools > Network > Copy as cURL on a live upload).
+  const presigned = await apiFetch(`${DEPOP_API}/presentation/api/v1/pictures/`, {
     method: "POST",
     headers: makeHeaders(accessToken),
-    body: JSON.stringify({ type: "PRODUCT", extension: ext }),
+    body: JSON.stringify({ type: "product", extension: ext, dimensions }),
   });
 
   // Step 2: Upload image to presigned S3 URL
-  const imageBuffer = await readFile(imagePath);
   const uploadRes = await impit.fetch(presigned.url, {
     method: "PUT",
-    headers: { "Content-Type": mimeType },
+    headers: { "Content-Type": presigned.content_type },
     body: imageBuffer,
   });
 
