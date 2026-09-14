@@ -66,12 +66,14 @@ grailed publish <json-file>           # Publish directly (skip draft, see Publis
 grailed delete <listing-or-draft-id>  # Delete a listing or draft
 ```
 
-### Inbox (read-only)
+### Inbox
 
 ```bash
-grailed inbox [--since <iso>] [--unread] [--context <ctx>]  # List conversations
-grailed conversation <id>                                   # Get one conversation's full thread
-grailed offers                                              # List pending offers (raw shape, unverified — see below)
+grailed inbox [--since <iso>] [--unread] [--context <ctx>]  # List conversations (read-only)
+grailed conversation <id>                                   # Get one conversation's full thread (read-only)
+grailed offers                                              # List pending offers (read-only, raw shape, unverified — see below)
+grailed reply <conversationId> "<text>"                     # Send a plain reply (write, live-verified)
+grailed counter <conversationId> <amount> [--message "<text>"]  # Send a counter-offer (write, coded, not yet live-verified)
 ```
 
 Every command above accepts `--json` for machine-readable output. `inbox`/`conversation` return a normalized shape, not Grailed's raw nested one:
@@ -93,7 +95,21 @@ Every command above accepts `--json` for machine-readable output. `inbox`/`conve
 
 **`offers` is NOT yet normalized.** `GET /api/users/{id}/offers/pending` has only ever returned an empty array live (no pending offer existed on the test account at the time), so its per-offer field names are unconfirmed — it currently just passes through whatever the endpoint returns. See `grailed-api.js` for the TODO.
 
-**Known-but-unimplemented write endpoints** (found in Grailed's frontend bundles, deliberately not wired up — see `grailed-api.js`): `POST /api/offers` (counter-offer, and possibly the only way to send a plain reply — no dedicated reply endpoint was found anywhere), `POST /api/offers/accept`, `POST /api/binding_offers/:id` (accept). No decline endpoint exists anywhere in the bundle — offers appear to only expire or get superseded by a counter.
+### Reply and counter-offer (write)
+
+```bash
+grailed reply <conversationId> "<text>"              # plain reply
+grailed counter <conversationId> <amount> [--message "<text>"]  # counter-offer
+```
+
+Two separate endpoints, resolved via a real DevTools "Copy as cURL" capture on 2026-09-14 after static bundle analysis found neither of them (the original hypothesis — that `/api/offers` also handled plain replies with `amount: null` — was tested live and rejected with a 400 validation error):
+
+- `reply` → `POST /api/conversations` (the same bare path the inbox list uses, POST instead of GET) with `{body, listing_id, conversation_id, type: "reply"}`. **Live-verified 2026-09-14** — sent for real, confirmed in the conversation's own activity_log afterward.
+- `counter` → `POST /api/offers` with `{listing_id, amount, body, conversation_id}` — the shape originally found in the `/sell/offers` bundle. Coded and matches the confirmed shape, but **not yet live-verified** — no pending offer existed on the test account to counter against at the time.
+
+**No `accept` or `decline` command exists, on purpose.** `accept` is out of scope for now — stays owner-only via the Grailed website. `decline` isn't a Grailed API action at all: re-checked against all 24 chunks of `/sell/offers` (not just an initial 2), zero matches for "decline" anywhere. Grailed's model is accept, counter, or let the offer expire (`expires_at`/`voided` on the offer object).
+
+**`offers` is NOT yet normalized.** `GET /api/users/{id}/offers/pending` has only ever returned an empty array live (no pending offer existed on the test account at the time), so its per-offer field names are unconfirmed — it currently just passes through whatever the endpoint returns. See `grailed-api.js` for the TODO.
 
 ---
 
@@ -639,3 +655,5 @@ Browser session cookies + csrf_token cookie
 | GET | `/api/conversations/{id}` | Yes | Full thread (message/offer/bot_message activity_log) |
 | GET | `/api/conversations/unread_counts` | Yes | Unread counts (buying/selling) |
 | GET | `/api/users/{id}/offers/pending` | Yes | Pending offers (shape unconfirmed — see above) |
+| POST | `/api/conversations` | Yes | Send a plain reply, `{body, listing_id, conversation_id, type: "reply"}` |
+| POST | `/api/offers` | Yes | Send a counter-offer, `{listing_id, amount, body, conversation_id}` |

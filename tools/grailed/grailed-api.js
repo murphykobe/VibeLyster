@@ -423,21 +423,57 @@ export async function getPendingOffers(userId, csrfToken, cookies) {
   });
 }
 
-// TODO(#49 hand-verify before implementing): write endpoints found in the
-// frontend bundle but NOT wired up here, since exercising them touches a
-// real buyer or a real pending offer on the owner's live account:
-//   - POST /api/offers  { listing_id, amount, body, conversation_id }
-//     Sends a counter-offer. `amount` may be Grailed's only way to send a
-//     PLAIN reply too (no separate "send message" endpoint was found
-//     anywhere in either bundle) — unconfirmed, needs a hand test with a
-//     real conversation.
-//   - POST /api/offers/accept  { listingId, amount, conversationId }
-//   - POST /api/binding_offers/:id  { listingId, amount, accept: "true" }
-//     Accept variant for "binding" offers specifically.
-//   - No decline endpoint exists anywhere in either bundle. Offers appear
-//     to only expire (see `expires_at`/`voided` on the offer object) or
-//     get superseded by a counter-offer — there may be no explicit
-//     "decline" action on Grailed at all.
-//   - POST /api/conversations/:id/mark_as_read, /archive, /unarchive also
-//     exist and are low-risk, but left out for now to keep this change
-//     strictly read-only per #40/#41.
+// ─── Reply / Counter-offer ────────────────────────────────────────────────
+//
+// #41/#47/#48: two SEPARATE write endpoints, not one shared one — an
+// earlier hypothesis that /api/offers doubled as the reply endpoint was
+// wrong (confirmed live 2026-09-14: amount: null 400s there — the
+// endpoint is offer-only, always wants a real numeric amount) and static
+// analysis of both frontend bundles never found a reply endpoint at all.
+// Resolved with a real DevTools "Copy as cURL" capture of an actual send
+// from the owner's own browser:
+//
+//   POST /api/conversations  { body, listing_id, conversation_id, type: "reply" }
+//
+// `type: "reply"` is a discriminator on the SAME bare /api/conversations
+// path already used for the GET list — a plain POST there was never
+// tried before this capture, since grep only surfaces string literals,
+// not "what verb does some other caller use on an already-found path".
+//
+// `accept` is deliberately NOT implemented — out of scope for now, stays
+// owner-only via the Grailed website itself. `decline` does not exist:
+// re-checked against all 24 chunks of /sell/offers (not just the 2 first
+// found), zero matches for "decline" and zero offer-scoped "reject" —
+// only generic Promise.reject noise. Grailed's model is accept, counter,
+// or let the offer expire (`expires_at`/`voided` on the offer object);
+// there is no distinct decline action to map.
+export async function sendReply(listingId, conversationId, text, csrfToken, cookies) {
+  return apiFetch(`${GRAILED_API}/conversations`, {
+    method: "POST",
+    headers: {
+      Accept: "application/json",
+      "Content-Type": "application/json",
+      "accept-version": "v1",
+      "x-csrf-token": csrfToken,
+      Cookie: cookies,
+    },
+    body: JSON.stringify({ body: text, listing_id: listingId, conversation_id: conversationId, type: "reply" }),
+  });
+}
+
+/** Counter-offer — verified shape from the original /sell/offers bundle
+ * find, distinct from sendReply above. `amount` must be a real number;
+ * this endpoint 400s on null (confirmed live). */
+export async function sendCounterOffer(listingId, amount, body, conversationId, csrfToken, cookies) {
+  return apiFetch(`${GRAILED_API}/offers`, {
+    method: "POST",
+    headers: {
+      Accept: "application/json",
+      "Content-Type": "application/json",
+      "accept-version": "v1",
+      "x-csrf-token": csrfToken,
+      Cookie: cookies,
+    },
+    body: JSON.stringify({ listing_id: listingId, amount, body, conversation_id: conversationId }),
+  });
+}

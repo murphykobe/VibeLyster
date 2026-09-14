@@ -15,6 +15,10 @@
  *                                         List conversations (read-only, normalized)
  *   grailed conversation <id>             Get one conversation's full thread (read-only, normalized)
  *   grailed offers                        List pending offers across all conversations (read-only, raw)
+ *   grailed reply <conversationId> "<text>"
+ *                                         Send a plain reply (no offer amount)
+ *   grailed counter <conversationId> <amount> [--message "<text>"]
+ *                                         Send a counter-offer. No accept/decline — see README.
  *   grailed upload <image-path>           Upload an image, returns URL
  *   grailed create <json-file>            Create a draft listing
  *   grailed publish <draft-id> [json-file] Publish draft (update + submit)
@@ -123,7 +127,7 @@ function printError(e, json) {
 
 function cleanArgs(args) {
   const cleaned = [];
-  const valueFlags = ["--csrf-token", "--cookies", "--context", "--since"];
+  const valueFlags = ["--csrf-token", "--cookies", "--context", "--since", "--message"];
   const boolFlags = ["--draft", "--json", "--unread"];
   let i = 0;
   while (i < args.length) {
@@ -160,6 +164,10 @@ Commands:
                                  List conversations (read-only, normalized). Paginates transparently.
   conversation <id>             Get one conversation's full thread (read-only, normalized)
   offers                        List pending offers across all conversations (read-only, raw — see README)
+  reply <conversationId> "<text>"
+                                 Send a plain reply (no offer amount)
+  counter <conversationId> <amount> [--message "<text>"]
+                                 Send a counter-offer. No accept/decline command — see README.
   upload <image-path>           Upload an image, get back URL
   create <json-file>            Create a draft listing
   publish <draft-id> [json-file] Publish a draft (update + submit). Omit json to submit as-is
@@ -547,6 +555,59 @@ Auth:
           console.log("  Title:", editResult.data.title);
           console.log("  Price:", `$${editResult.data.price}`);
           console.log("  URL:", url);
+        }
+        break;
+      }
+
+      case "reply": {
+        const conversationId = args[1];
+        const text = args[2];
+        if (!conversationId || !text) {
+          usage(
+            [
+              'Usage: grailed reply <conversationId> "<text>"',
+              "",
+              "Sends a plain reply via POST /api/conversations {type: \"reply\"}.",
+            ],
+            json
+          );
+        }
+        const { csrfToken, cookies } = getAuth(rawArgs, json);
+        const detail = await api.getConversation(conversationId, csrfToken, cookies);
+        const listingId = detail.data.listing?.id;
+        await api.sendReply(listingId, conversationId, text, csrfToken, cookies);
+        if (json) {
+          console.log(JSON.stringify({ sent: true, conversationId, text }));
+        } else {
+          console.log(`Sent to conversation ${conversationId}: "${text}"`);
+        }
+        break;
+      }
+
+      case "counter": {
+        const conversationId = args[1];
+        const amount = args[2];
+        const message = getFlagValue(rawArgs, "--message") || undefined;
+        if (!conversationId || !amount) {
+          usage(
+            [
+              'Usage: grailed counter <conversationId> <amount> [--message "<text>"]',
+              "",
+              "Sends a counter-offer via POST /api/offers. accept/decline are not",
+              "implemented — see README. decline does not exist as a Grailed API",
+              "action at all.",
+            ],
+            json
+          );
+        }
+        const { csrfToken, cookies } = getAuth(rawArgs, json);
+        const detail = await api.getConversation(conversationId, csrfToken, cookies);
+        const listingId = detail.data.listing?.id;
+        await api.sendCounterOffer(listingId, Number(amount), message ?? null, conversationId, csrfToken, cookies);
+        if (json) {
+          console.log(JSON.stringify({ sent: true, conversationId, amount: Number(amount), message: message ?? null }));
+        } else {
+          console.log(`Countered conversation ${conversationId} at $${amount}${message ? ` with message: "${message}"` : ""}`);
         }
         break;
       }
