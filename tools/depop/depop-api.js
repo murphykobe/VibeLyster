@@ -299,3 +299,114 @@ export async function getShippingProviders(accessToken, providerId = "USPS") {
     { headers: makeHeaders(accessToken) }
   );
 }
+
+// ─── Conversations (inbox) ───────────────────────────────────────────────────
+//
+// Endpoints found by reading Depop's own frontend bundles (static.depop.com
+// Next.js/Turbopack chunks) on 2026-09-14 against a live session, same
+// discipline as tools/grailed: only GET endpoints wired up, verified live,
+// write endpoints documented but NOT implemented — see the TODO below.
+
+export async function getConversations(accessToken) {
+  // TODO(#50/#53): first page only (newest ~20 conversations). page_info
+  // has {first, last, has_more} but the correct next-page query param name
+  // was NOT found — tried cursor/after/starting_after/next/page_cursor/
+  // next_cursor/starting_cursor/from_cursor live, all silently ignored
+  // (server returns page 1 again every time). Not guessed further. For a
+  // personal account's --since <last_run> use case, page 1 alone almost
+  // certainly covers everything new since the last daily run; this only
+  // becomes a real gap if 20+ conversations get a new message in one day.
+  return apiFetch(`${DEPOP_API}/presentation/api/v1/conversations/`, {
+    headers: makeHeaders(accessToken),
+  });
+}
+
+export async function getConversation(conversationId, accessToken) {
+  return apiFetch(`${DEPOP_API}/presentation/api/v1/conversations/${conversationId}/`, {
+    headers: makeHeaders(accessToken),
+  });
+}
+
+/** Messages for one conversation, newest-first (verified live 2026-09-14 —
+ * objects[0] always matches the conversation-list's last_message_text). */
+export async function getMessages(conversationId, accessToken) {
+  return apiFetch(`${DEPOP_API}/presentation/api/v1/conversations/${conversationId}/messages/`, {
+    headers: makeHeaders(accessToken),
+  });
+}
+
+function isoFromUnixSeconds(seconds) {
+  return seconds == null ? null : new Date(seconds * 1000).toISOString();
+}
+
+/**
+ * Flattens a raw conversation-list item + its most recent message down to
+ * the stable shape VibeLyster#53 specifies. Depop's list endpoint doesn't
+ * say who sent the last message (unlike Grailed's), so the caller fetches
+ * it via getMessages() and passes the newest entry in — see cli.js.
+ * `myUserId` comes from the list item's own top-level `user_id` (verified
+ * live: this is the caller's own account id, present on every item, same
+ * value as `product.user_id`), not a separate "who am I" call.
+ */
+export function normalizeConversationSummary(raw, lastMessage, myUserId) {
+  const from = lastMessage ? (lastMessage.user_id === myUserId ? "seller" : "buyer") : null;
+  return {
+    id: raw.conversation_id,
+    listing_id: raw.product?.id ?? null,
+    buyer: raw.users?.[0]?.username ?? null,
+    last_message_id: lastMessage?.id ?? null,
+    last_message_text: lastMessage?.text ?? raw.last_message_text ?? null,
+    last_message_at: lastMessage
+      ? isoFromUnixSeconds(lastMessage.created_timestamp)
+      : isoFromUnixSeconds(raw.last_message_timestamp),
+    last_message_from: from,
+    unread: from === "buyer",
+  };
+}
+
+/**
+ * Flattens a conversation detail + its messages (fetched newest-first via
+ * getMessages) down to the stable shape VibeLyster#54 specifies —
+ * reversed into chronological order. `myUserId` comes from
+ * `conversation.product.user_id` (the caller's own account, present on
+ * every conversation detail response).
+ *
+ * NOTE for the future agent skill (not filtered here — the CLI returns
+ * data as-is): some messages are Depop's own automated notifications
+ * (e.g. "Team Depop" account-security emails relayed into the inbox,
+ * observed live with a non-UUID id like "braze-32"), not real buyer
+ * messages. The classification step, not this layer, should learn to
+ * recognize and skip those rather than treating them as something to
+ * reply to.
+ */
+export function normalizeConversationDetail(conversation, messages) {
+  const myUserId = conversation.product?.user_id;
+  return {
+    id: conversation.conversation_id,
+    listing_id: conversation.product?.id ?? null,
+    buyer: conversation.user?.username ?? null,
+    messages: [...messages]
+      .reverse()
+      .map((m) => ({
+        id: m.id,
+        from: m.user_id === myUserId ? "seller" : "buyer",
+        text: m.text,
+        at: isoFromUnixSeconds(m.created_timestamp),
+      })),
+  };
+}
+
+// TODO(#50 hand-verify before implementing): write endpoints found as URL
+// templates in the frontend bundle but NOT wired up here (same reasoning
+// as tools/grailed's offer TODOs — exercising them touches a real buyer):
+//   - POST /presentation/api/v1/conversations/messages/ — likely "send a
+//     message" (no conversationId in the path, so the conversation/
+//     recipient is presumably in the body), built with a different
+//     internal URL-template helper than the read endpoints above, which
+//     is circumstantial evidence it's a different HTTP method — not
+//     confirmed. Exact body shape unknown.
+//   - POST /presentation/api/v1/conversations/mark-read/
+//   - POST /presentation/api/v1/conversations/mark-unread/
+//   - POST /presentation/api/v1/conversations/hide/
+// Needs a real DevTools "Copy as cURL" capture of an actual send, per
+// #50's own acceptance criteria, before any of this gets implemented.
