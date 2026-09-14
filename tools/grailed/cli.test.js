@@ -3,6 +3,7 @@ import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import test from "node:test";
+import { getConversations } from "./grailed-api.js";
 
 const CLI = join(dirname(fileURLToPath(import.meta.url)), "cli.js");
 
@@ -91,8 +92,16 @@ test("live smoke: auth --json against a real session", { skip: !liveEnabled }, (
   assert.equal(doc.loggedIn, true);
 });
 
+// This account has 700+ conversations across 90+ pages — an unbounded
+// `inbox` walks all of them, which is slow and (reproduced live,
+// 2026-09-14) risks tripping Cloudflare's rate limiting on the rapid
+// sequential requests. --since bounds every live-test call here to a
+// recent window, mirroring how the agent actually calls this command
+// (--since <last_run>) and keeping this suite fast and block-safe.
+const recentSince = () => new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+
 test("live smoke: inbox --json returns the real conversation list", { skip: !liveEnabled }, () => {
-  const result = run(["inbox", "--json"], {
+  const result = run(["inbox", "--since", recentSince(), "--json"], {
     GRAILED_CSRF_TOKEN: process.env.GRAILED_CSRF_TOKEN,
     GRAILED_COOKIES: process.env.GRAILED_COOKIES,
   });
@@ -100,6 +109,24 @@ test("live smoke: inbox --json returns the real conversation list", { skip: !liv
   assert.equal(result.status, 0);
   assert.ok(Array.isArray(doc.conversations));
   assert.ok(doc.conversations.length > 0);
+  // Normalized shape per #44, not Grailed's raw nested shape.
+  const c = doc.conversations[0];
+  assert.ok("id" in c && "listing_id" in c && "buyer" in c);
+  assert.ok("last_message_id" in c && "last_message_text" in c && "last_message_at" in c);
+  assert.ok("last_message_from" in c && "unread" in c);
+});
+
+test("live smoke: inbox --unread --json only returns conversations whose last message is from the buyer", { skip: !liveEnabled }, () => {
+  const result = run(["inbox", "--since", recentSince(), "--unread", "--json"], {
+    GRAILED_CSRF_TOKEN: process.env.GRAILED_CSRF_TOKEN,
+    GRAILED_COOKIES: process.env.GRAILED_COOKIES,
+  });
+  const doc = JSON.parse(result.stdout.trim());
+  assert.equal(result.status, 0);
+  for (const c of doc.conversations) {
+    assert.equal(c.unread, true);
+    assert.equal(c.last_message_from, "buyer");
+  }
 });
 
 test("live smoke: offers --json returns the real pending-offers shape (possibly empty)", { skip: !liveEnabled }, () => {
@@ -112,12 +139,12 @@ test("live smoke: offers --json returns the real pending-offers shape (possibly 
   assert.ok(Array.isArray(doc.offers));
 });
 
-test("live smoke: conversation --json returns a full activity log for a real thread", { skip: !liveEnabled }, () => {
-  const inboxResult = run(["inbox", "--json"], {
-    GRAILED_CSRF_TOKEN: process.env.GRAILED_CSRF_TOKEN,
-    GRAILED_COOKIES: process.env.GRAILED_COOKIES,
-  });
-  const firstId = JSON.parse(inboxResult.stdout.trim()).conversations[0].id;
+test("live smoke: conversation --json returns a full activity log for a real thread", { skip: !liveEnabled }, async () => {
+  // Deliberately bypasses `inbox` here (and its --since bound) — this
+  // test only needs some real conversation id, and page 1 alone is
+  // always non-empty and always exactly one request either way.
+  const page1 = await getConversations(process.env.GRAILED_CSRF_TOKEN, process.env.GRAILED_COOKIES, { page: 1 });
+  const firstId = page1.data[0].id;
   const result = run(["conversation", String(firstId), "--json"], {
     GRAILED_CSRF_TOKEN: process.env.GRAILED_CSRF_TOKEN,
     GRAILED_COOKIES: process.env.GRAILED_COOKIES,
@@ -125,5 +152,11 @@ test("live smoke: conversation --json returns a full activity log for a real thr
   const doc = JSON.parse(result.stdout.trim());
   assert.equal(result.status, 0);
   assert.equal(doc.conversation.id, firstId);
-  assert.ok(Array.isArray(doc.conversation.activity_log));
+  // Normalized shape per #45, not Grailed's raw activity_log.
+  assert.ok("listing_id" in doc.conversation && "buyer" in doc.conversation);
+  assert.ok(Array.isArray(doc.conversation.messages));
+  for (const m of doc.conversation.messages) {
+    assert.ok("id" in m && "from" in m && "text" in m && "at" in m);
+    assert.ok(m.from === "buyer" || m.from === "seller");
+  }
 });
