@@ -81,20 +81,63 @@ function readImageDimensions(buffer, ext) {
   throw new Error(`Could not read JPEG dimensions from ${buffer.length}-byte file`);
 }
 
+/**
+ * Thrown by apiFetch on any non-ok response. Carries structured
+ * classification (status, whether Cloudflare's edge answered instead of
+ * Depop's backend) so callers — the CLI's exit-code contract — never have
+ * to parse `.message`. `.message` itself is unchanged, so anything only
+ * reading it still works.
+ */
+export class DepopApiError extends Error {
+  constructor(message, { status, cloudflareBlock = false, body } = {}) {
+    super(message);
+    this.name = "DepopApiError";
+    this.status = status;
+    this.cloudflareBlock = cloudflareBlock;
+    this.body = body;
+  }
+}
+
 async function apiFetch(url, options = {}) {
   const res = await impit.fetch(url, options);
   if (!res.ok) {
     const text = await res.text();
     let detail;
+    let cloudflareBlock = false;
     try {
       detail = JSON.parse(text);
     } catch {
+      // Depop's own backend returns JSON even for 401s (e.g. "You must be
+      // logged in"); confirmed 2026-09-13. A non-JSON body this large is
+      // Cloudflare's or Depop's own branded edge block answering on its
+      // own — the pictures/ 403 investigated that day was exactly this
+      // shape — not something Depop's application code produced.
       detail = text;
+      cloudflareBlock = true;
     }
-    throw new Error(`Depop API error ${res.status}: ${JSON.stringify(detail)}`);
+    throw new DepopApiError(`Depop API error ${res.status}: ${JSON.stringify(detail)}`, {
+      status: res.status,
+      cloudflareBlock,
+      body: detail,
+    });
   }
   if (res.status === 204) return null;
   return res.json();
+}
+
+/**
+ * Classifies any error from this module into the CLI's exit-code contract.
+ * Exported so the CLI (and its tests) share one source of truth.
+ */
+export function classifyError(error) {
+  if (error instanceof DepopApiError) {
+    if (error.cloudflareBlock) return { exitCode: 4, key: "CLOUDFLARE_BLOCK" };
+    if (error.status === 401 || error.status === 403) {
+      return { exitCode: 3, key: "TOKEN_EXPIRED" };
+    }
+    return { exitCode: 1, key: "API_ERROR", status: error.status };
+  }
+  return { exitCode: 1, key: "ERROR" };
 }
 
 // ─── Auth ────────────────────────────────────────────────────────────────────
@@ -107,7 +150,9 @@ export async function checkLogin(accessToken) {
     );
     return { loggedIn: true, user: data };
   } catch (e) {
-    return { loggedIn: false, error: e.message };
+    // exitCode/key are additive — existing callers reading only
+    // loggedIn/error see the same shape as before.
+    return { loggedIn: false, error: e.message, ...classifyError(e) };
   }
 }
 
