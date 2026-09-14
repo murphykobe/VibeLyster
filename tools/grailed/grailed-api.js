@@ -307,3 +307,63 @@ export async function getAddresses(userId, csrfToken, cookies) {
     },
   });
 }
+
+// ─── Conversations (inbox) ───────────────────────────────────────────────────
+//
+// Endpoints below were found by reading Grailed's own frontend bundles
+// (Next.js chunks + the legacy grailed-bundles.prod.goateng.com messaging
+// bundle) on 2026-09-14 against a live session, not by trial-and-error
+// against the API. Only GET endpoints are wired up here — see the TODO
+// below for the write endpoints (reply, accept, counter), which are
+// documented but intentionally NOT implemented yet.
+
+export async function getConversations(csrfToken, cookies, { page, context, archived } = {}) {
+  const params = new URLSearchParams();
+  if (page != null) params.set("page", page);
+  if (context != null) params.set("context", context);
+  if (archived != null) params.set("archived", archived);
+  const qs = params.toString();
+  return apiFetch(`${GRAILED_API}/conversations${qs ? `?${qs}` : ""}`, {
+    headers: {
+      ...makeHeaders(csrfToken),
+      Cookie: cookies,
+    },
+  });
+}
+
+export async function getConversation(conversationId, csrfToken, cookies) {
+  return apiFetch(`${GRAILED_API}/conversations/${conversationId}`, {
+    headers: {
+      ...makeHeaders(csrfToken),
+      Cookie: cookies,
+    },
+  });
+}
+
+export async function getUnreadCounts(csrfToken, cookies) {
+  return apiFetch(`${GRAILED_API}/conversations/unread_counts`, {
+    headers: {
+      ...makeHeaders(csrfToken),
+      Cookie: cookies,
+    },
+  });
+}
+
+// TODO(#49 hand-verify before implementing): write endpoints found in the
+// frontend bundle but NOT wired up here, since exercising them touches a
+// real buyer or a real pending offer on the owner's live account:
+//   - POST /api/offers  { listing_id, amount, body, conversation_id }
+//     Sends a counter-offer. `amount` may be Grailed's only way to send a
+//     PLAIN reply too (no separate "send message" endpoint was found
+//     anywhere in either bundle) — unconfirmed, needs a hand test with a
+//     real conversation.
+//   - POST /api/offers/accept  { listingId, amount, conversationId }
+//   - POST /api/binding_offers/:id  { listingId, amount, accept: "true" }
+//     Accept variant for "binding" offers specifically.
+//   - No decline endpoint exists anywhere in either bundle. Offers appear
+//     to only expire (see `expires_at`/`voided` on the offer object) or
+//     get superseded by a counter-offer — there may be no explicit
+//     "decline" action on Grailed at all.
+//   - POST /api/conversations/:id/mark_as_read, /archive, /unarchive also
+//     exist and are low-risk, but left out for now to keep this change
+//     strictly read-only per #40/#41.
