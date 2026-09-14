@@ -102,6 +102,16 @@ test("live smoke: inbox --json returns the real conversation list", { skip: !liv
   assert.ok(doc.conversations.length > 0);
 });
 
+test("live smoke: offers --json returns the real pending-offers shape (possibly empty)", { skip: !liveEnabled }, () => {
+  const result = run(["offers", "--json"], {
+    GRAILED_CSRF_TOKEN: process.env.GRAILED_CSRF_TOKEN,
+    GRAILED_COOKIES: process.env.GRAILED_COOKIES,
+  });
+  const doc = JSON.parse(result.stdout.trim());
+  assert.equal(result.status, 0);
+  assert.ok(Array.isArray(doc.offers));
+});
+
 test("live smoke: conversation --json returns a full activity log for a real thread", { skip: !liveEnabled }, () => {
   const inboxResult = run(["inbox", "--json"], {
     GRAILED_CSRF_TOKEN: process.env.GRAILED_CSRF_TOKEN,

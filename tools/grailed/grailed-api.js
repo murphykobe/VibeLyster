@@ -349,6 +349,20 @@ export async function getUnreadCounts(csrfToken, cookies) {
   });
 }
 
+/**
+ * All pending offers across every conversation, in one call — verified
+ * live 2026-09-14 (200, `{data: [...]}` shape). Cheaper than paging
+ * through every conversation just to find the ones with a live offer.
+ */
+export async function getPendingOffers(userId, csrfToken, cookies) {
+  return apiFetch(`${GRAILED_API}/users/${userId}/offers/pending`, {
+    headers: {
+      ...makeHeaders(csrfToken),
+      Cookie: cookies,
+    },
+  });
+}
+
 // TODO(#49 hand-verify before implementing): write endpoints found in the
 // frontend bundle but NOT wired up here, since exercising them touches a
 // real buyer or a real pending offer on the owner's live account:
