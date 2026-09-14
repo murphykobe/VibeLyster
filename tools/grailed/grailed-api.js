@@ -340,6 +340,55 @@ export async function getConversation(conversationId, csrfToken, cookies) {
   });
 }
 
+/**
+ * Flattens a raw /api/conversations list item down to the stable shape
+ * VibeLyster#44 specifies, so the agent never has to know Grailed's
+ * internal (nested, mixed message/offer/bot_message) shape. "Unread" is
+ * computed, not taken from Grailed's own `is_read` — #44 defines it as
+ * "last message is from the buyer and unanswered," which is exactly
+ * "the last `message`-type activity_log entry wasn't sent by the seller."
+ */
+export function normalizeConversationSummary(raw) {
+  const sellerId = raw.listing?.seller_id;
+  const lastMessage = [...(raw.activity_log || [])].reverse().find((a) => a.type === "message");
+  const from = lastMessage ? (lastMessage.sender_id === sellerId ? "seller" : "buyer") : null;
+  return {
+    id: raw.id,
+    listing_id: raw.listing?.id ?? null,
+    buyer: raw.interlocutor?.username ?? null,
+    last_message_id: lastMessage?.id ?? null,
+    last_message_text: lastMessage?.message ?? null,
+    last_message_at: lastMessage?.created_at ?? null,
+    last_message_from: from,
+    unread: from === "buyer",
+  };
+}
+
+/**
+ * Flattens a raw /api/conversations/:id detail down to the stable shape
+ * VibeLyster#45 specifies. Only `type: "message"` activity_log entries
+ * become messages — `offer` and `bot_message` entries are Grailed-system
+ * events, not chat turns, and don't fit the {id, from, text, at} shape
+ * (an offer has no `text`; #46 covers offers separately).
+ */
+export function normalizeConversationDetail(raw) {
+  const sellerId = raw.listing?.seller_id;
+  const messages = (raw.activity_log || [])
+    .filter((a) => a.type === "message")
+    .map((a) => ({
+      id: a.id,
+      from: a.sender_id === sellerId ? "seller" : "buyer",
+      text: a.message,
+      at: a.created_at,
+    }));
+  return {
+    id: raw.id,
+    listing_id: raw.listing?.id ?? null,
+    buyer: raw.interlocutor?.username ?? null,
+    messages,
+  };
+}
+
 export async function getUnreadCounts(csrfToken, cookies) {
   return apiFetch(`${GRAILED_API}/conversations/unread_counts`, {
     headers: {
@@ -353,6 +402,17 @@ export async function getUnreadCounts(csrfToken, cookies) {
  * All pending offers across every conversation, in one call — verified
  * live 2026-09-14 (200, `{data: [...]}` shape). Cheaper than paging
  * through every conversation just to find the ones with a live offer.
+ *
+ * TODO(#46 reopened): the endpoint has only ever returned an empty array
+ * live (no pending offers existed on the test account at the time), so
+ * the per-offer field names are unconfirmed. #46 wants a normalized
+ * {id, listing_id, buyer, amount, ask_price, status, created_at,
+ * expires_at} shape with `ask_price` fetched via getListing() if not
+ * present directly, plus a --pending filter — none of that is built yet,
+ * since building a normalizer against zero real examples is exactly the
+ * kind of guess this session has been avoiding. Needs a real pending
+ * offer on the account to verify field names against before this can be
+ * normalized and closed out for real.
  */
 export async function getPendingOffers(userId, csrfToken, cookies) {
   return apiFetch(`${GRAILED_API}/users/${userId}/offers/pending`, {

@@ -11,9 +11,10 @@
  *   grailed wardrobe                      List your active listings
  *   grailed drafts                        List your drafts
  *   grailed addresses                     List your shipping addresses
- *   grailed inbox                         List conversations (read-only)
- *   grailed conversation <id>             Get one conversation's full thread (read-only)
- *   grailed offers                        List pending offers across all conversations (read-only)
+ *   grailed inbox [--since <iso>] [--unread] [--context <ctx>]
+ *                                         List conversations (read-only, normalized)
+ *   grailed conversation <id>             Get one conversation's full thread (read-only, normalized)
+ *   grailed offers                        List pending offers across all conversations (read-only, raw)
  *   grailed upload <image-path>           Upload an image, returns URL
  *   grailed create <json-file>            Create a draft listing
  *   grailed publish <draft-id> [json-file] Publish draft (update + submit)
@@ -122,8 +123,8 @@ function printError(e, json) {
 
 function cleanArgs(args) {
   const cleaned = [];
-  const valueFlags = ["--csrf-token", "--cookies", "--page", "--context"];
-  const boolFlags = ["--draft", "--json"];
+  const valueFlags = ["--csrf-token", "--cookies", "--context", "--since"];
+  const boolFlags = ["--draft", "--json", "--unread"];
   let i = 0;
   while (i < args.length) {
     if (valueFlags.includes(args[i])) {
@@ -155,9 +156,10 @@ Commands:
   wardrobe                      List your active listings
   drafts                        List your drafts
   addresses                     List your shipping addresses
-  inbox                         List conversations (read-only)
-  conversation <id>             Get one conversation's full thread (read-only)
-  offers                        List pending offers across all conversations (read-only)
+  inbox [--since <iso>] [--unread] [--context <ctx>]
+                                 List conversations (read-only, normalized). Paginates transparently.
+  conversation <id>             Get one conversation's full thread (read-only, normalized)
+  offers                        List pending offers across all conversations (read-only, raw — see README)
   upload <image-path>           Upload an image, get back URL
   create <json-file>            Create a draft listing
   publish <draft-id> [json-file] Publish a draft (update + submit). Omit json to submit as-is
@@ -298,19 +300,57 @@ Auth:
 
       case "inbox": {
         const { csrfToken, cookies } = getAuth(rawArgs, json);
-        const page = getFlagValue(rawArgs, "--page") || undefined;
         const context = getFlagValue(rawArgs, "--context") || undefined;
-        const result = await api.getConversations(csrfToken, cookies, { page, context });
-        const conversations = result.data;
+        const since = getFlagValue(rawArgs, "--since") || undefined;
+        const unreadOnly = hasFlag(rawArgs, "--unread");
+
+        // Page size is a fixed 8 and NOT documented anywhere — found
+        // empirically 2026-09-14 — and this account alone has 700+
+        // conversations across 90+ pages. Walking every page on every
+        // call is both slow and exactly the kind of bursty sequential
+        // request pattern that trips Cloudflare: an earlier, unconditional
+        // full walk hit a real CLOUDFLARE_BLOCK (exit 4) ~90 requests in.
+        // The actual use case (#44) always passes --since <last_run> from
+        // the agent's state file, and /api/conversations is ordered
+        // newest-first (conversation ids strictly decrease page over
+        // page, verified live) — so once a page's oldest conversation is
+        // already older than --since, every later page is too, and
+        // paging can stop. `updated_at` (not the normalized
+        // last_message_at, which can be null — e.g. a conversation whose
+        // only activity so far is a bot_message) is used for this check
+        // since Grailed sets it on every conversation and it's always
+        // >= any real message time on that conversation, so it can never
+        // cause an early stop before last_message_at would have.
+        // Without --since, page count is capped as a safety valve rather
+        // than walking the whole account unconditionally.
+        const MAX_PAGES_UNBOUNDED = 25; // ~200 conversations without --since
+        const items = [];
+        let page = 1;
+        while (true) {
+          const result = await api.getConversations(csrfToken, cookies, { page, context });
+          if (result.data.length === 0) break;
+          for (const raw of result.data) items.push(api.normalizeConversationSummary(raw));
+          const oldestUpdatedAt = result.data[result.data.length - 1]?.updated_at;
+          if (since && oldestUpdatedAt && oldestUpdatedAt < since) break;
+          if (!since && page >= MAX_PAGES_UNBOUNDED) {
+            if (!json) {
+              console.error(`Warning: stopped after ${MAX_PAGES_UNBOUNDED} pages — pass --since to scope this to recent activity.`);
+            }
+            break;
+          }
+          page++;
+        }
+
+        let conversations = items;
+        if (since) conversations = conversations.filter((c) => c.last_message_at && c.last_message_at >= since);
+        if (unreadOnly) conversations = conversations.filter((c) => c.unread);
+
         if (json) {
           console.log(JSON.stringify({ conversations }));
         } else {
           for (const c of conversations) {
-            const last = c.activity_log?.[c.activity_log.length - 1];
-            const preview = last?.message ? last.message.slice(0, 60) : `(${last?.type ?? "no activity"})`;
-            console.log(
-              `[${c.id}] ${c.state} ${c.is_read ? " " : "*"} ${c.interlocutor?.username} — "${c.listing?.title}" — ${preview}`
-            );
+            const preview = c.last_message_text ? c.last_message_text.slice(0, 60) : "(no messages)";
+            console.log(`[${c.id}] ${c.unread ? "*" : " "} ${c.buyer} (${c.last_message_from ?? "?"}): ${preview}`);
           }
           console.log(`\nTotal: ${conversations.length} conversations`);
         }
@@ -322,10 +362,11 @@ Auth:
         if (!id) usage(["Usage: grailed conversation <id>"], json);
         const { csrfToken, cookies } = getAuth(rawArgs, json);
         const result = await api.getConversation(id, csrfToken, cookies);
+        const conversation = api.normalizeConversationDetail(result.data);
         if (json) {
-          console.log(JSON.stringify({ conversation: result.data }));
+          console.log(JSON.stringify({ conversation }));
         } else {
-          console.log(JSON.stringify(result.data, null, 2));
+          console.log(JSON.stringify(conversation, null, 2));
         }
         break;
       }

@@ -66,6 +66,35 @@ grailed publish <json-file>           # Publish directly (skip draft, see Publis
 grailed delete <listing-or-draft-id>  # Delete a listing or draft
 ```
 
+### Inbox (read-only)
+
+```bash
+grailed inbox [--since <iso>] [--unread] [--context <ctx>]  # List conversations
+grailed conversation <id>                                   # Get one conversation's full thread
+grailed offers                                              # List pending offers (raw shape, unverified — see below)
+```
+
+Every command above accepts `--json` for machine-readable output. `inbox`/`conversation` return a normalized shape, not Grailed's raw nested one:
+
+```jsonc
+// grailed inbox --json
+{ "conversations": [
+  { "id": 183665584, "listing_id": 105792270, "buyer": "kaylasy",
+    "last_message_id": 651891926, "last_message_text": "I bought them, please send them today",
+    "last_message_at": "2026-09-13T06:52:32.341Z", "last_message_from": "buyer", "unread": true }
+] }
+
+// grailed conversation <id> --json
+{ "conversation": { "id": 183665584, "listing_id": 105792270, "buyer": "kaylasy",
+  "messages": [ { "id": 651891360, "from": "buyer", "text": "Hi, what is your minimum price?", "at": "2026-09-13T06:44:03.762Z" } ] } }
+```
+
+**`--since`/pagination:** `inbox` walks `GET /api/conversations` (fixed page size of 8, undocumented, found live). This account alone has 700+ conversations across 90+ pages — an unconditional full walk is slow and risks a real Cloudflare rate-limit block (reproduced live 2026-09-14). Conversations are ordered newest-first, so passing `--since <iso>` (as the agent always does, using its last run time) lets `inbox` stop as soon as a page is entirely older than that — typically one request. Without `--since`, pagination is capped at 25 pages (~200 conversations) as a safety valve, with a warning on stderr if hit.
+
+**`offers` is NOT yet normalized.** `GET /api/users/{id}/offers/pending` has only ever returned an empty array live (no pending offer existed on the test account at the time), so its per-offer field names are unconfirmed — it currently just passes through whatever the endpoint returns. See `grailed-api.js` for the TODO.
+
+**Known-but-unimplemented write endpoints** (found in Grailed's frontend bundles, deliberately not wired up — see `grailed-api.js`): `POST /api/offers` (counter-offer, and possibly the only way to send a plain reply — no dedicated reply endpoint was found anywhere), `POST /api/offers/accept`, `POST /api/binding_offers/:id` (accept). No decline endpoint exists anywhere in the bundle — offers appear to only expire or get superseded by a counter.
+
 ---
 
 ## Listing Lifecycle
@@ -606,3 +635,7 @@ Browser session cookies + csrf_token cookie
 | GET | `/api/listings/{id}` | No | Get listing details |
 | DELETE | `/api/listings/{id}` | Yes | Delete listing |
 | GET | `/api/users/{id}/wardrobe?page={n}&limit={n}` | No | User's listings |
+| GET | `/api/conversations?page={n}&context={ctx}` | Yes | Inbox list, page size 8, newest-first |
+| GET | `/api/conversations/{id}` | Yes | Full thread (message/offer/bot_message activity_log) |
+| GET | `/api/conversations/unread_counts` | Yes | Unread counts (buying/selling) |
+| GET | `/api/users/{id}/offers/pending` | Yes | Pending offers (shape unconfirmed — see above) |
