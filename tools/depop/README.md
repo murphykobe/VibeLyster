@@ -52,6 +52,8 @@ depop logout                          # Remove saved credentials
 depop listings                        # List your products
 depop listing <slug>                  # Get product details
 depop addresses                       # List shipping addresses
+depop inbox [--since <iso>] [--unread] # List conversations (read-only, normalized)
+depop conversation <id>               # Get one conversation's full thread (read-only, normalized)
 depop upload <image-path>             # Upload a square image → {id, url}
 depop create <json-file>              # Create a draft listing
 depop drafts                          # List draft listings
@@ -108,6 +110,36 @@ impit.fetch()    →  JA3: Chrome fingerprint    →  Cloudflare 200
 
 ---
 
+## Inbox (read-only)
+
+```bash
+depop inbox [--since <iso>] [--unread]   # List conversations
+depop conversation <id>                  # Get one conversation's full thread
+```
+
+Both accept `--json` and return a normalized shape, not Depop's raw one:
+
+```jsonc
+// depop inbox --json
+{ "conversations": [
+  { "id": "a9e2e08bc54174314044eb18a7ff1a6d", "listing_id": 909240036, "buyer": "lurkthestreet",
+    "last_message_id": "04BCA671-F2DA-44D8-833B-F2F746AE77CF", "last_message_text": "Lowest I'll go is $120",
+    "last_message_at": "2026-09-13T19:23:58.000Z", "last_message_from": "seller", "unread": false }
+] }
+
+// depop conversation <id> --json
+{ "conversation": { "id": "de9315b5", "listing_id": 12345, "buyer": "buyerhandle",
+  "messages": [ { "id": "FB88B425", "from": "buyer", "text": "May I have the chest measurement...", "at": "2026-08-10T..." } ] } }
+```
+
+**Known limitations, deliberately not guessed at:**
+- **`inbox` only sees page 1 (newest ~20 conversations).** The list endpoint's `page_info` has `first`/`last`/`has_more`, but the actual next-page query param name was never found — `cursor`, `after`, `starting_after`, `next`, `page_cursor`, `next_cursor`, `starting_cursor`, and `from_cursor` were all tried live against `GET /presentation/api/v1/conversations/` and every one was silently ignored (same page 1 came back every time). For a personal account's `--since <last_run>` use case this is very unlikely to matter — it only becomes a real gap if 20+ conversations each got a new message in a single day.
+- **`inbox` makes N+1 requests** (one `getMessages` call per conversation, to determine `last_message_from` — Depop's list endpoint doesn't say who sent the last message, unlike Grailed's). ~20 conversations takes a few seconds.
+- **No write endpoints implemented.** Found in the frontend bundle: `POST /presentation/api/v1/conversations/messages/` (send — body shape unknown), `POST .../mark-read/`, `POST .../mark-unread/`, `POST .../hide/`. None verified live — needs a real DevTools "Copy as cURL" capture of an actual send before implementing.
+- **Automated Depop system notifications appear as regular messages** (e.g. "Team Depop" account-security emails, observed with an id like `braze-32` instead of a UUID) — not filtered here, since the CLI returns data as-is; a future classification layer should learn to recognize and skip these.
+
+---
+
 ## Architecture
 
 ```
@@ -146,6 +178,9 @@ access_token cookie from browser
 | DELETE | `/api/v1/drafts/{id}/` | Delete draft (v1, not v2) |
 | PUT | `/api/v2/products/{id}/` | Edit live product |
 | DELETE | `/api/v1/products/{id}/` | Delete live product (v1, not v2) |
+| GET | `/presentation/api/v1/conversations/` | Inbox list, page 1 only (see Inbox section) |
+| GET | `/presentation/api/v1/conversations/{id}/` | Conversation detail (user, product, read_only) |
+| GET | `/presentation/api/v1/conversations/{id}/messages/` | Messages, newest-first |
 
 ---
 

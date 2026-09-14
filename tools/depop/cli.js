@@ -10,6 +10,9 @@
  *   depop listings                       List your products
  *   depop listing <slug>                 Get product details
  *   depop addresses                      List shipping addresses
+ *   depop inbox [--since <iso>] [--unread]
+ *                                         List conversations (read-only, normalized)
+ *   depop conversation <id>              Get one conversation's full thread (read-only, normalized)
  *   depop categories                     List categories (group → productType)
  *   depop conditions                     List valid condition values
  *   depop shipping                       List shipping providers and parcel sizes
@@ -158,8 +161,8 @@ function printError(e, json) {
 
 function cleanArgs(args) {
   const cleaned = [];
-  const valueFlags = ["--access-token", "--status"];
-  const boolFlags = ["--json"];
+  const valueFlags = ["--access-token", "--status", "--since"];
+  const boolFlags = ["--json", "--unread"];
   let i = 0;
   while (i < args.length) {
     if (valueFlags.includes(args[i])) {
@@ -190,6 +193,9 @@ Commands:
   listings                        List your products
   listing <slug>                  Get product details
   addresses                       List shipping addresses
+  inbox [--since <iso>] [--unread]
+                                   List conversations (read-only, normalized, page 1 only — see README)
+  conversation <id>                Get one conversation's full thread (read-only, normalized)
   categories                      List categories (group → productType)
   conditions                      List valid condition values and colors
   shipping                        List shipping providers and parcel sizes
@@ -340,6 +346,56 @@ Note: Images must be square. Crop before uploading.
           console.log(JSON.stringify({ addresses: result }));
         } else {
           console.log(JSON.stringify(result, null, 2));
+        }
+        break;
+      }
+
+      case "inbox": {
+        const accessToken = await getAccessToken(rawArgs, json);
+        const since = getFlagValue(rawArgs, "--since") || undefined;
+        const unreadOnly = hasFlag(rawArgs, "--unread");
+
+        // Page 1 only — see the TODO in depop-api.js's getConversations:
+        // the correct next-page cursor param was not found live. For
+        // each conversation, one extra call fetches its newest message
+        // to determine last_message_from, since the list endpoint
+        // doesn't say who sent the last message (unlike Grailed's).
+        const list = await api.getConversations(accessToken);
+        const conversationsRaw = [];
+        for (const raw of list.objects) {
+          const msgs = await api.getMessages(raw.conversation_id, accessToken);
+          conversationsRaw.push(api.normalizeConversationSummary(raw, msgs.objects[0], raw.user_id));
+        }
+
+        let conversations = conversationsRaw;
+        if (since) conversations = conversations.filter((c) => c.last_message_at && c.last_message_at >= since);
+        if (unreadOnly) conversations = conversations.filter((c) => c.unread);
+
+        if (json) {
+          console.log(JSON.stringify({ conversations }));
+        } else {
+          for (const c of conversations) {
+            const preview = c.last_message_text ? c.last_message_text.slice(0, 60) : "(no messages)";
+            console.log(`[${c.id.slice(0, 8)}] ${c.unread ? "*" : " "} ${c.buyer} (${c.last_message_from ?? "?"}): ${preview}`);
+          }
+          console.log(`\nTotal: ${conversations.length} conversations`);
+        }
+        break;
+      }
+
+      case "conversation": {
+        const id = args[1];
+        if (!id) usage(["Usage: depop conversation <id>"], json);
+        const accessToken = await getAccessToken(rawArgs, json);
+        const [detail, msgs] = await Promise.all([
+          api.getConversation(id, accessToken),
+          api.getMessages(id, accessToken),
+        ]);
+        const conversation = api.normalizeConversationDetail(detail, msgs.objects);
+        if (json) {
+          console.log(JSON.stringify({ conversation }));
+        } else {
+          console.log(JSON.stringify(conversation, null, 2));
         }
         break;
       }
