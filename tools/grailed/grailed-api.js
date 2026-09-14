@@ -34,21 +34,62 @@ function makeHeaders(csrfToken, version = "application/grailed.api.v1") {
   };
 }
 
+/**
+ * Thrown by apiFetch on any non-ok response. Carries structured
+ * classification (status, whether Cloudflare's edge answered instead of
+ * Grailed's backend) so callers — the CLI's exit-code contract — never
+ * have to parse `.message` to tell "session expired" from "edge block"
+ * from "an ordinary app error". `.message` itself is unchanged from
+ * before this existed, so anything only reading `.message` still works.
+ */
+export class GrailedApiError extends Error {
+  constructor(message, { status, cloudflareBlock = false, body } = {}) {
+    super(message);
+    this.name = "GrailedApiError";
+    this.status = status;
+    this.cloudflareBlock = cloudflareBlock;
+    this.body = body;
+  }
+}
+
 async function apiFetch(url, options = {}) {
   const res = await impit.fetch(url, options);
   if (!res.ok) {
     const text = await res.text();
     let detail;
+    let cloudflareBlock = false;
     try {
       detail = JSON.parse(text);
     } catch {
+      // Grailed's own backend always returns JSON, even for 401s (confirmed
+      // 2026-09-13). A non-JSON body this large is Cloudflare's edge
+      // answering on its own — a block or challenge page — before the
+      // request ever reached Grailed's backend.
       detail = text;
+      cloudflareBlock = true;
     }
-    throw new Error(
-      `Grailed API error ${res.status}: ${JSON.stringify(detail)}`
+    throw new GrailedApiError(
+      `Grailed API error ${res.status}: ${JSON.stringify(detail)}`,
+      { status: res.status, cloudflareBlock, body: detail }
     );
   }
   return res.json();
+}
+
+/**
+ * Classifies any error from this module into the CLI's exit-code contract.
+ * Exported so the CLI (and its tests) share one source of truth instead of
+ * re-deriving it from error messages.
+ */
+export function classifyError(error) {
+  if (error instanceof GrailedApiError) {
+    if (error.cloudflareBlock) return { exitCode: 4, key: "CLOUDFLARE_BLOCK" };
+    if (error.status === 401 || error.status === 403) {
+      return { exitCode: 3, key: "SESSION_EXPIRED" };
+    }
+    return { exitCode: 1, key: "API_ERROR", status: error.status };
+  }
+  return { exitCode: 1, key: "ERROR" };
 }
 
 // ─── Auth ────────────────────────────────────────────────────────────────────
@@ -67,7 +108,9 @@ export async function checkLogin(csrfToken, cookies) {
     const me = await getMe(csrfToken, cookies);
     return { loggedIn: true, user: me.data };
   } catch (e) {
-    return { loggedIn: false, error: e.message };
+    // exitCode/key are additive — existing callers reading only
+    // loggedIn/error see the same shape as before.
+    return { loggedIn: false, error: e.message, ...classifyError(e) };
   }
 }
 
