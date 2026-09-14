@@ -65,6 +65,19 @@ test("unknown command --json emits parseable JSON", () => {
   assert.match(doc.error, /Unknown command/);
 });
 
+test("conversation without an id exits 1 with the usage line (no network call)", () => {
+  const result = run(["conversation"]);
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /Usage: grailed conversation <id>/);
+});
+
+test("conversation --json without an id: parseable JSON error, still exit 1", () => {
+  const result = run(["conversation", "--json"]);
+  assert.equal(result.status, 1);
+  const doc = JSON.parse(result.stdout.trim());
+  assert.equal(doc.error, "Usage: grailed conversation <id>");
+});
+
 // Gated live smoke test — never runs in CI. Exercises real read commands
 // against the owner's own account. Never a write command here.
 const liveEnabled = process.env.GRAILED_SMOKE === "1";
@@ -76,4 +89,41 @@ test("live smoke: auth --json against a real session", { skip: !liveEnabled }, (
   const doc = JSON.parse(result.stdout.trim());
   assert.equal(result.status, 0);
   assert.equal(doc.loggedIn, true);
+});
+
+test("live smoke: inbox --json returns the real conversation list", { skip: !liveEnabled }, () => {
+  const result = run(["inbox", "--json"], {
+    GRAILED_CSRF_TOKEN: process.env.GRAILED_CSRF_TOKEN,
+    GRAILED_COOKIES: process.env.GRAILED_COOKIES,
+  });
+  const doc = JSON.parse(result.stdout.trim());
+  assert.equal(result.status, 0);
+  assert.ok(Array.isArray(doc.conversations));
+  assert.ok(doc.conversations.length > 0);
+});
+
+test("live smoke: offers --json returns the real pending-offers shape (possibly empty)", { skip: !liveEnabled }, () => {
+  const result = run(["offers", "--json"], {
+    GRAILED_CSRF_TOKEN: process.env.GRAILED_CSRF_TOKEN,
+    GRAILED_COOKIES: process.env.GRAILED_COOKIES,
+  });
+  const doc = JSON.parse(result.stdout.trim());
+  assert.equal(result.status, 0);
+  assert.ok(Array.isArray(doc.offers));
+});
+
+test("live smoke: conversation --json returns a full activity log for a real thread", { skip: !liveEnabled }, () => {
+  const inboxResult = run(["inbox", "--json"], {
+    GRAILED_CSRF_TOKEN: process.env.GRAILED_CSRF_TOKEN,
+    GRAILED_COOKIES: process.env.GRAILED_COOKIES,
+  });
+  const firstId = JSON.parse(inboxResult.stdout.trim()).conversations[0].id;
+  const result = run(["conversation", String(firstId), "--json"], {
+    GRAILED_CSRF_TOKEN: process.env.GRAILED_CSRF_TOKEN,
+    GRAILED_COOKIES: process.env.GRAILED_COOKIES,
+  });
+  const doc = JSON.parse(result.stdout.trim());
+  assert.equal(result.status, 0);
+  assert.equal(doc.conversation.id, firstId);
+  assert.ok(Array.isArray(doc.conversation.activity_log));
 });

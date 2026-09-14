@@ -11,6 +11,9 @@
  *   grailed wardrobe                      List your active listings
  *   grailed drafts                        List your drafts
  *   grailed addresses                     List your shipping addresses
+ *   grailed inbox                         List conversations (read-only)
+ *   grailed conversation <id>             Get one conversation's full thread (read-only)
+ *   grailed offers                        List pending offers across all conversations (read-only)
  *   grailed upload <image-path>           Upload an image, returns URL
  *   grailed create <json-file>            Create a draft listing
  *   grailed publish <draft-id> [json-file] Publish draft (update + submit)
@@ -119,7 +122,7 @@ function printError(e, json) {
 
 function cleanArgs(args) {
   const cleaned = [];
-  const valueFlags = ["--csrf-token", "--cookies"];
+  const valueFlags = ["--csrf-token", "--cookies", "--page", "--context"];
   const boolFlags = ["--draft", "--json"];
   let i = 0;
   while (i < args.length) {
@@ -152,6 +155,9 @@ Commands:
   wardrobe                      List your active listings
   drafts                        List your drafts
   addresses                     List your shipping addresses
+  inbox                         List conversations (read-only)
+  conversation <id>             Get one conversation's full thread (read-only)
+  offers                        List pending offers across all conversations (read-only)
   upload <image-path>           Upload an image, get back URL
   create <json-file>            Create a draft listing
   publish <draft-id> [json-file] Publish a draft (update + submit). Omit json to submit as-is
@@ -286,6 +292,69 @@ Auth:
           console.log(JSON.stringify({ addresses: addrs.data }));
         } else {
           console.log(JSON.stringify(addrs.data, null, 2));
+        }
+        break;
+      }
+
+      case "inbox": {
+        const { csrfToken, cookies } = getAuth(rawArgs, json);
+        const page = getFlagValue(rawArgs, "--page") || undefined;
+        const context = getFlagValue(rawArgs, "--context") || undefined;
+        const result = await api.getConversations(csrfToken, cookies, { page, context });
+        const conversations = result.data;
+        if (json) {
+          console.log(JSON.stringify({ conversations }));
+        } else {
+          for (const c of conversations) {
+            const last = c.activity_log?.[c.activity_log.length - 1];
+            const preview = last?.message ? last.message.slice(0, 60) : `(${last?.type ?? "no activity"})`;
+            console.log(
+              `[${c.id}] ${c.state} ${c.is_read ? " " : "*"} ${c.interlocutor?.username} — "${c.listing?.title}" — ${preview}`
+            );
+          }
+          console.log(`\nTotal: ${conversations.length} conversations`);
+        }
+        break;
+      }
+
+      case "conversation": {
+        const id = args[1];
+        if (!id) usage(["Usage: grailed conversation <id>"], json);
+        const { csrfToken, cookies } = getAuth(rawArgs, json);
+        const result = await api.getConversation(id, csrfToken, cookies);
+        if (json) {
+          console.log(JSON.stringify({ conversation: result.data }));
+        } else {
+          console.log(JSON.stringify(result.data, null, 2));
+        }
+        break;
+      }
+
+      case "offers": {
+        const { csrfToken, cookies } = getAuth(rawArgs, json);
+        const me = await api.getMe(csrfToken, cookies);
+        const result = await api.getPendingOffers(me.data.id, csrfToken, cookies);
+        const offers = result.data;
+        if (json) {
+          console.log(JSON.stringify({ offers }));
+        } else if (offers.length === 0) {
+          console.log("No pending offers.");
+        } else {
+          // Field names below (conversation_id/amount/offer_type/expires_at)
+          // are inferred from the offer shape seen inside a conversation's
+          // activity_log, NOT verified against this endpoint directly — it
+          // returned an empty array in the only live test run so far
+          // (2026-09-14). Falls back to raw JSON per offer if a field is
+          // missing, rather than printing "undefined".
+          for (const o of offers) {
+            if (o.conversation_id != null && o.amount != null) {
+              const expires = o.expires_at ? new Date(o.expires_at).toLocaleString() : "unknown";
+              console.log(`[conversation ${o.conversation_id}] $${o.amount} (${o.offer_type ?? "?"}) — expires ${expires}`);
+            } else {
+              console.log(JSON.stringify(o));
+            }
+          }
+          console.log(`\nTotal: ${offers.length} pending offers`);
         }
         break;
       }
