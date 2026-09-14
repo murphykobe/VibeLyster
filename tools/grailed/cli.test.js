@@ -160,3 +160,35 @@ test("live smoke: conversation --json returns a full activity log for a real thr
     assert.ok(m.from === "buyer" || m.from === "seller");
   }
 });
+
+test("reply without text exits 1 with the usage line (no network call)", () => {
+  const result = run(["reply", "some-id"]);
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /Usage: grailed reply/);
+});
+
+test("counter without an amount exits 1 with the usage line (no network call)", () => {
+  const result = run(["counter", "some-id"]);
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /Usage: grailed counter/);
+});
+
+// Gated WRITE smoke test — separate flag from GRAILED_SMOKE on purpose, so
+// a read-only run can never accidentally send a real message. Requires the
+// owner to explicitly name a conversation they've chosen as safe to test
+// against — never auto-picked from the inbox, unlike the read-only tests.
+const writeSmokeEnabled = process.env.GRAILED_WRITE_SMOKE === "1" && process.env.GRAILED_WRITE_CONVERSATION_ID;
+test(
+  "WRITE smoke: reply sends a real message to a real, owner-chosen conversation",
+  { skip: !writeSmokeEnabled },
+  () => {
+    const text = process.env.GRAILED_WRITE_REPLY_TEXT || "test";
+    const result = run(["reply", process.env.GRAILED_WRITE_CONVERSATION_ID, text, "--json"], {
+      GRAILED_CSRF_TOKEN: process.env.GRAILED_CSRF_TOKEN,
+      GRAILED_COOKIES: process.env.GRAILED_COOKIES,
+    });
+    const doc = JSON.parse(result.stdout.trim());
+    assert.equal(result.status, 0);
+    assert.equal(doc.sent, true);
+  }
+);
